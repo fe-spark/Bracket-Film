@@ -1,0 +1,41 @@
+services:
+  web:
+    container_name: film_web
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        - API_URL=http://film:3601
+    restart: always
+    ports:
+      - 3000:3000
+    networks:
+      - film-network
+    depends_on:
+      film:
+        condition: service_healthy
+
+  film:
+    container_name: film_api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - 3601:3601
+    networks:
+      - film-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:$${PORT}/index"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  film-network:
+    driver: bridge

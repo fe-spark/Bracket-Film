@@ -1,0 +1,22 @@
+.layoutWrapper {
+  background: var(--public-page-bg);
+  color: var(--public-text-1);
+  min-height: 100vh; // Ensure it takes at least the full viewport height
+  display: flex;
+  flex-direction: column;
+}
+
+.publicMain {
+  flex: 1;
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 100px 40px 40px; // Top padding matches sticky header spacing
+  position: relative;
+}
+
+@media (max-width: 768px) {
+  .publicMain {
+    padding: 76px 16px 20px; // Padding for fixed header and mobile footer
+  }
+}
