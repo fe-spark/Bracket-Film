@@ -37,9 +37,9 @@ func FilmSourceInit() {
 		//{Id: util.GenerateSalt(), Name: "HD(fs)", Uri: `https://www.feisuzyapi.com/api.php/provide/vod/`, ResultModel: system.JsonResult, Grade: system.SlaveCollect, SyncPictures: false, CollectType: system.CollectVideo, State: false},
 		//{Id: util.GenerateSalt(), Name: "HD(bfBk)", Uri: `http://app.bfzyapi.com/api.php/provide/vod/`, ResultModel: system.JsonResult, Grade: system.SlaveCollect, SyncPictures: false, CollectType: system.CollectVideo, State: false},
 	}
-	err := system.SaveCollectSourceList(l)
+	err := system.BatchAddCollectSource(l)
 	if err != nil {
-		log.Println("SaveSourceApiList Error: ", err)
+		log.Println("BatchAddCollectSource Error: ", err)
 	}
 }
 

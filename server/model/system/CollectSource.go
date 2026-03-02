@@ -1,16 +1,11 @@
 package system
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 
-	"server/config"
 	"server/plugin/common/util"
 	"server/plugin/db"
-
-	"github.com/redis/go-redis/v9"
 )
 
 /*
@@ -62,117 +57,102 @@ const (
 
 // FilmSource 影视站点信息保存结构体
 type FilmSource struct {
-	Id           string             `json:"id"`           // 唯一ID
-	Name         string             `json:"name"`         // 采集站点备注名
-	Uri          string             `json:"uri"`          // 采集链接
-	ResultModel  CollectResultModel `json:"resultModel"`  // 接口返回类型, json || xml
-	Grade        SourceGrade        `json:"grade"`        // 采集站等级 主站点 || 附属站
-	SyncPictures bool               `json:"syncPictures"` // 是否同步图片到服务器
-	CollectType  ResourceType       `json:"collectType"`  // 采集资源类型
-	State        bool               `json:"state"`        // 是否启用
-	Interval     int                `json:"interval"`     // 采集时间间隔 单位/ms
+	Id           string             `json:"id" gorm:"primaryKey;size:32"`    // 唯一ID
+	Name         string             `json:"name" gorm:"size:64"`             // 采集站点备注名
+	Uri          string             `json:"uri" gorm:"uniqueIndex;size:255"` // 采集链接
+	ResultModel  CollectResultModel `json:"resultModel"`                     // 接口返回类型, json || xml
+	Grade        SourceGrade        `json:"grade"`                           // 采集站等级 主站点 || 附属站
+	SyncPictures bool               `json:"syncPictures"`                    // 是否同步图片到服务器
+	CollectType  ResourceType       `json:"collectType"`                     // 采集资源类型
+	State        bool               `json:"state"`                           // 是否启用
+	Interval     int                `json:"interval"`                        // 采集时间间隔 单位/ms
 }
 
-// SaveCollectSourceList 保存采集站Api列表
-func SaveCollectSourceList(list []FilmSource) error {
-	var zl []redis.Z
-	for _, v := range list {
-		m, _ := json.Marshal(v)
-		zl = append(zl, redis.Z{Score: float64(v.Grade), Member: m})
-	}
-	return db.Rdb.ZAdd(db.Cxt, config.FilmSourceListKey, zl...).Err()
+func (f *FilmSource) TableName() string {
+	return "film_sources"
 }
 
 // GetCollectSourceList 获取采集站API列表
 func GetCollectSourceList() []FilmSource {
-	l, err := db.Rdb.ZRange(db.Cxt, config.FilmSourceListKey, 0, -1).Result()
-	if err != nil {
-		log.Println(err)
+	var list []FilmSource
+	if err := db.Mdb.Order("grade ASC").Find(&list).Error; err != nil {
+		log.Println("GetCollectSourceList Error:", err)
 		return nil
 	}
-	return getCollectSource(l)
+	return list
 }
 
 // GetCollectSourceListByGrade 返回指定类型的采集Api信息 Master | Slave
 func GetCollectSourceListByGrade(grade SourceGrade) []FilmSource {
-	s := fmt.Sprintf("%d", grade)
-	zl, err := db.Rdb.ZRangeByScore(db.Cxt, config.FilmSourceListKey, &redis.ZRangeBy{Max: s, Min: s}).Result()
-	if err != nil {
-		log.Println(err)
+	var list []FilmSource
+	if err := db.Mdb.Where("grade = ?", grade).Find(&list).Error; err != nil {
+		log.Println("GetCollectSourceListByGrade Error:", err)
 		return nil
 	}
-	return getCollectSource(zl)
+	return list
 }
 
 // FindCollectSourceById 通过Id标识获取对应的资源站信息
 func FindCollectSourceById(id string) *FilmSource {
-	for _, v := range GetCollectSourceList() {
-		if v.Id == id {
-			return &v
-		}
+	var fs FilmSource
+	if err := db.Mdb.Where("id = ?", id).First(&fs).Error; err != nil {
+		return nil
 	}
-	return nil
-}
-
-// 将 []string 转化为 []FilmSourceApi
-func getCollectSource(sl []string) []FilmSource {
-	var l []FilmSource
-	for _, s := range sl {
-		f := FilmSource{}
-		_ = json.Unmarshal([]byte(s), &f)
-		l = append(l, f)
-	}
-	return l
+	return &fs
 }
 
 // DelCollectResource 通过Id删除对应的采集站点信息
 func DelCollectResource(id string) {
-	for _, v := range GetCollectSourceList() {
-		if v.Id == id {
-			data, _ := json.Marshal(v)
-			db.Rdb.ZRem(db.Cxt, config.FilmSourceListKey, data)
-		}
-	}
+	db.Mdb.Where("id = ?", id).Delete(&FilmSource{})
 }
 
 // AddCollectSource 添加采集站信息
 func AddCollectSource(s FilmSource) error {
-	for _, v := range GetCollectSourceList() {
-		if v.Uri == s.Uri {
-			return errors.New("当前采集站点信息已存在, 请勿重复添加")
-		}
+	var count int64
+	db.Mdb.Model(&FilmSource{}).Where("uri = ?", s.Uri).Count(&count)
+	if count > 0 {
+		return errors.New("当前采集站点信息已存在, 请勿重复添加")
 	}
 	// 生成一个短uuid
-	s.Id = util.GenerateSalt()
-	data, _ := json.Marshal(s)
-	return db.Rdb.ZAddNX(db.Cxt, config.FilmSourceListKey, redis.Z{Score: float64(s.Grade), Member: data}).Err()
+	if s.Id == "" {
+		s.Id = util.GenerateSalt()
+	}
+	return db.Mdb.Create(&s).Error
+}
+
+// BatchAddCollectSource 批量添加采集站信息
+func BatchAddCollectSource(list []FilmSource) error {
+	return db.Mdb.Create(list).Error
 }
 
 // UpdateCollectSource 更新采集站信息
 func UpdateCollectSource(s FilmSource) error {
-	for _, v := range GetCollectSourceList() {
-		if v.Id != s.Id && v.Uri == s.Uri {
-			return errors.New("当前采集站链接已存在其他站点中, 请勿重复添加")
-		} else if v.Id == s.Id {
-			// 删除当前旧的采集信息
-			DelCollectResource(s.Id)
-			// 将新的采集信息存入list中
-			data, _ := json.Marshal(s)
-			db.Rdb.ZAdd(db.Cxt, config.FilmSourceListKey, redis.Z{Score: float64(s.Grade), Member: data})
-		}
+	var count int64
+	db.Mdb.Model(&FilmSource{}).Where("id != ? AND uri = ?", s.Id, s.Uri).Count(&count)
+	if count > 0 {
+		return errors.New("当前采集站链接已存在其他站点中, 请勿重复添加")
 	}
-	return nil
+	return db.Mdb.Save(&s).Error
 }
 
 // ClearAllCollectSource 删除所有采集站信息
 func ClearAllCollectSource() {
-	db.Rdb.Del(db.Cxt, config.FilmSourceListKey)
+	db.Mdb.Exec("TRUNCATE table film_sources")
 }
 
 // ExistCollectSourceList 查询是否已经存在站点list相关数据
 func ExistCollectSourceList() bool {
-	if db.Rdb.Exists(db.Cxt, config.FilmSourceListKey).Val() == 0 {
-		return false
+	var count int64
+	db.Mdb.Model(&FilmSource{}).Count(&count)
+	return count > 0
+}
+
+// CreateFilmSourceTable 创建采集源信息表
+func CreateFilmSourceTable() {
+	if !db.Mdb.Migrator().HasTable(&FilmSource{}) {
+		err := db.Mdb.AutoMigrate(&FilmSource{})
+		if err != nil {
+			log.Println("Create Table FilmSource Failed: ", err)
+		}
 	}
-	return true
 }

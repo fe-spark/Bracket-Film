@@ -133,8 +133,17 @@ func FilmSourceChange(c *gin.Context) {
 	}
 	if s.State != fs.State || s.SyncPictures != fs.SyncPictures {
 		// 执行更新操作
-		s := system.FilmSource{Id: fs.Id, Name: fs.Name, Uri: fs.Uri, ResultModel: fs.ResultModel,
-			Grade: fs.Grade, SyncPictures: s.SyncPictures, CollectType: fs.CollectType, State: s.State}
+		s := system.FilmSource{
+			Id:           fs.Id,
+			Name:         fs.Name,
+			Uri:          fs.Uri,
+			ResultModel:  fs.ResultModel,
+			Grade:        fs.Grade,
+			SyncPictures: s.SyncPictures,
+			CollectType:  fs.CollectType,
+			State:        s.State,
+			Interval:     fs.Interval, // 保持原有的间隔时长
+		}
 		// 更新资源站信息
 		if err := logic.CollectL.UpdateFilmSource(s); err != nil {
 			system.Failed(fmt.Sprint("资源站更新失败: ", err.Error()), c)

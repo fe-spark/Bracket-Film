@@ -108,18 +108,8 @@ func HandleCollect(id string, h int) error {
 	switch s.CollectType {
 	case system.CollectVideo:
 		// 采集视频资源
-		if s.Interval > 500 {
-			for i := 1; i <= pageCount; i++ {
-				select {
-				case <-ctx.Done():
-					log.Printf("[Spider] 站点 %s 采集任务被中断(单线程模式)\n", s.Name)
-					return nil
-				default:
-					collectFilm(ctx, s, h, i)
-					time.Sleep(time.Duration(s.Interval) * time.Millisecond)
-				}
-			}
-		} else if pageCount <= config.MAXGoroutine*2 {
+		// 如果页数较少, 使用简单的循环串行采集; 否则进入并发模式
+		if pageCount <= config.MAXGoroutine*2 {
 			for i := 1; i <= pageCount; i++ {
 				select {
 				case <-ctx.Done():
@@ -127,10 +117,14 @@ func HandleCollect(id string, h int) error {
 					return nil
 				default:
 					collectFilm(ctx, s, h, i)
+					// 如果设置了采集间隔，每采集完一页后等待
+					if s.Interval > 0 {
+						time.Sleep(time.Duration(s.Interval) * time.Millisecond)
+					}
 				}
 			}
 		} else {
-			// 并发模式
+			// 并发模式 (并发 Worker 内部已包含 Sleep 逻辑)
 			ConcurrentPageSpider(ctx, pageCount, s, h, collectFilm)
 		}
 		// 视频数据采集完成后同步相关信息到mysql
@@ -275,6 +269,10 @@ func ConcurrentPageSpider(ctx context.Context, capacity int, s *system.FilmSourc
 					}
 					// 执行对应的采集方法
 					collectFunc(ctx, s, h, pg)
+					// 如果设置了采集间隔，每个 worker 采集完一页后都要等待
+					if s.Interval > 0 {
+						time.Sleep(time.Duration(s.Interval) * time.Millisecond)
+					}
 				}
 			}
 		}()

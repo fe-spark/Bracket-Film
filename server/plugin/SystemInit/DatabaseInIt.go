@@ -22,4 +22,6 @@ func TableInIt() {
 	system.CreateMoviePlaylistTable()
 	// 创建待同步图片队列表
 	system.CreateVirtualPictureTable()
+	// 创建采集源信息表
+	system.CreateFilmSourceTable()
 }

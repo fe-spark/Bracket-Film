@@ -64,8 +64,11 @@ func GetSiteBasic() BasicConfig {
 
 // GetBanners 获取轮播配置信息
 func GetBanners() Banners {
-	var bl Banners
+	bl := make(Banners, 0)
 	data := db.Rdb.Get(db.Cxt, config.BannersKey).Val()
+	if data == "" {
+		return bl
+	}
 	if err := json.Unmarshal([]byte(data), &bl); err != nil {
 		log.Println("Get Banners Error", err)
 	}

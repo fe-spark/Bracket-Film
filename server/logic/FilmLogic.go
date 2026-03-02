@@ -34,19 +34,23 @@ func (fl *FilmLogic) GetSearchOptions() map[string]any {
 	tree.Name = "全部分类"
 	options["class"] = conver.ConvertCategoryList(tree)
 	options["remarks"] = []map[string]string{{"Name": `全部`, "Value": ``}, {"Name": `完结`, "Value": `完结`}, {"Name": `未完结`, "Value": `未完结`}}
+	// 初始化默认值，防止 frontend 报错
+	options["year"] = make([]map[string]string, 0)
 	// 获取 剧情,地区,语言, 年份 组信息 (每个分类对应的检索信息并不相同)
 	var tagGroup = make(map[int64]map[string]any)
-	// 遍历一级分类获取对应的标签组信息
-	for _, t := range tree.Children {
-		option := system.GetSearchOptions(t.Id)
-		if len(option) > 0 {
-			tagGroup[t.Id] = system.GetSearchOptions(t.Id)
-			// 如果年份信息不存在则独立一份年份信息
-			if _, ok := options["year"]; !ok {
-				options["year"] = tagGroup[t.Id]["Year"]
+	// 遍历一级分类获取对应的标签组 information
+	if tree.Children != nil {
+		for _, t := range tree.Children {
+			option := system.GetSearchOptions(t.Id)
+			if len(option) > 0 {
+				tagGroup[t.Id] = system.GetSearchOptions(t.Id)
+				// 如果年份信息不存在则独立一份年份信息
+				if v, ok := options["year"].([]map[string]string); !ok || len(v) == 0 {
+					options["year"] = tagGroup[t.Id]["Year"]
+				}
 			}
-		}
 
+		}
 	}
 	options["tags"] = tagGroup
 	return options

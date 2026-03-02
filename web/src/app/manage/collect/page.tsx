@@ -442,10 +442,8 @@ export default function CollectManagePage() {
       <Form.Item label="接口地址" name="uri" rules={[{ required: true }]}>
         <Input placeholder="资源采集链接" />
       </Form.Item>
-      <Form.Item label="间隔时长" name="interval">
-        <Tooltip title="单次请求的时间间隔, 单位/ms">
-          <InputNumber min={0} step={100} style={{ width: "100%" }} />
-        </Tooltip>
+      <Form.Item label="间隔时长" name="interval" tooltip="单次请求的时间间隔, 单位/ms">
+        <InputNumber min={0} step={100} style={{ width: "100%" }} />
       </Form.Item>
       <Form.Item label="接口类型" name="resultModel">
         <Radio.Group>

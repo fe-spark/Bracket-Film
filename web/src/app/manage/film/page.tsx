@@ -119,7 +119,7 @@ export default function FilmListPage() {
 
   const handleClassChange = (value: number) => {
     setClassId(value);
-    const selectedClass = options.class.find((c: any) => c.id === value);
+    const selectedClass = (options.class || []).find((c: any) => c.id === value);
     if (!selectedClass) return;
 
     const newParams = { ...params };
@@ -329,7 +329,7 @@ export default function FilmListPage() {
           className={styles.filterItem}
           value={classId || undefined}
           onChange={handleClassChange}
-          options={options.class.map((c: any) => ({
+          options={(options.class || []).map((c: any) => ({
             label: c.name,
             value: c.id,
           }))}
