@@ -30,7 +30,6 @@ func SetupRouter() *gin.Engine {
 	//r.GET(`/filmCategory`, controller.FilmCategory) 弃用
 	r.POST(`/login`, controller.Login)
 	r.GET(`/logout`, middleware.AuthToken(), controller.Logout)
-	r.POST(`/changePassword`, middleware.AuthToken(), controller.UserPasswordChange)
 
 	// 管理员API路由组
 	manageRoute := r.Group(`/manage`)
@@ -60,6 +59,10 @@ func SetupRouter() *gin.Engine {
 		userRoute := manageRoute.Group(`/user`)
 		{
 			userRoute.GET(`/info`, controller.UserInfo)
+			userRoute.GET(`/list`, controller.UserListPage)
+			userRoute.POST(`/add`, controller.UserAdd)
+			userRoute.POST(`/update`, controller.UserUpdate)
+			userRoute.GET(`/del`, controller.UserDelete)
 		}
 
 		// 采集路相关

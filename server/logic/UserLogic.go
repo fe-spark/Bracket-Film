@@ -35,28 +35,6 @@ func (ul *UserLogic) UserLogout() {
 
 }
 
-// ChangePassword 修改密码
-func (ul *UserLogic) ChangePassword(account, password, newPassword string) error {
-	// 根据 username 或 email 查询用户信息
-	var u *system.User = system.GetUserByNameOrEmail(account)
-	// 用户信息不存在则返回提示信息
-	if u == nil {
-		return errors.New(" 用户信息不存在!!!")
-	}
-	// 首先校验用户的旧密码是否正确
-	if util.PasswordEncrypt(password, u.Salt) != u.Password {
-		return errors.New("原密码校验失败")
-	}
-	// 密码校验正确则生成新的用户信息
-	newUser := system.User{}
-	newUser.ID = u.ID
-	// 将新密码进行加密
-	newUser.Password = util.PasswordEncrypt(newPassword, u.Salt)
-	// 更新用户信息
-	system.UpdateUserInfo(newUser)
-	return nil
-}
-
 // GetUserInfo 获取用户基本信息
 func (ul *UserLogic) GetUserInfo(id uint) system.UserInfoVo {
 	// 通过用户ID查询对应的用户信息
@@ -72,4 +50,55 @@ func (ul *UserLogic) VerifyUserPassword(id uint, password string) bool {
 	u := system.GetUserById(id)
 	// 校验密码是否正确
 	return util.PasswordEncrypt(password, u.Salt) == u.Password
+}
+
+// GetUserPage 用户分页
+func (ul *UserLogic) GetUserPage(current, pageSize int, userName string) (int64, []system.UserInfoVo) {
+	total, list := system.GetUserPage(current, pageSize, userName)
+	var voList []system.UserInfoVo
+	for _, u := range list {
+		voList = append(voList, system.UserInfoVo{
+			Id:       u.ID,
+			UserName: u.UserName,
+			Email:    u.Email,
+			Gender:   u.Gender,
+			NickName: u.NickName,
+			Avatar:   u.Avatar,
+			Status:   u.Status,
+		})
+	}
+	return total, voList
+}
+
+// AddUser 添加用户
+func (ul *UserLogic) AddUser(u system.User) error {
+	// 检查用户名是否重复
+	if exist := system.GetUserByNameOrEmail(u.UserName); exist != nil {
+		return errors.New("用户名已存在")
+	}
+	// 密码加密
+	u.Salt = util.GenerateSalt()
+	u.Password = util.PasswordEncrypt(u.Password, u.Salt)
+	return system.AddUser(&u)
+}
+
+// UpdateUser 更新用户
+func (ul *UserLogic) UpdateUser(u system.User) error {
+	// 如果修改了密码，需要重新加密
+	if u.Password != "" {
+		// 先获取原用户信息拿到盐值
+		oldUser := system.GetUserById(u.ID)
+		if oldUser.ID == 0 {
+			return errors.New("用户不存在")
+		}
+		u.Salt = oldUser.Salt
+		u.Password = util.PasswordEncrypt(u.Password, u.Salt)
+	}
+	system.UpdateUserInfo(u)
+	return nil
+}
+
+// DeleteUser 删除用户
+func (ul *UserLogic) DeleteUser(id uint) error {
+	return system.DeleteUser(id)
 }

@@ -92,5 +92,28 @@ func GetUserById(id uint) User {
 // UpdateUserInfo 更新用户信息
 func UpdateUserInfo(u User) {
 	// 值更新允许修改的部分字段, 零值会在更新时被自动忽略
-	db.Mdb.Model(&u).Updates(User{Password: u.Password, Email: u.Email, NickName: u.NickName, Status: u.Status})
+	db.Mdb.Model(&u).Updates(User{Password: u.Password, Email: u.Email, NickName: u.NickName, Status: u.Status, Gender: u.Gender, Avatar: u.Avatar})
+}
+
+// GetUserPage 分页获取用户信息
+func GetUserPage(current, pageSize int, userName string) (int64, []User) {
+	var list []User
+	var total int64
+	db := db.Mdb.Model(&User{})
+	if userName != "" {
+		db = db.Where("user_name LIKE ?", "%"+userName+"%")
+	}
+	db.Count(&total)
+	db.Offset((current - 1) * pageSize).Limit(pageSize).Find(&list)
+	return total, list
+}
+
+// AddUser 添加新用户
+func AddUser(u *User) error {
+	return db.Mdb.Create(u).Error
+}
+
+// DeleteUser 删除用户
+func DeleteUser(id uint) error {
+	return db.Mdb.Delete(&User{}, id).Error
 }

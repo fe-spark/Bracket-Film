@@ -50,20 +50,27 @@ func ProxyVideo(c *gin.Context) {
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
 			line := scanner.Text()
-			// 只处理非注释且非空的行（通常是 TS 路径）
+			originalLine := line
+
+			// 1. 处理普通分片路径（非 # 开头的行）
 			if !strings.HasPrefix(line, "#") && strings.TrimSpace(line) != "" {
-				fullPath := line
-				if !strings.HasPrefix(line, "http") {
-					if strings.HasPrefix(line, "/") {
-						fullPath = baseUrl + line
-					} else {
-						fullPath = baseDir + line
-					}
-				}
-				// 补全后再次通过代理访问
+				fullPath := resolveURL(line, baseDir, baseUrl)
 				line = "/api/proxy/video?url=" + url.QueryEscape(fullPath)
+			} else if strings.HasPrefix(line, "#") && strings.Contains(line, "URI=\"") {
+				// 2. 处理标签内的 URI（如 #EXT-X-KEY, #EXT-X-MAP, #EXT-X-MEDIA 等）
+				start := strings.Index(line, "URI=\"") + 5
+				end := strings.Index(line[start:], "\"") + start
+				if end > start {
+					uri := line[start:end]
+					fullPath := resolveURL(uri, baseDir, baseUrl)
+					proxiedURI := "/api/proxy/video?url=" + url.QueryEscape(fullPath)
+					line = line[:start] + proxiedURI + line[end:]
+				}
 			}
-			fmt.Fprintln(c.Writer, line)
+
+			if line != "" || originalLine == "" {
+				fmt.Fprintln(c.Writer, line)
+			}
 		}
 	} else {
 		// 非 M3U8（如 TS 分片）直接 io.Copy，不处理内容
@@ -72,4 +79,15 @@ func ProxyVideo(c *gin.Context) {
 		}
 		io.Copy(c.Writer, resp.Body)
 	}
+}
+
+// resolveURL 辅助函数：补全相对路径为绝对路径
+func resolveURL(path, baseDir, baseUrl string) string {
+	if strings.HasPrefix(path, "http") {
+		return path
+	}
+	if strings.HasPrefix(path, "/") {
+		return baseUrl + path
+	}
+	return baseDir + path
 }
