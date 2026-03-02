@@ -50,10 +50,10 @@
 .content {
   display: flex;
   gap: 32px;
-  background: var(--public-surface-2);
+  background: var(--public-surface-1);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--public-border-2);
+  border: 1px solid var(--public-border-1);
   border-radius: 24px;
   padding: 32px;
   box-shadow: var(--public-shadow-lg);
@@ -81,11 +81,11 @@
 }
 
 .title {
-  font-size: 36px;
+  font-size: 32px;
   font-weight: 900;
   margin-bottom: 16px;
   letter-spacing: -1px;
-  background: linear-gradient(to right, var(--public-text-1), var(--public-text-4));
+  background: linear-gradient(to right, var(--public-text-1), var(--public-text-3));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -98,13 +98,20 @@
   margin-bottom: 32px;
 
   .metaItem {
-    padding: 6px 16px;
-    background: var(--public-surface-3);
-    border: 1px solid var(--public-border-3);
+    padding: 6px 18px;
+    background: var(--public-surface-2);
+    border: 1px solid var(--public-border-2);
     border-radius: 100px;
     font-size: 14px;
-    font-weight: 600;
-    color: var(--public-text-3);
+    font-weight: 700;
+    color: var(--public-text-2);
+    transition: all 0.3s ease;
+
+    &:hover {
+      border-color: #faad14;
+      color: #faad14;
+      background: rgba(250, 173, 20, 0.1);
+    }
   }
 }
 
@@ -140,7 +147,7 @@
     font-size: 16px;
     font-weight: 700;
     border-radius: 12px;
-    background: var(--public-surface-3);
+    background: var(--public-surface-2);
     color: var(--public-text-1);
     border: 1px solid var(--public-border-3);
 
@@ -170,7 +177,7 @@
   .descContent {
     font-size: 16px;
     line-height: 1.8;
-    color: var(--public-text-3);
+    color: var(--public-text-2);
     font-weight: 400;
     white-space: pre-wrap;
     word-break: break-all;
@@ -195,7 +202,7 @@
     .tab {
       padding: 10px 20px;
       cursor: pointer;
-      color: var(--public-text-5);
+      color: var(--public-text-3);
       font-weight: 600;
       font-size: 15px;
       transition: all 0.3s;
@@ -223,7 +230,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: var(--public-surface-3);
+      background: var(--public-surface-2);
       border: 1px solid var(--public-border-2);
       border-radius: 10px;
       color: var(--public-text-2);
@@ -256,24 +263,35 @@
   }
 
   .left {
-    width: 240px;
+    width: 220px;
+  }
+}
+
+@media (max-width: 992px) {
+  .content {
+    gap: 24px;
+    padding: 24px;
   }
 
+  .left {
+    width: 200px;
+  }
+  
   .title {
-    font-size: 36px;
+    font-size: 28px;
   }
 }
 
 @media (max-width: 768px) {
   .content {
     flex-direction: column;
-    padding: 20px;
-    border-radius: 0;
-    background: none;
-    border: none;
-    backdrop-filter: none;
-    box-shadow: none;
+    padding: 24px;
     gap: 24px;
+    border-radius: 20px;
+    background: var(--public-surface-2);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--public-border-2);
+    margin-bottom: 24px;
   }
 
   .left {
@@ -282,104 +300,91 @@
     justify-content: center;
 
     .poster {
-      width: 200px;
-      border-radius: 16px;
+      width: 160px;
+      border-radius: 12px;
     }
   }
 
   .right {
-    align-items: center;
-    text-align: center;
+    align-items: flex-start;
+    text-align: left;
   }
 
   .title {
-    font-size: 32px;
-    margin-bottom: 16px;
+    font-size: 24px;
+    margin-bottom: 12px;
+    background: linear-gradient(to right, var(--public-text-1), var(--public-text-4));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 
   .meta {
-    justify-content: center;
+    justify-content: flex-start;
     gap: 8px;
+    margin-bottom: 24px;
 
     .metaItem {
-      font-size: 12px;
+      font-size: 11px;
       padding: 4px 12px;
     }
   }
 
   .actions {
     width: 100%;
-    justify-content: center;
+    margin-bottom: 24px;
+    gap: 12px;
 
     .playBtn,
     .collectBtn {
-      height: 52px;
-      padding: 0 24px;
-      font-size: 15px;
+      height: 48px;
+      padding: 0;
+      font-size: 14px;
       flex: 1;
+      border-radius: 10px;
     }
   }
 
   .intro {
-    text-align: left;
+    .sectionTitle {
+      font-size: 20px;
+      margin-bottom: 16px;
+    }
 
     .descContent {
       font-size: 14px;
-      -webkit-line-clamp: 5;
-      line-clamp: 5;
-      display: -webkit-box;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
+      line-height: 1.7;
     }
   }
 
   .episodesSection {
-    margin: 20px;
-    padding: 20px;
-    border-radius: 16px;
+    padding: 24px;
+    border-radius: 20px;
+    margin-bottom: 32px;
 
     .playlist {
-      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+      gap: 8px;
     }
   }
 }
 
-.classifyGrid {
-  grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
-  gap: 20px !important;
-}
-
-@media (max-width: 1600px) {
-  .classifyGrid {
-    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
-    gap: 16px !important;
-  }
-}
-
-@media (max-width: 1440px) {
-  .classifyGrid {
-    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
-    gap: 16px !important;
-  }
-}
-
-@media (max-width: 1200px) {
-  .classifyGrid {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-    gap: 12px !important;
-  }
-}
-
-@media (max-width: 768px) {
-  .classifyGrid {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-    gap: 10px !important;
-  }
-}
-
 @media (max-width: 480px) {
-  .classifyGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 8px !important;
+  .content {
+    padding: 20px;
+    margin-left: -4px; /* Slight offset to counter parent padding if needed, but risky */
+    margin-right: -4px;
+  }
+  
+  .left .poster {
+    width: 140px;
+  }
+  
+  .actions {
+    flex-direction: column;
+    .playBtn, .collectBtn {
+      width: 100%;
+      flex: none;
+    }
   }
 }

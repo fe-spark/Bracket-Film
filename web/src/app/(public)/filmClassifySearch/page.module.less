@@ -6,7 +6,7 @@
   background: var(--public-surface-2);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--public-border-2);
+  // border: 1px solid var(--public-border-2);
   border-radius: 20px;
   padding: 24px 32px;
   margin-bottom: 40px;
@@ -50,7 +50,8 @@
   color: var(--public-text-3);
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  background: transparent;
+  background: var(--public-surface-3);
+  // border: 1px solid var(--public-border-3);
 
   &:hover {
     color: var(--public-text-1);
@@ -129,15 +130,8 @@
 }
 
 .classifyGrid {
-  grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
   gap: 20px !important;
-}
-
-@media (max-width: 1600px) {
-  .classifyGrid {
-    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
-    gap: 16px !important;
-  }
 }
 
 @media (max-width: 1440px) {

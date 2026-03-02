@@ -124,15 +124,34 @@ export default function FilmList({
   const router = useRouter();
 
   const { props: colProps, className: colClassName } = React.useMemo(() => {
-    if (col === 6) {
-      return {
-        props: { xs: 12, sm: 8, md: 6, lg: 6, xl: 4, xxl: 4 },
-        className: styles.col5,
-      };
-    }
+    // Default to 6 columns if not specified
+    const targetCol = col || 6;
+
+    // Standard AntD span calculation (for 24-grid system)
+    // 1 -> 24, 2 -> 12, 3 -> 8, 4 -> 6, 6 -> 4, 8 -> 3, 12 -> 2
+    const span = 24 % targetCol === 0 ? 24 / targetCol : 4;
+
+    // Use specific CSS overrides for non-perfect divisors or to lock layout at 1440px
+    const classNameMap: Record<number, string> = {
+      5: styles["grid-col-5"],
+      6: styles["grid-col-6"],
+      7: styles["grid-col-7"],
+      8: styles["grid-col-8"],
+    };
+
     return {
-      props: { xs: 12, sm: 8, md: 6, lg: 4, xl: 4 },
-      className: styles.col7,
+      props: {
+        xs: 8, // 3 columns on mobile
+        sm: 6, // 4 columns on small tablets
+        md: 6, // 4 columns on tablets
+        // At lg (992px), SideList appears on home, taking 200px.
+        // If col=6, jumping to 6 items here makes them too small (688px/6 = ~114px).
+        // Stay at 4 items (696px/4 = ~174px) until xl (1200px).
+        lg: targetCol >= 6 ? 6 : span,
+        xl: span,
+        xxl: span,
+      },
+      className: classNameMap[targetCol] || "",
     };
   }, [col]);
 
@@ -140,7 +159,7 @@ export default function FilmList({
   if (loading) {
     return (
       <div className={className || ""}>
-        <Row gutter={[24, 24]}>
+        <Row gutter={[12, 12]}>
           {Array.from({ length: skeletonCount }).map((_, idx) => (
             <Col key={idx} {...colProps} className={colClassName}>
               <div className={`${styles.item} ${styles.skeleton}`}>
@@ -173,7 +192,7 @@ export default function FilmList({
 
   return (
     <div className={className || ""}>
-      <Row gutter={[24, 24]}>
+      <Row gutter={[12, 12]}>
         {list.map((item) => (
           <FilmCard
             key={item.mid || item.id}

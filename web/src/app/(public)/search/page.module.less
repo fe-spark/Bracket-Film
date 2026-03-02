@@ -116,14 +116,23 @@
 
       .tag {
         font-size: 11px;
-        padding: 2px 6px;
-        border-radius: 4px;
-        background: var(--public-surface-3);
-        color: var(--public-text-4);
+        padding: 2px 8px;
+        border-radius: 6px;
+        background: var(--public-surface-2);
+        color: var(--public-text-2);
+        border: 1px solid var(--public-border-2);
+        transition: all 0.3s ease;
 
         &.category {
-          background: #9b49e7;
-          color: var(--public-on-accent);
+          background: rgba(155, 73, 231, 0.1);
+          color: #9b49e7;
+          border-color: rgba(155, 73, 231, 0.3);
+          font-weight: 700;
+        }
+
+        &:hover {
+          border-color: var(--primary-color);
+          color: var(--primary-color);
         }
       }
     }

@@ -2,11 +2,14 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Input, Button, Popover, Empty } from "antd";
+import { Input, Button, Empty, Drawer, Flex } from "antd";
 import {
   SearchOutlined,
   HistoryOutlined,
   DeleteOutlined,
+  MenuOutlined,
+  HomeOutlined,
+  FireOutlined,
 } from "@ant-design/icons";
 import { ApiGet } from "@/lib/api";
 import { cookieUtil, COOKIE_KEY_MAP } from "@/lib/cookie";
@@ -32,6 +35,7 @@ export default function Header() {
   const [siteInfo, setSiteInfo] = useState<any>({});
   const [historyList, setHistoryList] = useState<HistoryItem[]>([]);
   const [scrolled, setScrolled] = useState(false);
+  const [mobileMenuVisible, setMobileMenuVisible] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { message } = useAppMessage();
@@ -105,11 +109,13 @@ export default function Header() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    if (showHistory) {
+  const toggleHistory = () => {
+    const nextShow = !showHistory;
+    setShowHistory(nextShow);
+    if (nextShow) {
       loadHistory();
     }
-  }, [showHistory, loadHistory]);
+  };
 
   const historyContent = (
     <div className={`${styles.historyPanel} ${showHistory ? styles.show : ""}`}>
@@ -140,74 +146,106 @@ export default function Header() {
             </div>
           ))
         ) : (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="暂无观看记录"
-          />
+          <div style={{ padding: '20px 0' }}>
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无观看记录"
+            />
+          </div>
         )}
       </div>
     </div>
   );
 
   return (
-    <div className={`${styles.headerWrap} ${scrolled ? styles.scrolled : ""}`}>
+    <header className={`${styles.headerWrap} ${scrolled ? styles.scrolled : ""}`}>
       <div className={styles.headerInner}>
         <div className={styles.left}>
+          <div className={styles.mobileMenuTrigger} onClick={() => setMobileMenuVisible(true)}>
+            <MenuOutlined />
+          </div>
+          
           {siteInfo.siteName && (
             <div className={styles.siteName} onClick={() => router.push("/")}>
-              {siteInfo.siteName}
+              <span className={styles.logoText}>{siteInfo.siteName}</span>
             </div>
           )}
-          <div className={styles.searchGroup}>
-            <Input
-              placeholder="搜索影片、动漫、剧集..."
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              variant="borderless"
-            />
-            <Button
-              type="primary"
-              icon={<SearchOutlined />}
-              onClick={handleSearch}
-              className={styles.searchBtn}
-            >
-              搜索
-            </Button>
-          </div>
-        </div>
 
-        <div className={styles.right}>
-          <div className={styles.navLinks}>
-            <a onClick={() => router.push("/")} style={{ cursor: "pointer" }}>
+          <nav className={styles.navLinks}>
+            <a onClick={() => router.push("/")} className={styles.navItem}>
               首页
             </a>
             {navList.map((nav) => (
               <a
                 key={nav.id}
                 onClick={() => router.push(`/filmClassify?Pid=${nav.id}`)}
-                style={{ cursor: "pointer" }}
+                className={styles.navItem}
               >
                 {nav.name}
               </a>
             ))}
+          </nav>
+        </div>
+
+        <div className={styles.right}>
+          <div className={styles.searchGroup}>
+            {/* <SearchOutlined className={styles.searchIcon} /> */}
+            <Input
+              placeholder="搜索影片、动漫..."
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              variant="borderless"
+            />
+            <Button 
+              type="primary" 
+              icon={<SearchOutlined />} 
+              className={styles.searchBtn}
+              onClick={handleSearch}
+            />
           </div>
 
-          <div className={styles.historyWrapper} ref={historyRef}>
-            <div className={styles.historyBtn} onClick={() => setShowHistory(!showHistory)}>
-              <HistoryOutlined />
+          <div className={styles.actions}>
+            <div className={styles.historyWrapper} ref={historyRef}>
+              <div 
+                className={`${styles.actionBtn} ${showHistory ? styles.active : ""}`} 
+                onClick={toggleHistory}
+              >
+                <HistoryOutlined />
+              </div>
+              {historyContent}
             </div>
-            {historyContent}
-          </div>
-
-          <div
-            className={styles.mobileSearchBtn}
-            onClick={() => router.push("/search")}
-          >
-            <SearchOutlined />
+            
+            <div className={styles.mobileSearchBtn} onClick={() => router.push("/search")}>
+              <SearchOutlined />
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      <Drawer
+        title={<div className={styles.drawerTitle}>{siteInfo.siteName || "Menu"}</div>}
+        placement="left"
+        onClose={() => setMobileMenuVisible(false)}
+        open={mobileMenuVisible}
+        size={280}
+        className={styles.mobileDrawer}
+      >
+        <div className={styles.mobileNav}>
+          <div className={styles.mobileNavItem} onClick={() => { router.push("/"); setMobileMenuVisible(false); }}>
+            <HomeOutlined /> <span>首页</span>
+          </div>
+          {navList.map((nav) => (
+            <div 
+              key={nav.id} 
+              className={styles.mobileNavItem} 
+              onClick={() => { router.push(`/filmClassify?Pid=${nav.id}`); setMobileMenuVisible(false); }}
+            >
+              <FireOutlined /> <span>{nav.name}</span>
+            </div>
+          ))}
+        </div>
+      </Drawer>
+    </header>
   );
 }
