@@ -15,6 +15,7 @@ interface VideoPlayerProps {
   onEnded?: () => void;
   onTimeUpdate?: (currentTime: number, duration: number) => void;
   onError?: (error: any) => void;
+  useProxy?: boolean;
 }
 
 /**
@@ -30,8 +31,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onEnded,
   onTimeUpdate,
   onError,
+  useProxy = true, // 默认开启代理加速，因为用户反馈卡顿
 }) => {
   const artRef = useRef<HTMLDivElement>(null);
+  // 处理 URL 代理
+  const finalSrc = useProxy 
+    ? (/^https?:\/\//i.test(src) ? `/proxy/video?url=${encodeURIComponent(src)}` : src)
+    : src;
   const playerRef = useRef<Artplayer | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const [hasError, setHasError] = useState(false);
@@ -48,7 +54,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const art = new Artplayer({
       container: artRef.current,
       id: "bracket-player",
-      url: src,
+      url: finalSrc,
       poster: poster || "",
       autoplay,
       theme: "#fa8c16", // 直接使用 Hex 色值，Artplayer 内部无法解析 CSS 变量
@@ -70,7 +76,17 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         m3u8: function (video: HTMLMediaElement, url: string) {
           if (Hls.isSupported()) {
             if (hlsRef.current) hlsRef.current.destroy();
-            const hls = new Hls({ enableWorker: true });
+            const hls = new Hls({
+              enableWorker: true,
+              maxBufferSize: 100 * 1024 * 1024, // 100MB 缓冲区
+              maxBufferLength: 60, // 增加预加载时长到 60s
+              fragLoadingMaxRetry: 10, // 增加切片下载重载次数
+              levelLoadingMaxRetry: 10,
+              manifestLoadingMaxRetry: 10,
+              startLevel: -1, // 自动选择最佳清晰度
+              abrEwmaDefaultEstimate: 5000000, // 初始带宽预估 (5Mbps)
+              testBandwidth: true, // 加强带宽测试
+            });
             hlsRef.current = hls;
             hls.loadSource(url);
             hls.attachMedia(video);
@@ -79,8 +95,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             hls.on(Hls.Events.ERROR, (_, data) => {
               if (data.fatal) {
                 console.error("HLS Fatal Error:", data);
-                setHasError(true);
-                callbacks.current.onError?.(data);
+                // 忽略非关键错误，尝试自动恢复
+                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                  hls.startLoad();
+                } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                  hls.recoverMediaError();
+                } else {
+                  setHasError(true);
+                  callbacks.current.onError?.(data);
+                }
               }
             });
           } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
@@ -166,7 +189,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       playerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [retryCount]);
+  }, [retryCount, finalSrc]);
 
   useEffect(() => {
     if (playerRef.current && poster) playerRef.current.poster = poster;

@@ -18,6 +18,7 @@ func SetupRouter() *gin.Engine {
 	r.Static(config.FilmPictureUrlPath, config.FilmPictureUploadDir)
 
 	r.GET(`/index`, controller.Index)
+	r.GET(`/proxy/video`, controller.ProxyVideo)
 	r.GET(`/cache/del`, controller.IndexCacheDel)
 	r.GET(`/config/basic`, controller.SiteBasicConfig)
 	r.GET(`/navCategory`, controller.CategoriesInfo)

@@ -1,616 +1,77 @@
-# Film Server
+# Bracket Film Server
 
-## 简介
+## 🚀 简介
 
-- server 是本项目的后端项目
-- 主要用于提供前端项目需要的 API数据接口, 以及数据搜集和更新
-- 实现思路 :
-  - 使用 gocolly 获取公开的影视资源,
-  - 将请求数据通过程序处理整合成统一格式后使用redis进行暂存
-  - 使用 mysql 存储收录的影片的检索信息, 用于影片检索, 分类
-  - 使用 gin 作为web服务, 提供相应api接口
-- 项目依赖
+`server` 是 Bracket-Film 项目的后端核心，基于 Go 语言构建。它不仅为前端提供高效、稳定的 RESTful API，还集成了自动化数据采集（爬虫）、数据处理聚合以及针对 TVBox 等第三方客户端的服务端支持。
 
-```go
-# gin web服务框架, 用于处理与前端工程的交互
-github.com/gin-gonic/gin v1.9.0
-# gocolly go语言爬虫框架, 用于搜集公共影视资源
-github.com/gocolly/colly/v2 v2.1.0
-# go-redis redis交互程序
-github.com/redis/go-redis/v9 v9.0.2
-# gorm 用于处理与mysql数据库的交互
-gorm.io/gorm v1.24.6
-gorm.io/driver/mysql v1.4.7
-```
+### 核心特性
+- **数据采集**：集成 `go-colly` 爬虫框架，支持从公开影视资源站自动化采集数据。
+- **任务调度**：内置定时任务管理，支持自动更新影片库信息。
+- **数据聚合**：三级缓存架构（Go Memory / Redis / MySQL），确保高并发下的查询性能。
+- **管理后台**：配套完整的管理接口，支持对资源站、采集任务、影视内容的精细化管理。
+- **多端集成**：原生支持 MacCMS 10 接口协议，并提供 TVBox/影视仓 聚合配置自动生成接口。
 
-## 项目结构
+---
 
-> 项目主要目录结构
+## 🛠️ 技术栈
 
-- config 用于存放项目中使用的配置信息和静态常量
-- controller 请求处理控制器
-- logic 请求处理逻辑实现
-- model 数据模型结构体以及与数据库交互
-- plugin 项目所需的插件工具集合
-  - common 公共依赖
-  - db 数据库配置信息
-  - spider gocolly配置, 执行逻辑, 数据前置处理等
+| 类别 | 技术 | 说明 |
+| :--- | :--- | :--- |
+| **核心框架** | [Gin](https://github.com/gin-gonic/gin) | 高性能 HTTP Web 框架 |
+| **数据库 ORM** | [GORM](https://gorm.io/) | 功能强大的 Go 语言 ORM 库 |
+| **缓存/存储** | [Redis](https://redis.io/) | 用于高速缓存和临时数据处理 |
+| **关系型数据库** | [MySQL](https://www.mysql.com/) | 存储结构化影视元数据和配置信息 |
+| **网络爬虫** | [Colly](https://github.com/gocolly/colly) | 灵活、快速且轻量级的爬虫框架 |
+| **身份认证** | [JWT](https://github.com/golang-jwt/jwt) | 基于 Token 的无状态身份验证 |
+
+---
+
+## 📂 项目结构
 
 ```text
 server
-├─ config
-│  └─ DataConfig.go
-├─ controller
-│  ├─ IndexController.go
-│  └─ SpiderController.go
-├─ logic
-│  ├─ IndexLogic.go
-│  └─ SpiderLogic.go
-├─ model
-│  ├─ Categories.go
-│  ├─ Movies.go
-│  ├─ RequestParams.go
-│  ├─ ResponseJson.go
-│  └─ Search.go
-├─ plugin
-│  ├─ common
-│  │  ├─ dp
-│  │  │  ├─ ProcessCategory.go
-│  │  │  └─ ProcessMovies.go
-│  │  ├─ param
-│  │  │  └─ SimpleParam.go
-│  │  └─ util
-│  │     ├─ FileDownload.go
-│  │     └─ Request.go
-│  ├─ db
-│  │  ├─ mysql.go
-│  │  └─ redis.go
-│  └─ spider
-│     ├─ Spider.go
-│     └─ SpiderCron.go
-├─ router
-│  └─ router.go
-├─ go.mod
-├─ go.sum
-├─ main.go
-└─ README.md
+├─ config       # 配置信息与静态常量
+├─ controller   # API 控制层，处理业务请求
+├─ logic        # 核心业务逻辑实现
+├─ model        # 数据模型 (Schema) 与数据库交互 (DAO)
+├─ plugin       # 插件与工具集
+│  ├─ db        # 数据库初始化 (MySQL/Redis)
+│  ├─ spider    # 数据采集核心逻辑与定时任务
+│  └─ middleware # Gin 拦截器 (CORS, Auth)
+├─ router       # 路由定义 (前端 API / 管理后台 API / 外部接口)
+├─ main.go      # 程序启动入口
+└─ go.mod       # 依赖管理
 ```
 
-## 启动方式
+---
 
-### 本地运行
+## 🚀 快速开始
 
-1.  修改 /server/plugin/db 目录下的 mysql.go 和 redis.go 中的连接地址和用户名密码
-2.  在 server 目录下执行 `go run main.go`
+### 1. 环境准备
+- Go 1.22+
+- MySQL 5.7+ / 8.0+
+- Redis (可选但强烈建议)
 
-## 数据库信息简介
+### 2. 配置数据库
+修改 `/server/plugin/db` 目录下的 `mysql.go` 和 `redis.go` 中的连接信息（或通过环境变量配置）。
 
-#### 1.Mysql
-
-> 连接信息(以docker compose部署为例) :
-
-```yaml
- mysql:
- 	ip: 部署的服务器IP
-    port: 3610
-    username: root
-    password: root
-    database: FilmSite
+### 3. 本地运行
+```bash
+go mod tidy
+go run main.go
 ```
 
-> 数据库结构
+---
 
-- 数据库: FilmSite
-  - 数据表 search
+## 📺 外部集成 (TVBox / 影视仓)
 
-> search 表 (用于记录影片的相关检索信息, 主要用于影片的 搜索, 分类, 排序 等)
+本项目支持直接作为数据源对接 TVBox 客户端：
 
-| 字段名称     | 类型     | 字段释义               |
-| ------------ | -------- | ---------------------- |
-| id           | bigint   | 自增主键               |
-| created_at   | datetime | 记录创建时间           |
-| updated_at   | datetime | 记录更新时间           |
-| deleted_at   | datetime | 逻辑删除字段           |
-| mid          | bigint   | 影片ID                 |
-| cid          | bigint   | 二级分类ID             |
-| pid          | bigint   | 一级分类ID             |
-| name         | varchar  | 影片名称               |
-| sub_title    | varchar  | 子标题(影片别名)       |
-| c_name       | varchar  | 分类名称               |
-| class_tag    | varchar  | 剧情标签               |
-| area         | varchar  | 地区                   |
-| language     | varchar  | 语言                   |
-| year         | bigint   | 上映年份               |
-| initial      | varchar  | 首字母                 |
-| score        | double   | 豆瓣评分               |
-| update_stamp | bigint   | 影片更新时间戳         |
-| hits         | bigint   | 热度(播放次数)         |
-| state        | varchar  | 状态(正片)             |
-| remarks      | varchar  | 更新状态(完结 \| xx集) |
-| release_data | bigint   | 上映时间戳             |
+- **CMS 接口**：`http://[YOUR_IP]:8088/provide/vod/`
+- **自动聚合配置**：`http://[YOUR_IP]:8088/provide/config` (直接在 TVBox 配置地址中填入即可)
 
-#### 2.Redis
+---
 
-> 连接信息(以docker compose部署为例) :
+## 📄 许可证
 
-```yaml
-  ## 部署时默认使用如下信息
-  redis:
-  	ip: 部署的服务器IP
-    port: 3620
-    password: root
-    DB: 0  ##使用的redis数据库为0号库
-```
-
-## 服务端API数据示例
-
-### 1. 网站前台API
-
-#### 1. API接口基本信息
-
-- 响应结构
-
-```text
-{
-    code: 0|1,		// 成功|失败
-	data: {},	// 数据内容
-    msg: "",		// 提示信息
-}
-```
-
-| 名称               | URL                 | client component                              | Method | Params                                                                                                                                                                         |
-| ------------------ | :------------------ | --------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 首页数据           | /index              | client/src/views/index/Home.vue               | GET    | 无                                                                                                                                                                             |
-| 网站基本配置信息   | /config/basic       | client/src/components/index/Header.vue        | GET    | 无                                                                                                                                                                             |
-| 影片分类导航       | /navCategory        | client/src/components/index/Header.vue        | GET    | 无                                                                                                                                                                             |
-| 影片详情           | /filmDetail         | client/src/views/index/FilmDetails.vue        | GET    | id (int, 影片ID)                                                                                                                                                               |
-| 影片播放页数据     | /filmPlayInfo       | client/src/views/index/Play.vue               | GET    | id (int, 影片ID) <br>playFrom (string, 播放源ID)<br>episode (int, 集数索引)                                                                                                    |
-| 影片检索(名称搜索) | /searchFilm         | client/src/views/index/SearchFilm.vue         | GET    | keyword (string, 影片名)                                                                                                                                                       |
-| 影片分类首页       | /filmClassify       | client/src/views/index/FilmClassify.vue       | GET    | Pid (int, 一级分类ID)                                                                                                                                                          |
-| 影片分类详情页     | /filmClassidySearch | client/src/views/index/FilmClassifySearch.vue | GET    | Pid (int, 一级分类ID)<br>Category (int, 二级分类ID)<br>Plot (string, 剧情)<br>Area (string, 地区)<br>Language (string, 语言)<br>Year (string, 年份)<br>Sort (string, 排序方式) |
-
-#### 2. 接口响应数据示例:
-
-- `/index` 首页数据
-
-```text
-{
-    "code": 0,		// 状态码
-    "data": {		// 数据内容
-        "category": {				// 分类信息
-            "id": 0,				// 分类ID
-            "name": "xxx",			// 分类名称
-            "pid": 0,				// 上级分类ID
-            "show": false,			// 是否展示
-            "children": [], 			// 子分类信息
-        },
-        "content": [				// 内容区数据
-            {
-                "hot": [			// 热播影片
-                    {
-                        "CreatedAt": "2024-01-13T19:04:01+08:00",		// 创建时间
-                        "DeletedAt": null,				// 删除时间
-                        "ID": 100,						// ID
-                        "UpdatedAt": "2024-01-13T19:04:01+08:00",	// 更新时间
-                        "area": "xxx",					// 地区
-                        "cName": "xxx",					// 分类名称
-                        "cid": 45,					// 分类ID
-                        "classTag": "xxx",				// 剧情标签
-                        "hits": 0,					// 热度
-                        "initial": "X",					// 首字母
-                        "language": "xxx",				// 语言
-                        "mid": 10000,					// 影片ID
-                        "name": "xxx",					// 影片名称
-                        "pid": 1,					// 上级分类ID
-                        "releaseStamp": 1704880403,		// 上映时间戳
-                        "remarks": "xxx",			 	// 备注信息 [预告|完结|更新至xx集]
-                        "score": 0,						// 评分
-                        "state": "xx",					// 状态 正片|预告
-                        "subTitle": "xxx",				// 子标题, 别名
-                        "updateStamp": 1704880403,		// 更新时间戳
-                        "year": 2024,					// 年份
-                    }
-                ],
-        		"movies": [			// 近期更新影片
-                    {
-                        "id": 10000,						// 影片ID
-                        "cid": 6,					// 分类ID
-                        "pid": 1,					// 上级分类ID
-                        "name": "xxxx",						// 影片名称
-                        "subTitle": "xxxx",					// 子标题, 别名
-                        "cName": "xxx",						// 分类名称
-                        "state": "正片",						// 影片状态
-                        "picture": "http://xxxx.jpg",		// 海报图片url
-                        "actor": "xxx,xxx", 				// 演员
-                        "director": "xxx,xxx",				// 导演
-                        "blurb": "",						// 剧情简介
-                        "remarks": "HD", 					// 备注信息 [预告|完结|更新至xx集]
-                        "area": "xxx",						// 地区
-                        "year": "2024" 						// 年份
-                    }
-                ],
-        		"nav": [						// 导航信息
-                    {
-                    	"id": 0,				// 分类ID
-       					"name": "xxxx", 		// 分类名称
-       					"pid": 0,				//上级分类ID
-       					"show": false,			// 是否展示
-       					"children": [], 		//子分类信息
-                    }
-                ]
-            },
-        ]
-    },
-    msg: "", 	// 提示信息
-}
-```
-
-- `/config/basic` 网站基本配置信息
-
-```text
-{
-    "code": 0,
-    "data": {
-        "siteName": "Bracket",					// 网站名称
-        "domain": "http://127.0.0.1:3600",			// 域名
-        "logo": "https://xxx.jpg",				// 网站logo
-        "keyword": "xxxx, xxxx",				// 网站搜索关键字
-        "describe": "xxxxxxx",					// 网站描述信息
-        "state": true,						//站点状态
-        "hint": "网站升级中, 暂时无法访问 !!!" 		// 网站关闭时提示信息
-    },
-    "msg": ""
-}
-```
-
-- `/navCategory` 首页头部分类信息
-
-```text
-{
-    "code": 0,
-    "data": [
-             {
-                    "id": 0,				// 分类ID
-       				"name": "xxxx", 			// 分类名称
-       				"pid": 0,					// 上级分类ID
-       				"show": false,				// 是否展示
-              },
-    ],
-    "msg": ""
-}
-```
-
-- `  /filmDetail` 影片详情信息
-
-```text
- {
-    "code": 0,
-    "data": {
-        "detail": {									// 影片详情信息
-            "id": 100000,							// 影片ID
-            "cid": 30,								// 影片分类ID
-            "pid": 4,								// 上级分类ID
-            "name": "xxx",							// 影片名称
-            "picture": "https://xxx.jpg",			// 海报封面url
-            "playFrom": [ "xxx","xxx" ],			// 播放来源
-            "DownFrom": "http",						// 下载方式
-            "playList": [ 							// 播放地址列表(主站点)
-                {
-                    "episode": "第xx集",					// 集数
-                    "link": "https://xxx/index.m3u8"		// 播放地址url
-                },
-            ],
-            "downloadList": [ 						// 下载地址列表
-            	 {
-                    "episode": "第xx集",					// 集数
-                    "link": "https://xxx/index.m3u8"			// 播放地址url
-               	 },
-            ],
-            "descriptor": { 						// 影片详情
-            	"subTitle": "",						// 副标题, 别名
-                "cName": "xxxx",					// 分类名称
-                "enName": "xxx",					// 影片名称中文拼音
-                "initial": "X",						// 影片名称首字母
-                "classTag": "xxxx",					// 内容标签
-                "actor": "xxx,xxx",					// 演员
-                "director": "xxx",					// 导演
-                "writer": "xxx",					// 作者
-                "blurb": "xxx",						// 简介(缺省)
-                "remarks": "更新至第xx集",			// 更新进度
-                "releaseDate": "2024-01-06",		// 上映日期
-                "area": "xxx",						// 地区
-                "language": "xxx",					// 语言
-                "year": "2024",						// 年份
-                "state": "正片",					// 状态 正片|预告
-                "updateTime": "2024-01-13 00:51:21",		// 更新时间
-                "addTime": 1704511497,				// 添加时间戳
-                "dbId": 26373174,					// 豆瓣ID
-                "dbScore": "0.0",					// 豆瓣评分
-                "hits": 0,							// 热度
-                "content": "xxx"					//影片内容简介(全)
-            },
-            "list": [ 								// 播放地址列表(全站点)
-            	{
-                    "id": "xxxxxxxxxxxx",			// 播放源ID
-                    "name": "HD(xxx)",				// 播放源别名
-                    "linkList": [					// 播放地址列表
-                         {
-                            "episode": "第xx集",			// 集数
-                            "link": "https://xxx/index.m3u8"		// 播放地址url
-                         },
-                    ]
-                },
-            ]
-        },
-        "relate": [ 		// 相关影片推荐
-        	{
-              	"id": 10000,					// 影片ID
-                "cid": 6,						// 分类ID
-                "pid": 1,						// 上级分类ID
-                "name": "xxxx",					// 影片名称
-                "subTitle": "xxxx",				// 子标题, 别名
-                "cName": "xxx",					// 分类名称
-                "state": "xxx",					// 影片状态
-                "picture": "http://xxxx.jpg",		// 海报图片url
-                "actor": "xxx,xxx", 			// 演员
-                "director": "xxx,xxx",			// 导演
-                "blurb": "",					// 剧情简介
-                "remarks": "HD", 				// 备注信息 [预告|完结|更新至xx集]
-                "area": "xxx",					// 地区
-                "year": "2024" 					// 年份
-            },
-        ]
-    },
-    "msg": "xxx"
-}
-```
-
-- `  /filmPlayInfo` 影片播放页信息
-
-```text
-{
-    "code": 0,
-    "data": {
-        "current": { 	// 当前播放信息
-            "episode": "第xx集",					   // 当前播放集数
-            "link": "https://xxx/index.m3u8"		// 当前播放地址url
-        },
-        "currentEpisode": 0,			// 当前播放集数索引
-        "currentPlayFrom": "xxx",		// 当前播放源ID
-        "detail": { 		// 影片详情
-            "id": 100000,							// 影片ID
-            "cid": 30,								// 影片分类ID
-            "pid": 4,								// 上级分类ID
-            "name": "xxx",							// 影片名称
-            "picture": "https://xxx.jpg",			// 海报封面url
-            "playFrom": [ "xxx","xxx" ],			// 播放来源
-            "DownFrom": "http",						// 下载方式
-            "playList": [ 	// 播放地址列表(主站点)
-                {
-                    "episode": "第xx集",							   // 集数
-                    "link": "https://xxx/index.m3u8"// 播放地址url
-                },
-            ],
-            "downloadList": [ 	// 下载地址列表
-                 {
-                    "episode": "第xx集",				// 集数
-                    "link": "https://xxx/index.m3u8"	// 播放地址url
-                 },
-            ],
-            "descriptor": { 	// 影片详情
-                "subTitle": "",						// 副标题, 别名
-                "cName": "xxxx",					// 分类名称
-                "enName": "xxx",					// 影片名称中文拼音
-                "initial": "X",						// 影片名称首字母
-                "classTag": "xxxx",					// 内容标签
-                "actor": "xxx,xxx",					// 演员
-                "director": "xxx",					// 导演
-                "writer": "xxx",					// 作者
-                "blurb": "xxx",						// 简介(缺省)
-                "remarks": "更新至第xx集",			// 更新进度
-                "releaseDate": "2024-01-06",		// 上映日期
-                "area": "xxx",						// 地区
-                "language": "xxx",					// 语言
-                "year": "2024",						// 年份
-                "state": "xxx",						// 状态 正片|预告
-                "updateTime": "2024-01-13 00:51:21",	// 更新时间
-                "addTime": 1704511497,				// 添加时间戳
-                "dbId": 26373174,					// 豆瓣ID
-                "dbScore": "0.0",					// 豆瓣评分
-                "hits": 0,							// 热度
-                "content": "xxx"					//影片内容简介(全)
-            },
-            "list": [ 		// 播放地址列表(全站点)
-                {
-                    "id": "xxxxxxxxxxxx",			// 播放源ID
-                    "name": "HD(xxx)",				// 播放源别名
-                    "linkList": [					// 播放地址列表
-                         {
-                            "episode": "第xx集",					   // 集数
-                            "link": "https://xxx/index.m3u8"		// 播放地址url
-                         },
-                    ]
-                },
-            ]
-        },
-        "relate": [ 		// 相关影片推荐
-            {
-                "id": 10000,						// 影片ID
-                "cid": 6,							// 分类ID
-                "pid": 1,							// 上级分类ID
-                "name": "xxxx",						// 影片名称
-                "subTitle": "xxxx",					// 子标题, 别名
-                "cName": "xxx",						// 分类名称
-                "state": "xxx",						// 影片状态
-                "picture": "http://xxxx.jpg",		// 海报图片url
-                "actor": "xxx,xxx", 				// 演员
-                "director": "xxx,xxx",				// 导演
-                "blurb": "",						// 剧情简介
-                "remarks": "HD", 					// 备注信息 [预告|完结|更新至xx集]
-                "area": "xxx",						// 地区
-                "year": "2024" 						// 年份
-            },
-        ]
-    },
-    "msg": "影片播放信息获取成功"
-}
-```
-
-- `/filmClassify` 分类影片首页数据
-
-```text
-{
-    "code": 0,
-    "data": {
-        "content": {		// 内容区数据
-            "news": [		//最新上映
-            	 "id": 10000,						// 影片ID
-                "cid": 6,							// 分类ID
-                "pid": 1,							// 上级分类ID
-                "name": "xxxx",						// 影片名称
-                "subTitle": "xxxx",					// 子标题, 别名
-                "cName": "xxx",						// 分类名称
-                "state": "xxx",						// 影片状态
-                "picture": "http://xxxx.jpg",		// 海报图片url
-                "actor": "xxx,xxx", 				// 演员
-                "director": "xxx,xxx",				// 导演
-                "blurb": "",						// 剧情简介
-                "remarks": "HD", 					// 备注信息 [预告|完结|更新至xx集]
-                "area": "xxx",						// 地区
-                "year": "2024" 						// 年份
-            ],
-            "recent": [ 	// 近期更新
-            	 "id": 10000,						// 影片ID
-                "cid": 6,							// 分类ID
-                "pid": 1,							// 上级分类ID
-                "name": "xxxx",						// 影片名称
-                "subTitle": "xxxx",					// 子标题, 别名
-                "cName": "xxx",						// 分类名称
-                "state": "xxx",						// 影片状态
-                "picture": "http://xxxx.jpg",		// 海报图片url
-                "actor": "xxx,xxx", 				// 演员
-                "director": "xxx,xxx",				// 导演
-                "blurb": "",						// 剧情简介
-                "remarks": "HD", 					// 备注信息 [预告|完结|更新至xx集]
-                "area": "xxx",						// 地区
-                "year": "2024" 						// 年份
-            ],
-            "top": [ 		// 热度排行
-            	 "id": 10000,						// 影片ID
-                "cid": 6,							// 分类ID
-                "pid": 1,							// 上级分类ID
-                "name": "xxxx",						// 影片名称
-                "subTitle": "xxxx",					// 子标题, 别名
-                "cName": "xxx",						// 分类名称
-                "state": "xxx",						// 影片状态
-                "picture": "http://xxxx.jpg",		// 海报图片url
-                "actor": "xxx,xxx", 				// 演员
-                "director": "xxx,xxx",				// 导演
-                "blurb": "",						// 剧情简介
-                "remarks": "HD", 					// 备注信息 [预告|完结|更新至xx集]
-                "area": "xxx",						// 地区
-                "year": "2024" 						// 年份
-            ]
-        },
-        "title": { 			// 头部标题区数据(暂未使用)
-        	 "id": 0,						// 分类ID
-            "name": "xxx", 					// 分类名称
-            "pid": 0,						// 上级分类ID
-            "show": false,					// 是否展示
-            "children": [], 				// 子分类信息
-        }
-    },
-    "msg": ""
-}
-```
-
-- ` /filmClassidySearch` 影片分类检索页数据
-
-```text
-{
-    "code": 0,
-    "data": {
-        "list": [ 		// 影片信息集合
-        	{
-                "id": 10000,						// 影片ID
-                "cid": 6,							// 分类ID
-                "pid": 1,							// 上级分类ID
-                "name": "xxxx",						// 影片名称
-                "subTitle": "xxxx",					// 子标题, 别名
-                "cName": "xxx",						// 分类名称
-                "state": "xxx",						// 影片状态
-                "picture": "http://xxxx.jpg",		// 海报图片url
-                "actor": "xxx,xxx", 				// 演员
-                "director": "xxx,xxx",				// 导演
-                "blurb": "",						// 剧情简介
-                "remarks": "HD", 					// 备注信息 [预告|完结|更新至xx集]
-                "area": "xxx",						// 地区
-                "year": "2024" 						// 年份
-            }
-        ],
-        "page": { 		// 分页信息
-        	"pageSize": 49,							// 每页页数
-            "current": 1,							// 当前页
-            "pageCount": xx,						// 总页数
-            "total": xx,							// 总数据量
-        },
-        "params": { 	// 请求参数
-        	"Area": "",								// 地区
-            "Category": "",							// 分类ID
-            "Language": "",							// 语言
-            "Pid": "1",								// 上级分类ID
-            "Plot": "",								// 剧情
-            "Sort": "xxx",							// 排序方式
-            "Year": "",								// 年份
-        },
-        "search": { 	// 分类标签组信息
-        	"sortList": [ "Category","Plot","Area","Language","Year","Sort" ], 		// 标签数据排序, 固定值
-            "tags": { 			// 标签组, 用于页面筛选Tag渲染
-            	"Area": [ { Name:"", Value:"" } ],
-                "Category": [ { Name:"", Value:"" } ],
-                "Initial": [ { Name:"", Value:"" } ],
-                "Language": [ { Name:"", Value:"" } ],
-                "Plot": [ { Name:"", Value:"" } ],
-                "Sort": [ { Name:"", Value:"" } ],
-                "Year": [ { Name:"", Value:"" } ]
-            },
-            "titles": { 		// 标签组标题映射(固定值)
-            	"Area": "地区",
-                "Category": "类型",
-                "Initial": "首字母",
-                "Language": "语言",
-                "Plot": "剧情",
-                "Sort": "排序",
-                "Year": "年份"
-            }
-        },
-        "title": { 		// 当前一级分类信息
-        	"id": 1,				// 分类ID
-            "pid": 0,				// 上级分类ID
-            "name": "xxx",			// 分类名称
-            "show": true,			// 是否展示
-        }
-    },
-    "msg": ""
-}
-```
-
-## TVBox / 影视仓配置说明
-
-本项目默认支持作为数据源提供给 TVBox / 影视仓等客户端使用。您可以直接将运行本服务的设备作为家庭影院的数据聚合中心。
-
-### 接入方式一：单源配置 (简易方式)
-
-在支持添加单源地址的 TVBox / 影视仓配置页中直接粘贴您的服务 API 地址即可（将 IP 替换为您服务器或本地电脑在该局域网内的真实 IP）：
-* **接口名称**：Bracket 影视库 (自定义命名)
-* **接口地址**：`http://192.168.1.100:8088/provide/vod/`
-* **接口类型**：`1` 或者 `CMS`（MacCMS 10 API）
-
-### 接入方式二：网络接口自动拉取配置 (推荐)
-
-绝大多数 TVBox / 影视仓支持直接填入网络 URL 来加载配置。我们已经为您内置了一个可以直接返回 JSON 聚合配置文件的接口，您**无需自己在服务端或本地创建 JSON 文件**。
-
-获取您的**内网/公网 IP 地址**（假设这里为 `192.168.1.100`），然后在 TVBox 的配置地址（单仓/多仓）中直接填入：
-`http://192.168.1.100:8088/provide/config`
-
-> **注意**：如果您的 Bracket 项目在本地局域网运行（如家用电脑或 NAS 上），请务必保证您的电视机顶盒或手机与提供该服务的设备**连接在同一个局域网（相同的 Wi-Fi）下**，否则将无法连接到服务接口。
+本项目遵循 [MIT License](../LICENSE)。
