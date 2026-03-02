@@ -61,7 +61,7 @@ func ProxyVideo(c *gin.Context) {
 					}
 				}
 				// 补全后再次通过代理访问
-				line = "/proxy/video?url=" + url.QueryEscape(fullPath)
+				line = "/api/proxy/video?url=" + url.QueryEscape(fullPath)
 			}
 			fmt.Fprintln(c.Writer, line)
 		}

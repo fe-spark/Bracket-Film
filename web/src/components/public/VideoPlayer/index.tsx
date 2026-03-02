@@ -36,7 +36,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const artRef = useRef<HTMLDivElement>(null);
   // 处理 URL 代理
   const finalSrc = useProxy 
-    ? (/^https?:\/\//i.test(src) ? `/proxy/video?url=${encodeURIComponent(src)}` : src)
+    ? (/^https?:\/\//i.test(src) ? `/api/proxy/video?url=${encodeURIComponent(src)}` : src)
     : src;
   const playerRef = useRef<Artplayer | null>(null);
   const hlsRef = useRef<Hls | null>(null);
