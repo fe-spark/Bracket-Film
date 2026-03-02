@@ -9,6 +9,7 @@ import {
   Button,
   Space,
   Tooltip,
+  Dropdown,
 } from "antd";
 import {
   HomeOutlined,
@@ -19,6 +20,7 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   LogoutOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { ApiGet } from "@/lib/api";
@@ -80,6 +82,7 @@ export default function ManageLayout({
   const [collapsed, setCollapsed] = useState(false);
   const [siteName, setSiteName] = useState("Bracket");
   const [logo, setLogo] = useState("");
+  const [userInfo, setUserInfo] = useState<any>(null);
 
   const router = useRouter();
   const pathname = usePathname();
@@ -89,6 +92,11 @@ export default function ManageLayout({
       if (resp.code === 0) {
         setSiteName(resp.data.siteName || "Bracket");
         setLogo(resp.data.logo || "");
+      }
+    });
+    ApiGet("/manage/user/info").then((resp) => {
+      if (resp.code === 0) {
+        setUserInfo(resp.data);
       }
     });
   }, []);
@@ -153,15 +161,34 @@ export default function ManageLayout({
             <span className={styles.headerTitle}>后台管理中心</span>
           </Space>
 
-          <Space size="small">
-            <Tooltip title="退出登录">
-              <Button
-                type="text"
-                icon={<LogoutOutlined style={{ fontSize: 18 }} />}
-                onClick={handleLogout}
-                className={styles.headerIconBtn}
-              />
-            </Tooltip>
+          <Space size="middle">
+            {userInfo && (
+              <Dropdown
+                menu={{
+                  items: [
+                    {
+                      key: "logout",
+                      icon: <LogoutOutlined />,
+                      label: "退出登录",
+                      onClick: handleLogout,
+                    },
+                  ],
+                }}
+                placement="bottomRight"
+                arrow
+              >
+                <div style={{ cursor: "pointer" }}>
+                  <Space size="small">
+                    <Avatar 
+                      src={userInfo.avatar === "empty" ? null : userInfo.avatar} 
+                      icon={<UserOutlined />} 
+                      style={{ backgroundColor: '#1890ff' }}
+                    />
+                    <span style={{ fontWeight: 500 }}>{userInfo.nickName || userInfo.userName}</span>
+                  </Space>
+                </div>
+              </Dropdown>
+            )}
           </Space>
         </Header>
         <Content

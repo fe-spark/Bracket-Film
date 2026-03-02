@@ -119,15 +119,27 @@ func UserUpdate(c *gin.Context) {
 
 // UserDelete 删除用户
 func UserDelete(c *gin.Context) {
+	// 鉴权：仅超级管理员可执行删除操作
+	v, ok := c.Get(config.AuthUserClaims)
+	if !ok {
+		system.Failed("鉴权失败，请重新登录", c)
+		return
+	}
+	uc, _ := v.(*system.UserClaims)
+	if uc.UserID != config.UserIdInitialVal {
+		system.Failed("权限不足，仅超级管理员可删除用户", c)
+		return
+	}
+
 	idStr := c.DefaultQuery("id", "")
 	if idStr == "" {
 		system.Failed("用户ID缺失!!!", c)
 		return
 	}
 	id, _ := strconv.Atoi(idStr)
-	// 不允许删除管理员账号 (或者是当前登录账号，这里先简单按ID排除1)
-	if id == 1 {
-		system.Failed("初始管理员账号不允许删除!!!", c)
+	// 保护：不可删除超级管理员本人
+	if uint(id) == config.UserIdInitialVal {
+		system.Failed("默认超级管理员账号不允许删除!!!", c)
 		return
 	}
 	if err := logic.UL.DeleteUser(uint(id)); err != nil {

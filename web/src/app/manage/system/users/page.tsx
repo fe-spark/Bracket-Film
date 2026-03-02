@@ -34,10 +34,22 @@ export default function UsersPage() {
   const [current, setCurrent] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [searchText, setSearchText] = useState("");
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [form] = Form.useForm();
+
+  const fetchCurrentUser = React.useCallback(async () => {
+    try {
+      const resp = await ApiGet("/manage/user/info");
+      if (resp.code === 0) {
+        setCurrentUser(resp.data);
+      }
+    } catch (error) {
+      console.error("Fetch current user info error:", error);
+    }
+  }, []);
 
   const fetchData = React.useCallback(async (page = current, size = pageSize, name = searchText) => {
     setLoading(true);
@@ -59,8 +71,9 @@ export default function UsersPage() {
   }, [current, pageSize, searchText]);
 
   useEffect(() => {
+    fetchCurrentUser();
     fetchData();
-  }, [fetchData]);
+  }, [fetchCurrentUser, fetchData]);
 
   const handleSearch = (value: string) => {
     setSearchText(value);
@@ -165,7 +178,8 @@ export default function UsersPage() {
           >
             编辑
           </Button>
-          {!record.isAdmin && (
+          {/* 权限控制：仅超级管理员本人登录时，显示删除非管理员用户的按钮 */}
+          {currentUser?.isAdmin && !record.isAdmin && (
             <Popconfirm
               title="确定要删除这个用户吗？"
               onConfirm={() => handleDelete(record.id)}

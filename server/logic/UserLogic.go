@@ -110,6 +110,10 @@ func (ul *UserLogic) UpdateUser(u system.User) error {
 		u.Password = util.PasswordEncrypt(u.Password, u.Salt)
 	}
 	system.UpdateUserInfo(u)
+	// 如果用户被禁用（Status == 1），强制清除其登录状态
+	if u.Status == 1 {
+		_ = system.ClearUserToken(u.ID)
+	}
 	return nil
 }
 
@@ -119,5 +123,10 @@ func (ul *UserLogic) DeleteUser(id uint) error {
 	if id == config.UserIdInitialVal {
 		return errors.New("默认超级管理员不可删除")
 	}
-	return system.DeleteUser(id)
+	err := system.DeleteUser(id)
+	if err == nil {
+		// 删除成功后，强制清除该用户的登录状态
+		_ = system.ClearUserToken(id)
+	}
+	return err
 }
