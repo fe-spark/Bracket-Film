@@ -31,18 +31,16 @@ type CategoryPersistent struct {
 
 // 影视分类展示树形结构
 
-// SaveCategoryTree 保存影片分类信息 (MySQL + Redis 10分钟缓存)
+// SaveCategoryTree 保存影片分类信息 (仅 MySQL 持久化)
 func SaveCategoryTree(tree *CategoryTree) error {
 	data, _ := json.Marshal(tree)
 	// 1. 持久化到 MySQL
-	db.Mdb.Save(&CategoryPersistent{Content: string(data)})
-	// 2. 缓存到 Redis (短时间)
-	return db.Rdb.Set(db.Cxt, config.CategoryTreeKey, data, time.Minute*10).Err()
+	return db.Mdb.Save(&CategoryPersistent{Content: string(data)}).Error
 }
 
 // GetCategoryTree 获取影片分类信息
 func GetCategoryTree() CategoryTree {
-	// 1. 优先从 Redis 获取
+	// 1. 优先从 Redis 缓存获取
 	data := db.Rdb.Get(db.Cxt, config.CategoryTreeKey).Val()
 	if data == "" {
 		// 2. Redis 未命中，从 MySQL 获取最新一条

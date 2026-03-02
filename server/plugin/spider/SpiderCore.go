@@ -48,9 +48,6 @@ func (jc *JsonCollect) GetCategoryTree(r util.RequestInfo) (*system.CategoryTree
 	// 组装分类数据信息树形结构
 	tree := conver.GenCategoryTree(cl)
 
-	// 将分类列表信息存储到redis
-	_ = collect.SaveFilmClass(cl)
-
 	return tree, err
 }
 
@@ -101,13 +98,6 @@ func (jc *JsonCollect) GetFilmDetail(r util.RequestInfo) (list []system.MovieDet
 		return
 	}
 
-	// 将影视原始详情信息保存到redis中
-	// 获取主站点uri
-	//mc := system.GetCollectSourceListByGrade(system.MasterCollect)[0]
-	//if mc.Uri == r.Uri {
-	//	collect.BatchSaveOriginalDetail(detailPage.List)
-	//}
-
 	// 处理details信息
 	list = conver.ConvertFilmDetails(detailPage.List)
 	return
@@ -140,7 +130,7 @@ func (jc *JsonCollect) FailureRecord(r util.RequestInfo) {
 
 	// 2. 采集参数, h 最新x小时影片, pg 页码
 
-	// 3. 将失败信息记录到redis ZSet集合中, score - time | member - data
+	// 3. 将失败信息记录到持久化存储中
 
 }
 

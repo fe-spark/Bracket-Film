@@ -1,10 +1,7 @@
 package collect
 
 import (
-	"encoding/json"
 	"encoding/xml"
-	"server/config"
-	"server/plugin/db"
 )
 
 /*
@@ -90,20 +87,4 @@ type ClassX struct {
 	XMLName xml.Name `xml:"ty"`
 	ID      int64    `xml:"id,attr"`
 	Value   string   `xml:",chardata"`
-}
-
-//-------------------------------------------------redis Func-------------------------------------------------
-
-// SaveFilmClass 保存影片分类列表信息
-func SaveFilmClass(list []FilmClass) error {
-	data, _ := json.Marshal(list)
-	return db.Rdb.Set(db.Cxt, config.FilmClassKey, data, config.ResourceExpired).Err()
-}
-
-// GetFilmClass  获取分类列表信息
-func GetFilmClass() []FilmClass {
-	var l []FilmClass
-	data := db.Rdb.Get(db.Cxt, config.FilmClassKey).Val()
-	_ = json.Unmarshal([]byte(data), &l)
-	return l
 }

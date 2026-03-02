@@ -159,7 +159,7 @@ func CollectCategory(s *system.FilmSource) {
 		log.Println("GetCategoryTree Error: ", err)
 		return
 	}
-	// 保存 tree 到redis
+	// 保存 tree 到 MySQL (及可选缓存)
 	err = system.SaveCategoryTree(categoryTree)
 	if err != nil {
 		log.Println("SaveCategoryTree Error: ", err)
@@ -195,7 +195,7 @@ func collectFilm(ctx context.Context, s *system.FilmSource, h, pg int) {
 	// 通过采集站 Grade 类型, 执行不同的存储逻辑
 	switch s.Grade {
 	case system.MasterCollect:
-		// 主站点 	保存完整影片详情信息到 redis
+		// 主站点 	保存完成影片详情信息到 MySQL (可选 Redis 预热)
 		if err = system.SaveDetails(list); err != nil {
 			log.Println("SaveDetails Error: ", err)
 		}
@@ -206,7 +206,7 @@ func collectFilm(ctx context.Context, s *system.FilmSource, h, pg int) {
 			}
 		}
 	case system.SlaveCollect:
-		// 附属站点	仅保存影片播放信息到redis
+		// 附属站点	仅保存影片播放信息到 MySQL 持久化
 		if err = system.SaveSitePlayList(s.Id, list); err != nil {
 			log.Println("SaveDetails Error: ", err)
 		}
@@ -230,7 +230,7 @@ func collectFilmById(ids string, s *system.FilmSource) {
 	// 通过采集站 Grade 类型, 执行不同的存储逻辑
 	switch s.Grade {
 	case system.MasterCollect:
-		// 主站点 	保存完整影片详情信息到 redis 和 mysql 中
+		// 主站点 	保存完整影片详情信息到 MySQL (可选 Redis 预热)
 		if err = system.SaveDetail(list[0]); err != nil {
 			log.Println("SaveDetails Error: ", err)
 		}
@@ -241,7 +241,7 @@ func collectFilmById(ids string, s *system.FilmSource) {
 			}
 		}
 	case system.SlaveCollect:
-		// 附属站点	仅保存影片播放信息到redis
+		// 附属站点	仅保存影片播放信息到 MySQL 持久化
 		if err = system.SaveSitePlayList(s.Id, list); err != nil {
 			log.Println("SaveDetails Error: ", err)
 		}

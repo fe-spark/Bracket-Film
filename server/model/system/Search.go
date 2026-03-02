@@ -54,13 +54,6 @@ func (s *SearchInfo) TableName() string {
 	return config.SearchTableName
 }
 
-// ================================= Spider 数据处理(redis) =================================
-
-// RdbSaveSearchInfo 批量保存检索信息到redis
-func RdbSaveSearchInfo(list []SearchInfo) {
-	// 已经废弃：现在直接存入 MySQL
-}
-
 // FilmZero 删除所有库存数据 (包含 MySQL 持久化表)
 func FilmZero() {
 	// 1. 清理 Redis (基础缓存)
@@ -78,24 +71,10 @@ func FilmZero() {
 	db.Mdb.Exec("TRUNCATE table virtual_picture_queues")
 }
 
-// ResetSearchTable 重置Search表
-func ResetSearchTable() {
-	// 删除 Search 表
-	var s SearchInfo
-	db.Mdb.Exec(fmt.Sprintf("drop table if exists %s", s.TableName()))
-	// 重新创建 Search 表
-	CreateSearchTable()
-}
-
-// DelMtPlay 清空附加播放源信息
-func DelMtPlay(keys []string) {
-	db.Rdb.Del(db.Cxt, keys...)
-}
-
 /*
 SearchKeyword 设置search关键字集合(影片分类检索类型数据)
 	类型, 剧情 , 地区, 语言, 年份, 首字母, 排序
-	1. 在影片详情缓存到redis时将影片的相关数据进行记录, 存在相同类型则分值加一
+	1. 在影片详情保存到 MySQL 并可选缓存到 Redis 时将影片相关数据进行记录
 	2. 通过分值对类型进行排序类型展示到页面
 */
 
@@ -106,7 +85,7 @@ func SaveSearchTag(search SearchInfo) {
 	// Redis中的记录形式 Search:SearchKeys:Pid1:Title Hash
 	// Redis中的记录形式 Search:SearchKeys:Pid1:xxx Hash
 
-	// 获取redis中的searchMap
+	// 获取检索分类的元数据 Map
 	key := fmt.Sprintf(config.SearchTitle, search.Pid)
 	searchMap := db.Rdb.HGetAll(db.Cxt, key).Val()
 	// 是否存在对应分类的map, 如果不存在则缓存一份
@@ -167,8 +146,6 @@ func SaveSearchTag(search SearchInfo) {
 			HandleSearchTags(search.Area, tagKey)
 		case "Language":
 			HandleSearchTags(search.Language, tagKey)
-		default:
-			break
 		}
 	}
 
@@ -181,7 +158,7 @@ func HandleSearchTags(preTags string, k string) {
 		for _, t := range strings.Split(preTags, sep) {
 			// 获取 tag对应的score
 			score := db.Rdb.ZScore(db.Cxt, k, fmt.Sprintf("%v:%v", t, t)).Val()
-			// 在原score的基础上+1 重新存入redis中
+			// 在原 score 的基础上 +1 重新存入
 			db.Rdb.ZAdd(db.Cxt, k, redis.Z{Score: score + 1, Member: fmt.Sprintf("%v:%v", t, t)})
 		}
 	}
@@ -260,8 +237,6 @@ func BatchSave(list []SearchInfo) {
 		// 插入失败则回滚事务, 重新进行插入
 		tx.Rollback()
 	}
-	// 保存成功后将相应tag数据缓存到redis中
-	BatchHandleSearchTag(list...)
 	tx.Commit()
 }
 
@@ -285,8 +260,6 @@ func BatchSaveOrUpdate(list []SearchInfo) {
 			if err := tx.Create(&info).Error; err != nil {
 				tx.Rollback()
 			}
-			// 插入成功后保存一份tag信息到redis中
-			BatchHandleSearchTag(info)
 		}
 	}
 	// 提交事务
@@ -304,8 +277,6 @@ func SaveSearchInfo(s SearchInfo) error {
 			tx.Rollback()
 			return err
 		}
-		// 执行添加操作时保存一份tag信息
-		BatchHandleSearchTag(s)
 	} else {
 		// 如果已经存在当前记录则将当前记录进行更新
 		err := tx.Model(&SearchInfo{}).Where("mid", s.Mid).Updates(SearchInfo{UpdateStamp: s.UpdateStamp, Hits: s.Hits, State: s.State,
@@ -334,14 +305,6 @@ func TunCateSearchTable() {
 	if err != nil {
 		log.Println("TRUNCATE TABLE Error: ", err)
 	}
-}
-
-// SyncSearchInfo 同步影片检索信息 (已废弃，现在直接直存)
-func SyncSearchInfo(model int) {
-}
-
-// SearchInfoToMdb 扫描redis中的检索信息 (已废弃)
-func SearchInfoToMdb(model int) {
 }
 
 // ================================= API 数据接口信息处理 =================================

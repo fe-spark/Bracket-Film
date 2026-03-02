@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -132,7 +131,7 @@ func CreateMoviePlaylistTable() {
 	}
 }
 
-// ===================================Redis数据交互========================================================
+// =================================== 数据持久化与缓存交互 ========================================================
 
 // SaveDetails 保存影片详情信息 (优先 MySQL，可选 Redis 预热)
 func SaveDetails(list []MovieDetail) (err error) {
@@ -144,13 +143,6 @@ func SaveDetails(list []MovieDetail) (err error) {
 	for _, v := range list {
 		data, _ := json.Marshal(v)
 		details = append(details, MovieDetailInfo{Mid: v.Id, Cid: v.Cid, Content: string(data)})
-
-		// 3. (可选) 到 Redis 预热缓存，设置短 TTL
-		// 即使 Redis 写入失败，也不影响爬虫主流程存储到 MySQL
-		_ = db.Rdb.Set(db.Cxt, fmt.Sprintf(config.MovieDetailKey, v.Cid, v.Id), data, config.FilmExpired).Err()
-
-		// 4. 更新 Search Tags (用于前端筛选)
-		SaveSearchTag(ConvertSearchInfo(v))
 	}
 
 	if len(details) > 0 {
@@ -177,11 +169,6 @@ func SaveDetail(detail MovieDetail) (err error) {
 		Columns:   []clause.Column{{Name: "mid"}},
 		DoUpdates: clause.AssignmentColumns([]string{"cid", "content", "updated_at"}),
 	}).Create(&MovieDetailInfo{Mid: detail.Id, Cid: detail.Cid, Content: string(data)}).Error
-
-	// 3. (可选) Redis 预热缓存
-	_ = db.Rdb.Set(db.Cxt, fmt.Sprintf(config.MovieDetailKey, detail.Cid, detail.Id), data, config.FilmExpired).Err()
-	// 更新 Search Tags
-	SaveSearchTag(searchInfo)
 
 	return err
 }
@@ -304,7 +291,7 @@ func ConvertSearchInfo(detail MovieDetail) SearchInfo {
 
 // GetBasicInfoByKey 获取Id对应的影片基本信息
 func GetBasicInfoByKey(key string) MovieBasicInfo {
-	// 1. 优先从 Redis 获取
+	// 1. 优先从 Redis 缓存获取
 	data := []byte(db.Rdb.Get(db.Cxt, key).Val())
 	basic := MovieBasicInfo{}
 
@@ -339,7 +326,7 @@ func GetBasicInfoByKey(key string) MovieBasicInfo {
 
 // GetDetailByKey 获取影片对应的详情信息
 func GetDetailByKey(key string) MovieDetail {
-	// 1. 优先从 Redis 获取
+	// 1. 优先从 Redis 缓存获取
 	data := []byte(db.Rdb.Get(db.Cxt, key).Val())
 	detail := MovieDetail{}
 
@@ -399,28 +386,4 @@ func GenerateHashKey[K string | ~int | int64](key K) string {
 		return ""
 	}
 	return fmt.Sprint(h.Sum32())
-}
-
-// ============================采集方案.v1 遗留==================================================
-
-// SaveMoves  保存影片分页请求list
-func SaveMoves(list []Movie) (err error) {
-	// 整合数据
-	for _, m := range list {
-		//score, _ := time.ParseInLocation(time.DateTime, m.Time, time.Local)
-		movie, _ := json.Marshal(m)
-		// 以Cid为目录为集合进行存储, 便于后续搜索, 以影片id为分值进行存储 例 MovieList:Cid%d
-		err = db.Rdb.ZAdd(db.Cxt, fmt.Sprintf(config.MovieListInfoKey, m.Cid), redis.Z{Score: float64(m.Id), Member: movie}).Err()
-	}
-	return err
-}
-
-// AllMovieInfoKey 获取redis中所有的影视列表信息key MovieList:Cid
-func AllMovieInfoKey() []string {
-	return db.Rdb.Keys(db.Cxt, fmt.Sprint("MovieList:Cid*")).Val()
-}
-
-// GetMovieListByKey 获取指定分类的影片列表数据
-func GetMovieListByKey(key string) []string {
-	return db.Rdb.ZRange(db.Cxt, key, 0, -1).Val()
 }

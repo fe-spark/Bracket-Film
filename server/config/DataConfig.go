@@ -32,8 +32,6 @@ const (
 	// CategoryTreeKey 分类树 key
 	CategoryTreeKey = "CategoryTree"
 	FilmExpired     = time.Hour * 2
-	// MovieListInfoKey movies分类列表 key
-	MovieListInfoKey = "MovieList:Cid%d"
 
 	// MovieDetailKey movie detail影视详情信息 可以
 	MovieDetailKey = "MovieDetail:Cid%d:Id%d"
@@ -42,9 +40,6 @@ const (
 
 	// MultipleSiteDetail 多站点影片信息存储key
 	MultipleSiteDetail = "MultipleSource:%s"
-
-	// SearchInfoTemp redis暂存检索数据信息
-	SearchInfoTemp = "Search:SearchInfoTemp"
 
 	// SearchTitle 影片分类标题key
 	SearchTitle = "Search:Pid%d:Title"
