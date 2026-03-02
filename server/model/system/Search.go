@@ -54,12 +54,23 @@ func (s *SearchInfo) TableName() string {
 	return config.SearchTableName
 }
 
-// FilmZero 删除所有库存数据 (包含 MySQL 持久化表)
-func FilmZero() {
-	// 1. 清理 Redis (基础缓存)
+// RedisOnlyFlush 仅清空 Redis 缓存 (不影响 MySQL 持久化数据)
+func RedisOnlyFlush() {
+	// 1. 清理基础缓存
 	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "MovieBasicInfo:*").Val()...)
 	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "MovieDetail:*").Val()...)
 	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "Search:Pid*").Val()...)
+	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "MultipleSource:*").Val()...)
+
+	// 2. 清理分类树与临时队列
+	db.Rdb.Del(db.Cxt, config.CategoryTreeKey)
+	db.Rdb.Del(db.Cxt, config.VirtualPictureKey)
+}
+
+// FilmZero 删除所有库存数据 (包含 MySQL 持久化表)
+func FilmZero() {
+	// 1. 清理 Redis (基础缓存)
+	RedisOnlyFlush()
 
 	// 2. 清理 MySQL (详情表与检索表)
 	db.Mdb.Exec("TRUNCATE table movie_details")

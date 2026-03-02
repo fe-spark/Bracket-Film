@@ -325,6 +325,11 @@ func ClearSpider() {
 	system.FilmZero()
 }
 
+// ClearRedisOnly 仅清空 Redis 缓存
+func ClearRedisOnly() {
+	system.RedisOnlyFlush()
+}
+
 // StarZero 清空站点内所有影片信息并从零开始采集
 func StarZero(h int) {
 	// 1. 清除影视信息
