@@ -3,14 +3,18 @@ package system
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/redis/go-redis/v9"
 	"hash/fnv"
+	"log"
 	"regexp"
 	"server/config"
 	"server/plugin/db"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Movie 影片基本信息
@@ -89,103 +93,135 @@ type MovieDetail struct {
 	MovieDescriptor `json:"descriptor"` //影片描述信息
 }
 
+// MoviePlaySource 多站播放源信息
+type MoviePlaySource struct {
+	SiteName string         `json:"siteName"` // 站点名称
+	PlayList []MovieUrlInfo `json:"playList"` // 播放列表
+}
+
+// MovieDetailInfo 影片详情持久化模型 (MySQL)
+type MovieDetailInfo struct {
+	gorm.Model
+	Mid     int64  `gorm:"uniqueIndex"`
+	Cid     int64  `gorm:"index"`
+	Content string `gorm:"type:longtext"` // 存储序列化后的完整 MovieDetail JSON
+}
+
+// CreateMovieDetailTable 创建影视详情表
+func CreateMovieDetailTable() {
+	if !db.Mdb.Migrator().HasTable(&MovieDetailInfo{}) {
+		err := db.Mdb.AutoMigrate(&MovieDetailInfo{})
+		if err != nil {
+			log.Println("Create Table MovieDetailInfo Failed: ", err)
+		}
+	}
+}
+
+// MoviePlaylist 多源播放列表持久化模型 (MySQL)
+type MoviePlaylist struct {
+	gorm.Model
+	SourceId string `gorm:"index"`
+	MovieKey string `gorm:"index"` // hash(name) or hash(dbid)
+	Content  string `gorm:"type:text"`
+}
+
+// CreateMoviePlaylistTable 创建多源播放列表表
+func CreateMoviePlaylistTable() {
+	if !db.Mdb.Migrator().HasTable(&MoviePlaylist{}) {
+		_ = db.Mdb.AutoMigrate(&MoviePlaylist{})
+	}
+}
+
 // ===================================Redis数据交互========================================================
 
-// SaveDetails 保存影片详情信息到redis中 格式: MovieDetail:Cid?:Id?
+// SaveDetails 保存影片详情信息 (优先 MySQL，可选 Redis 预热)
 func SaveDetails(list []MovieDetail) (err error) {
-	// 遍历list中的信息
-	for _, detail := range list {
-		// 序列化影片详情信息
-		data, _ := json.Marshal(detail)
-		// 1. 原使用Zset存储, 但是不便于单个检索 db.Rdb.ZAdd(db.Cxt, fmt.Sprintf("%s:Cid%d", config.MovieDetailKey, detail.Cid), redis.Z{Score: float64(detail.Id), Member: member}).Err()
-		// 改为普通 k v 存储, k-> id关键字, v json序列化的结果
-		err = db.Rdb.Set(db.Cxt, fmt.Sprintf(config.MovieDetailKey, detail.Cid, detail.Id), data, config.FilmExpired).Err()
-		// 2. 同步保存简略信息到redis中
-		SaveMovieBasicInfo(detail)
-		// 3. 保存 Search tag redis中
-		if err == nil {
-			// 转换 detail信息
-			searchInfo := ConvertSearchInfo(detail)
-			// 只存储用于检索对应影片的关键字信息
-			SaveSearchTag(searchInfo)
-		}
-
-	}
-	// 保存一份search信息到mysql, 批量存储
+	// 1. 批量保存检索信息到 MySQL
 	BatchSaveSearchInfo(list)
+
+	// 2. 批量保存详细信息到 MySQL movie_details 表
+	var details []MovieDetailInfo
+	for _, v := range list {
+		data, _ := json.Marshal(v)
+		details = append(details, MovieDetailInfo{Mid: v.Id, Cid: v.Cid, Content: string(data)})
+
+		// 3. (可选) 到 Redis 预热缓存，设置短 TTL
+		// 即使 Redis 写入失败，也不影响爬虫主流程存储到 MySQL
+		_ = db.Rdb.Set(db.Cxt, fmt.Sprintf(config.MovieDetailKey, v.Cid, v.Id), data, config.FilmExpired).Err()
+
+		// 4. 更新 Search Tags (用于前端筛选)
+		SaveSearchTag(ConvertSearchInfo(v))
+	}
+
+	if len(details) > 0 {
+		err = db.Mdb.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "mid"}},
+			DoUpdates: clause.AssignmentColumns([]string{"cid", "content", "updated_at"}),
+		}).Create(&details).Error
+	}
 	return err
 }
 
-// SaveDetail 保存单部影片信息
+// SaveDetail 保存单部影片信息 (优先 MySQL，可选 Redis 预热)
 func SaveDetail(detail MovieDetail) (err error) {
-	// 序列化影片详情信息
-	data, _ := json.Marshal(detail)
-	// 保存影片信息到Redis
-	err = db.Rdb.Set(db.Cxt, fmt.Sprintf(config.MovieDetailKey, detail.Cid, detail.Id), data, config.FilmExpired).Err()
+	searchInfo := ConvertSearchInfo(detail)
+	// 1. 保存检索信息到 MySQL
+	err = SaveSearchInfo(searchInfo)
 	if err != nil {
 		return err
 	}
-	// 2. 同步保存简略信息到redis中
-	SaveMovieBasicInfo(detail)
-	// 转换 detail信息
-	searchInfo := ConvertSearchInfo(detail)
-	// 3. 保存 Search tag redis中
-	// 只存储用于检索对应影片的关键字信息
+
+	// 2. 保存到 MySQL movie_details 持久化表
+	data, _ := json.Marshal(detail)
+	err = db.Mdb.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "mid"}},
+		DoUpdates: clause.AssignmentColumns([]string{"cid", "content", "updated_at"}),
+	}).Create(&MovieDetailInfo{Mid: detail.Id, Cid: detail.Cid, Content: string(data)}).Error
+
+	// 3. (可选) Redis 预热缓存
+	_ = db.Rdb.Set(db.Cxt, fmt.Sprintf(config.MovieDetailKey, detail.Cid, detail.Id), data, config.FilmExpired).Err()
+	// 更新 Search Tags
 	SaveSearchTag(searchInfo)
-	// 保存影片检索信息到searchTable
-	err = SaveSearchInfo(searchInfo)
+
 	return err
 }
 
-// SaveMovieBasicInfo 摘取影片的详情部分信息转存为影视基本信息
-func SaveMovieBasicInfo(detail MovieDetail) {
-	basicInfo := MovieBasicInfo{
-		Id:       detail.Id,
-		Cid:      detail.Cid,
-		Pid:      detail.Pid,
-		Name:     detail.Name,
-		SubTitle: detail.SubTitle,
-		CName:    detail.CName,
-		State:    detail.State,
-		Picture:  detail.Picture,
-		Actor:    detail.Actor,
-		Director: detail.Director,
-		Blurb:    detail.Blurb,
-		Remarks:  detail.Remarks,
-		Area:     detail.Area,
-		Year:     detail.Year,
-	}
-	data, _ := json.Marshal(basicInfo)
-	_ = db.Rdb.Set(db.Cxt, fmt.Sprintf(config.MovieBasicInfoKey, detail.Cid, detail.Id), data, config.FilmExpired).Err()
-}
-
-// SaveSitePlayList 仅保存播放url列表信息到当前站点
+// SaveSitePlayList 仅保存播放url列表信息到当前站点 (MySQL 持久化)
 func SaveSitePlayList(id string, list []MovieDetail) (err error) {
-	// 如果list 为空则直接返回
 	if len(list) <= 0 {
 		return nil
 	}
-	res := make(map[string]string)
+	var playlists []MoviePlaylist
 	for _, d := range list {
 		if len(d.PlayList) > 0 {
 			data, _ := json.Marshal(d.PlayList[0])
-			// 不保存电影解说类
 			if strings.Contains(d.CName, "解说") {
 				continue
 			}
-			// 如果DbId不为0, 则以dbID作为key进行hash额外存储一次
+			// 保存 DbId key
 			if d.DbId != 0 {
-				res[GenerateHashKey(d.DbId)] = string(data)
+				playlists = append(playlists, MoviePlaylist{
+					SourceId: id,
+					MovieKey: GenerateHashKey(d.DbId),
+					Content:  string(data),
+				})
 			}
-			res[GenerateHashKey(d.Name)] = string(data)
+			// 保存 Name key
+			playlists = append(playlists, MoviePlaylist{
+				SourceId: id,
+				MovieKey: GenerateHashKey(d.Name),
+				Content:  string(data),
+			})
 		}
 	}
-	// 如果结果不为空,则将数据保存到redis中
-	if len(res) > 0 {
-		// 保存形式 key: MultipleSource:siteName Hash[hash(movieName)]list
-		err = db.Rdb.HMSet(db.Cxt, fmt.Sprintf(config.MultipleSiteDetail, id), res).Err()
+	if len(playlists) > 0 {
+		// 使用 Upsert 逻辑
+		db.Mdb.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "source_id"}, {Name: "movie_key"}},
+			DoUpdates: clause.AssignmentColumns([]string{"content", "updated_at"}),
+		}).Create(&playlists)
 	}
-	return
+	return nil
 }
 
 // BatchSaveSearchInfo 批量保存Search信息
@@ -194,8 +230,41 @@ func BatchSaveSearchInfo(list []MovieDetail) {
 	for _, v := range list {
 		infoList = append(infoList, ConvertSearchInfo(v))
 	}
-	// 将检索信息存入redis中做一次转存
-	RdbSaveSearchInfo(infoList)
+	// 直接批量更新或保存到 MySQL
+	BatchSaveOrUpdate(infoList)
+}
+
+// GetMovieDetailByDBID 获取所有站点内 匹配当前影片 ID或名称 的播放列表信息 (从 MySQL 获取)
+func GetMovieDetailByDBID(mid int64, name string) []MoviePlaySource {
+	var mps []MoviePlaySource
+	// 1. 获取所有已启用的附属站点
+	sources := GetCollectSourceList()
+	// 2. 遍历站点，从 MySQL 中查询匹配项
+	for _, s := range sources {
+		if s.Grade == SlaveCollect && s.State {
+			var playlist MoviePlaylist
+			// 优先匹配 DBID，其次匹配名称
+			key := GenerateHashKey(mid)
+			if mid == 0 {
+				key = GenerateHashKey(name)
+			}
+			if err := db.Mdb.Where("source_id = ? AND movie_key = ?", s.Id, key).First(&playlist).Error; err == nil {
+				var ps MoviePlaySource
+				_ = json.Unmarshal([]byte(playlist.Content), &ps)
+				ps.SiteName = s.Name
+				mps = append(mps, ps)
+			} else if mid != 0 {
+				// 如果传了 mid 但没搜到，再尝试搜一次 name
+				if err := db.Mdb.Where("source_id = ? AND movie_key = ?", s.Id, GenerateHashKey(name)).First(&playlist).Error; err == nil {
+					var ps MoviePlaySource
+					_ = json.Unmarshal([]byte(playlist.Content), &ps)
+					ps.SiteName = s.Name
+					mps = append(mps, ps)
+				}
+			}
+		}
+	}
+	return mps
 }
 
 // ConvertSearchInfo 将detail信息处理成 searchInfo
@@ -226,15 +295,43 @@ func ConvertSearchInfo(detail MovieDetail) SearchInfo {
 		Remarks:     detail.Remarks,
 		// ReleaseDate 部分影片缺失该参数, 所以使用添加时间作为上映时间排序
 		ReleaseStamp: detail.AddTime,
+		Picture:      detail.Picture,
+		Actor:        detail.Actor,
+		Director:     detail.Director,
+		Blurb:        detail.Blurb,
 	}
 }
 
 // GetBasicInfoByKey 获取Id对应的影片基本信息
 func GetBasicInfoByKey(key string) MovieBasicInfo {
-	// 反序列化得到的结果
+	// 1. 优先从 Redis 获取
 	data := []byte(db.Rdb.Get(db.Cxt, key).Val())
 	basic := MovieBasicInfo{}
-	_ = json.Unmarshal(data, &basic)
+
+	if len(data) > 0 {
+		_ = json.Unmarshal(data, &basic)
+	} else {
+		// 2. Redis 未命中，从 MySQL 获取详情并转换
+		var cid, mid int64
+		_, _ = fmt.Sscanf(key, config.MovieBasicInfoKey, &cid, &mid)
+
+		var info MovieDetailInfo
+		if err := db.Mdb.Where("mid = ?", mid).First(&info).Error; err == nil {
+			var detail MovieDetail
+			_ = json.Unmarshal([]byte(info.Content), &detail)
+			// 转换为 BasicInfo
+			basic = MovieBasicInfo{
+				Id: detail.Id, Cid: detail.Cid, Pid: detail.Pid, Name: detail.Name,
+				SubTitle: detail.SubTitle, CName: detail.CName, State: detail.State,
+				Picture: detail.Picture, Actor: detail.Actor, Director: detail.Director,
+				Blurb: detail.Blurb, Remarks: detail.Remarks, Area: detail.Area, Year: detail.Year,
+			}
+			// 3. 回控 Redis 缓存
+			bd, _ := json.Marshal(basic)
+			_ = db.Rdb.Set(db.Cxt, key, bd, config.FilmExpired).Err()
+		}
+	}
+
 	// 执行本地图片匹配
 	ReplaceBasicDetailPic(&basic)
 	return basic
@@ -242,10 +339,25 @@ func GetBasicInfoByKey(key string) MovieBasicInfo {
 
 // GetDetailByKey 获取影片对应的详情信息
 func GetDetailByKey(key string) MovieDetail {
-	// 反序列化得到的结果
+	// 1. 优先从 Redis 获取
 	data := []byte(db.Rdb.Get(db.Cxt, key).Val())
 	detail := MovieDetail{}
-	_ = json.Unmarshal(data, &detail)
+
+	if len(data) > 0 {
+		_ = json.Unmarshal(data, &detail)
+	} else {
+		// 2. Redis 未命中，从 MySQL 获取 (解析 key 中的 id)
+		// key 格式: MovieDetail:Cid%d:Id%d
+		var cid, mid int64
+		_, _ = fmt.Sscanf(key, config.MovieDetailKey, &cid, &mid)
+
+		var info MovieDetailInfo
+		if err := db.Mdb.Where("mid = ?", mid).First(&info).Error; err == nil {
+			_ = json.Unmarshal([]byte(info.Content), &detail)
+			// 3. 回填 Redis 缓存
+			_ = db.Rdb.Set(db.Cxt, key, info.Content, config.FilmExpired).Err()
+		}
+	}
 
 	// 执行本地图片匹配
 	ReplaceDetailPic(&detail)
@@ -256,13 +368,7 @@ func GetDetailByKey(key string) MovieDetail {
 func GetBasicInfoBySearchInfos(infos ...SearchInfo) []MovieBasicInfo {
 	var list []MovieBasicInfo
 	for _, s := range infos {
-		data := []byte(db.Rdb.Get(db.Cxt, fmt.Sprintf(config.MovieBasicInfoKey, s.Cid, s.Mid)).Val())
-		basic := MovieBasicInfo{}
-		_ = json.Unmarshal(data, &basic)
-
-		// 执行本地图片匹配
-		ReplaceBasicDetailPic(&basic)
-		list = append(list, basic)
+		list = append(list, GetBasicInfoByKey(fmt.Sprintf(config.MovieBasicInfoKey, s.Cid, s.Mid)))
 	}
 	return list
 }

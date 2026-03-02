@@ -3,8 +3,6 @@ package system
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/redis/go-redis/v9"
-	"gorm.io/gorm"
 	"log"
 	"math"
 	"reflect"
@@ -15,6 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 // SearchInfo 存储用于检索的信息
@@ -37,6 +38,10 @@ type SearchInfo struct {
 	State        string  `json:"state"`        //状态 正片|预告
 	Remarks      string  `json:"remarks"`      // 完结 | 更新至x集
 	ReleaseStamp int64   `json:"releaseStamp"` //上映时间 时间戳
+	Picture      string  `json:"picture"`      // 简介图片
+	Actor        string  `json:"actor"`        // 主演
+	Director     string  `json:"director"`     // 导演
+	Blurb        string  `json:"blurb"`        // 简介, 不完整
 }
 
 // Tag 影片分类标签结构体
@@ -53,32 +58,24 @@ func (s *SearchInfo) TableName() string {
 
 // RdbSaveSearchInfo 批量保存检索信息到redis
 func RdbSaveSearchInfo(list []SearchInfo) {
-	// 1.整合一下zset数据集
-	var members []redis.Z
-	for _, s := range list {
-		member, _ := json.Marshal(s)
-		members = append(members, redis.Z{Score: float64(s.Mid), Member: member})
-	}
-	// 2.批量保存到zset集合中
-	db.Rdb.ZAdd(db.Cxt, config.SearchInfoTemp, members...)
+	// 已经废弃：现在直接存入 MySQL
 }
 
-// FilmZero 删除所有库存数据
+// FilmZero 删除所有库存数据 (包含 MySQL 持久化表)
 func FilmZero() {
-	// 删除redis中当前库存储的所有数据
-	//db.Rdb.FlushDB(db.Cxt)
-	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "MovieBasicInfoKey*").Val()...)
-	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "MovieDetail*").Val()...)
-	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "MultipleSource*").Val()...)
-	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "OriginalResource*").Val()...)
-	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "Search*").Val()...)
-	// 删除mysql中留存的检索表
+	// 1. 清理 Redis (基础缓存)
+	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "MovieBasicInfo:*").Val()...)
+	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "MovieDetail:*").Val()...)
+	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "Search:Pid*").Val()...)
+
+	// 2. 清理 MySQL (详情表与检索表)
+	db.Mdb.Exec("TRUNCATE table movie_details")
 	var s SearchInfo
-	//db.Mdb.Exec(fmt.Sprintf(`drop table if exists %s`, s.TableName()))
-	// 截断数据表 truncate table users
-	if ExistSearchTable() {
-		db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", s.TableName()))
-	}
+	db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", s.TableName()))
+	// 3. 清理新引入的持久化表
+	db.Mdb.Exec("TRUNCATE table movie_playlists")
+	db.Mdb.Exec("TRUNCATE table category_persistents")
+	db.Mdb.Exec("TRUNCATE table virtual_picture_queues")
 }
 
 // ResetSearchTable 重置Search表
@@ -157,10 +154,10 @@ func SaveSearchTag(search SearchInfo) {
 		case "Sort":
 			if tagCount == 0 {
 				tags := []redis.Z{
-					{3, "时间排序:update_stamp"},
-					{2, "人气排序:hits"},
-					{1, "评分排序:score"},
-					{0, "最新上映:release_stamp"},
+					{Score: 3, Member: "时间排序:update_stamp"},
+					{Score: 2, Member: "人气排序:hits"},
+					{Score: 1, Member: "评分排序:score"},
+					{Score: 0, Member: "最新上映:release_stamp"},
 				}
 				db.Rdb.ZAdd(db.Cxt, fmt.Sprintf(config.SearchTag, search.Pid, k), tags...)
 			}
@@ -339,99 +336,99 @@ func TunCateSearchTable() {
 	}
 }
 
-// SyncSearchInfo 同步影片检索信息
+// SyncSearchInfo 同步影片检索信息 (已废弃，现在直接直存)
 func SyncSearchInfo(model int) {
-	switch model {
-	case 0:
-		// 重置Search表, (恢复为初始状态, 未添加索引)
-		ResetSearchTable()
-		// 批量添加 SearchInfo
-		SearchInfoToMdb(model)
-		// 保存完所有 SearchInfo 后添加字段索引
-		AddSearchIndex()
-	case 1:
-		// 批量更新或添加
-		SearchInfoToMdb(model)
-	}
 }
 
-// SearchInfoToMdb 扫描redis中的检索信息, 并批量存入mysql (model 执行模式 0-清空并保存 || 1-更新)
+// SearchInfoToMdb 扫描redis中的检索信息 (已废弃)
 func SearchInfoToMdb(model int) {
-	// 获取集合中的元素数量, 如果集合中没有元素则直接返回
-	count := db.Rdb.ZCard(db.Cxt, config.SearchInfoTemp).Val()
-	if count <= 0 {
-		return
-	}
-	// 1.从redis中批量扫描详情信息
-	list := db.Rdb.ZPopMax(db.Cxt, config.SearchInfoTemp, config.MaxScanCount).Val()
-	// 如果扫描到的信息为空则直接退出
-	if len(list) <= 0 {
-		return
-	}
-	// 2. 处理数据
-	var sl []SearchInfo
-	for _, s := range list {
-		// 解析详情数据
-		info := SearchInfo{}
-		_ = json.Unmarshal([]byte(s.Member.(string)), &info)
-		sl = append(sl, info)
-	}
-	// 通过model执行对应的保存方法
-	switch model {
-	case 0:
-		// 批量添加 SearchInfo
-		BatchSave(sl)
-	case 1:
-		// 批量更新或添加
-		BatchSaveOrUpdate(sl)
-	}
-	//  如果 SearchInfoTemp 依然存在数据, 则递归执行
-	SearchInfoToMdb(model)
 }
 
 // ================================= API 数据接口信息处理 =================================
 
 // GetMovieListByPid  通过Pid 分类ID 获取对应影片的数据信息
 func GetMovieListByPid(pid int64, page *Page) []MovieBasicInfo {
-	// 返回分页参数
+	// 1. 优先尝试从 Redis 获取缓存列表
+	cacheKey := fmt.Sprintf("Cache:List:Pid%d:Pg%d:Sz%d", pid, page.Current, page.PageSize)
+	cacheData := db.Rdb.Get(db.Cxt, cacheKey).Val()
+	if cacheData != "" {
+		var list []MovieBasicInfo
+		if err := json.Unmarshal([]byte(cacheData), &list); err == nil {
+			return list
+		}
+	}
+
+	// 2. Redis 未命中，查询 MySQL
 	var count int64
 	db.Mdb.Model(&SearchInfo{}).Where("pid", pid).Count(&count)
 	page.Total = int(count)
 	page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
-	// 进行具体的信息查询
+
 	var s []SearchInfo
 	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("pid", pid).Order("update_stamp DESC").Find(&s).Error; err != nil {
 		log.Println(err)
 		return nil
 	}
-	// 通过影片ID去redis中获取id对应数据信息
+
 	var list []MovieBasicInfo
 	for _, v := range s {
-		// 通过key搜索指定的影片信息 , MovieDetail:Cid6:Id15441
-		list = append(list, GetBasicInfoByKey(fmt.Sprintf(config.MovieBasicInfoKey, v.Cid, v.Mid)))
+		list = append(list, MovieBasicInfo{
+			Id: v.Mid, Cid: v.Cid, Pid: v.Pid, Name: v.Name, SubTitle: v.SubTitle,
+			CName: v.CName, State: v.State, Picture: v.Picture, Actor: v.Actor,
+			Director: v.Director, Blurb: v.Blurb, Remarks: v.Remarks,
+			Area: v.Area, Year: fmt.Sprint(v.Year),
+		})
 	}
+
+	// 3. 将结果回填 Redis 缓存 (短效)
+	if len(list) > 0 {
+		data, _ := json.Marshal(list)
+		_ = db.Rdb.Set(db.Cxt, cacheKey, data, time.Minute*30).Err() // 列表页缓存 30 分钟即可
+	}
+
 	return list
 }
 
-// GetMovieListByCid 通过Cid查找对应的影片分页数据, 不适合GetMovieListByPid 糅合
+// GetMovieListByCid 通过Cid查找对应的影片分页数据
 func GetMovieListByCid(cid int64, page *Page) []MovieBasicInfo {
-	// 返回分页参数
+	// 1. 优先尝试从 Redis 获取缓存列表
+	cacheKey := fmt.Sprintf("Cache:List:Cid%d:Pg%d:Sz%d", cid, page.Current, page.PageSize)
+	cacheData := db.Rdb.Get(db.Cxt, cacheKey).Val()
+	if cacheData != "" {
+		var list []MovieBasicInfo
+		if err := json.Unmarshal([]byte(cacheData), &list); err == nil {
+			return list
+		}
+	}
+
+	// 2. Redis 未命中，查询 MySQL
 	var count int64
 	db.Mdb.Model(&SearchInfo{}).Where("cid", cid).Count(&count)
 	page.Total = int(count)
 	page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
-	// 进行具体的信息查询
+
 	var s []SearchInfo
 	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("cid", cid).Order("update_stamp DESC").Find(&s).Error; err != nil {
 		log.Println(err)
 		return nil
 	}
-	// 通过影片ID去redis中获取id对应数据信息
+
 	var list []MovieBasicInfo
 	for _, v := range s {
-		// 通过key搜索指定的影片信息 , MovieDetail:Cid6:Id15441
-		list = append(list, GetBasicInfoByKey(fmt.Sprintf(config.MovieBasicInfoKey, v.Cid, v.Mid)))
+		list = append(list, MovieBasicInfo{
+			Id: v.Mid, Cid: v.Cid, Pid: v.Pid, Name: v.Name, SubTitle: v.SubTitle,
+			CName: v.CName, State: v.State, Picture: v.Picture, Actor: v.Actor,
+			Director: v.Director, Blurb: v.Blurb, Remarks: v.Remarks,
+			Area: v.Area, Year: fmt.Sprint(v.Year),
+		})
 	}
+
+	// 3. 将结果回填 Redis 缓存 (短效)
+	if len(list) > 0 {
+		data, _ := json.Marshal(list)
+		_ = db.Rdb.Set(db.Cxt, cacheKey, data, time.Minute*30).Err()
+	}
+
 	return list
 }
 
@@ -473,15 +470,33 @@ func GetHotMovieByCid(cid int64, page *Page) []SearchInfo {
 
 // SearchFilmKeyword 通过关键字搜索库存中满足条件的影片名
 func SearchFilmKeyword(keyword string, page *Page) []SearchInfo {
+	// 1. 优先尝试从 Redis 获取缓存
+	cacheKey := fmt.Sprintf("Cache:Search:%s:Pg%d:Sz%d", keyword, page.Current, page.PageSize)
+	cacheData := db.Rdb.Get(db.Cxt, cacheKey).Val()
+	if cacheData != "" {
+		var list []SearchInfo
+		if err := json.Unmarshal([]byte(cacheData), &list); err == nil {
+			return list
+		}
+	}
+
 	var searchList []SearchInfo
-	// 1. 先统计搜索满足条件的数据量
+	// 2. 先统计搜索满足条件的数据量
 	var count int64
 	db.Mdb.Model(&SearchInfo{}).Where("name LIKE ?", fmt.Sprint(`%`, keyword, `%`)).Or("sub_title LIKE ?", fmt.Sprint(`%`, keyword, `%`)).Count(&count)
 	page.Total = int(count)
 	page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
-	// 2. 获取满足条件的数据
+
+	// 3. 获取满足条件的数据
 	db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).
 		Where("name LIKE ?", fmt.Sprintf(`%%%s%%`, keyword)).Or("sub_title LIKE ?", fmt.Sprintf(`%%%s%%`, keyword)).Order("year DESC, update_stamp DESC").Find(&searchList)
+
+	// 4. 将结果回填 Redis 缓存 (短效)
+	if len(searchList) > 0 {
+		data, _ := json.Marshal(searchList)
+		_ = db.Rdb.Set(db.Cxt, cacheKey, data, time.Minute*10).Err() // 搜索缓存建议时间更短
+	}
+
 	return searchList
 }
 
@@ -549,11 +564,26 @@ func GetRelateMovieBasicInfo(search SearchInfo, page *Page) []MovieBasicInfo {
 	return basicList
 }
 
-// GetMultiplePlay 通过影片名hash值匹配播放源
+// GetMultiplePlay 通过影片名hash值匹配播放源 (MySQL 优先)
 func GetMultiplePlay(siteId, key string) []MovieUrlInfo {
-	data := db.Rdb.HGet(db.Cxt, fmt.Sprintf(config.MultipleSiteDetail, siteId), key).Val()
+	// 1. 优先从 Redis 获取 (可选)
+	cacheKey := fmt.Sprintf("Cache:Play:%s:%s", siteId, key)
+	cacheData := db.Rdb.Get(db.Cxt, cacheKey).Val()
+	if cacheData != "" {
+		var playList []MovieUrlInfo
+		if err := json.Unmarshal([]byte(cacheData), &playList); err == nil {
+			return playList
+		}
+	}
+
+	// 2. Redis 未命中，查询 MySQL
+	var playlist MoviePlaylist
 	var playList []MovieUrlInfo
-	_ = json.Unmarshal([]byte(data), &playList)
+	if err := db.Mdb.Where("source_id = ? AND movie_key = ?", siteId, key).First(&playlist).Error; err == nil {
+		_ = json.Unmarshal([]byte(playlist.Content), &playList)
+		// 3. 回填缓存
+		_ = db.Rdb.Set(db.Cxt, cacheKey, playlist.Content, time.Minute*30).Err()
+	}
 	return playList
 }
 

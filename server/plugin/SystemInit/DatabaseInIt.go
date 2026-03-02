@@ -14,4 +14,12 @@ func TableInIt() {
 	system.CreateFileTable()
 	// 创建采集失效记录表
 	system.CreateFailureRecordTable()
+	// 创建影片详情持久化表
+	system.CreateMovieDetailTable()
+	// 创建分类持久化表
+	system.CreateCategoryTable()
+	// 创建多源播放列表表
+	system.CreateMoviePlaylistTable()
+	// 创建待同步图片队列表
+	system.CreateVirtualPictureTable()
 }

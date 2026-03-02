@@ -135,14 +135,6 @@ func HandleCollect(id string, h int) error {
 		}
 		// 视频数据采集完成后同步相关信息到mysql
 		if s.Grade == system.MasterCollect {
-			// 执行影片信息更新操作
-			if h > 0 {
-				// 执行数据更新操作
-				system.SyncSearchInfo(1)
-			} else {
-				// 清空searchInfo中的数据并重新添加, 否则执行
-				system.SyncSearchInfo(0)
-			}
 			// 开启图片同步
 			if s.SyncPictures {
 				system.SyncFilmPicture()

@@ -27,12 +27,11 @@ const (
 	FilmPictureAccess    = "/api/upload/pic/poster/"
 )
 
-
 // -------------------------redis key-----------------------------------
 const (
 	// CategoryTreeKey 分类树 key
 	CategoryTreeKey = "CategoryTree"
-	FilmExpired     = time.Hour * 24 * 365 * 10
+	FilmExpired     = time.Hour * 2
 	// MovieListInfoKey movies分类列表 key
 	MovieListInfoKey = "MovieList:Cid%d"
 
@@ -89,7 +88,6 @@ const (
 	IndexCacheKey = "IndexCache"
 )
 
-
 // -------------------------Database Connection Params-----------------------------------
 const (
 	// SearchTableName 存放检索信息的数据表名
@@ -109,7 +107,6 @@ var (
 	RedisPassword = ""
 	RedisDBNo     = 0
 )
-
 
 func init() {
 	InitConfig()
@@ -164,7 +161,3 @@ func InitConfig() {
 	}
 	fmt.Printf("[Config] 加载 Redis 地址: %s, DB: %d\n", RedisAddr, RedisDBNo)
 }
-
-
-
-
