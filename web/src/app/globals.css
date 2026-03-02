@@ -50,7 +50,7 @@
     --public-page-bg: #f5f7fb;
     --public-surface-1: rgba(255, 255, 255, 0.62);
     --public-surface-2: rgba(255, 255, 255, 0.78);
-    --public-surface-3: rgba(255, 255, 255, 0.5);
+    --public-surface-3: rgba(16, 18, 24, 0.04);
     --public-surface-hover: rgba(255, 255, 255, 0.66);
     --public-border-1: rgba(16, 18, 24, 0.08);
     --public-border-2: rgba(16, 18, 24, 0.12);
@@ -117,7 +117,7 @@ html[data-theme="light"] {
   --public-page-bg: #f5f7fb;
   --public-surface-1: rgba(255, 255, 255, 0.62);
   --public-surface-2: rgba(255, 255, 255, 0.78);
-  --public-surface-3: rgba(255, 255, 255, 0.5);
+  --public-surface-3: rgba(16, 18, 24, 0.04);
   --public-surface-hover: rgba(255, 255, 255, 0.66);
   --public-border-1: rgba(16, 18, 24, 0.08);
   --public-border-2: rgba(16, 18, 24, 0.12);

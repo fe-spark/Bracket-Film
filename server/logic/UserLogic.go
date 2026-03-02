@@ -2,6 +2,7 @@ package logic
 
 import (
 	"errors"
+	"server/config"
 	"server/model/system"
 	"server/plugin/common/util"
 )
@@ -40,7 +41,16 @@ func (ul *UserLogic) GetUserInfo(id uint) system.UserInfoVo {
 	// 通过用户ID查询对应的用户信息
 	u := system.GetUserById(id)
 	// 去除user信息中的不必要信息
-	var vo = system.UserInfoVo{Id: u.ID, UserName: u.UserName, Email: u.Email, Gender: u.Gender, NickName: u.NickName, Avatar: u.Avatar, Status: u.Status}
+	var vo = system.UserInfoVo{
+		Id:       u.ID,
+		UserName: u.UserName,
+		Email:    u.Email,
+		Gender:   u.Gender,
+		NickName: u.NickName,
+		Avatar:   u.Avatar,
+		Status:   u.Status,
+		IsAdmin:  u.ID == config.UserIdInitialVal,
+	}
 	return vo
 }
 
@@ -65,6 +75,7 @@ func (ul *UserLogic) GetUserPage(current, pageSize int, userName string) (int64,
 			NickName: u.NickName,
 			Avatar:   u.Avatar,
 			Status:   u.Status,
+			IsAdmin:  u.ID == config.UserIdInitialVal,
 		})
 	}
 	return total, voList
@@ -84,6 +95,10 @@ func (ul *UserLogic) AddUser(u system.User) error {
 
 // UpdateUser 更新用户
 func (ul *UserLogic) UpdateUser(u system.User) error {
+	// 超级管理员保护：禁止禁用默认用户
+	if u.ID == config.UserIdInitialVal {
+		u.Status = 0 // 强制设为正常状态
+	}
 	// 如果修改了密码，需要重新加密
 	if u.Password != "" {
 		// 先获取原用户信息拿到盐值
@@ -100,5 +115,9 @@ func (ul *UserLogic) UpdateUser(u system.User) error {
 
 // DeleteUser 删除用户
 func (ul *UserLogic) DeleteUser(id uint) error {
+	// 超级管理员保护：禁止删除默认用户
+	if id == config.UserIdInitialVal {
+		return errors.New("默认超级管理员不可删除")
+	}
 	return system.DeleteUser(id)
 }

@@ -108,6 +108,7 @@ type UserInfoVo struct {
 	NickName string `json:"nickName"` // 昵称
 	Avatar   string `json:"avatar"`   // 头像
 	Status   int    `json:"status"`   // 状态
+	IsAdmin  bool   `json:"isAdmin"`  // 是否为超级管理员
 }
 
 // PlayLinkVo 多站点播放链接数据列表

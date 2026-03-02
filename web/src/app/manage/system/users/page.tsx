@@ -129,7 +129,7 @@ export default function UsersPage() {
         <Space>
           <Avatar src={record.avatar === "empty" ? null : record.avatar} icon={<UserOutlined />} />
           <span style={{ fontWeight: 500 }}>{text}</span>
-          {record.id === 1 && <Tag color="gold">超级管理员</Tag>}
+          {record.isAdmin && <Tag color="gold">超级管理员</Tag>}
         </Space>
       ),
     },
@@ -165,7 +165,7 @@ export default function UsersPage() {
           >
             编辑
           </Button>
-          {record.id !== 1 && (
+          {!record.isAdmin && (
             <Popconfirm
               title="确定要删除这个用户吗？"
               onConfirm={() => handleDelete(record.id)}
@@ -269,7 +269,7 @@ export default function UsersPage() {
           </Form.Item>
 
           <Form.Item name="status" label="状态" initialValue={0}>
-            <Select>
+            <Select disabled={editingUser?.isAdmin}>
               <Option value={0}>正常</Option>
               <Option value={1}>禁用</Option>
             </Select>
