@@ -76,8 +76,8 @@ function PlayerContent() {
   // 计算衍生数据，减少冗余逻辑
   const detail = data?.detail;
   const relate = data?.relate;
-  const currentSource = (detail?.list || []).find((s: any) => s.id === currentTabId);
-  const hasNext = currentSource && current && current.index < (currentSource.linkList || []).length - 1;
+  const currentSource = detail?.list?.find((s: any) => s.id === currentTabId);
+  const hasNext = currentSource && current && current.index < (currentSource?.linkList?.length ?? 0) - 1;
 
   // 侧边栏高度同步
   useEffect(() => {
@@ -213,7 +213,7 @@ function PlayerContent() {
           </div>
 
           <div className={styles.sourceTabs} ref={sourceTabsRef}>
-            {(detail?.list || []).map((item: any) => {
+            {detail?.list?.map((item: any) => {
               const isActive = currentTabId === item.id;
               return (
                 <div
@@ -229,7 +229,7 @@ function PlayerContent() {
           </div>
 
           <div className={styles.episodeList} ref={episodeListRef}>
-            {(currentSource?.linkList || []).map((v: any, i: number) => {
+            {currentSource?.linkList?.map((v: any, i: number) => {
               const isActive = current.link === v.link;
               return (
                 <div

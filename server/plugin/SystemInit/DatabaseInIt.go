@@ -24,4 +24,12 @@ func TableInIt() {
 	system.CreateVirtualPictureTable()
 	// 创建采集源信息表
 	system.CreateFilmSourceTable()
+	// 创建影片检索标签持久化表
+	system.CreateSearchTagTable()
+	// 创建定时任务持久化表
+	system.CreateCrontabTable()
+	// 创建网站基础配置表
+	system.CreateSiteConfigTable()
+	// 创建轮播配置表
+	system.CreateBannersTable()
 }

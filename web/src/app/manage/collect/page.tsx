@@ -16,6 +16,7 @@ import {
   InputNumber,
   Radio,
   Tooltip,
+  Alert,
 } from "antd";
 import {
   PlusOutlined,
@@ -26,7 +27,6 @@ import {
   PoweroffOutlined,
   PauseOutlined,
   LoadingOutlined,
-  CheckCircleOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { ApiGet, ApiPost } from "@/lib/api";
@@ -87,7 +87,7 @@ export default function CollectManagePage() {
     try {
       const resp = await ApiGet("/manage/collect/list");
       if (resp.code === 0) {
-        const list = (resp.data || []).map((item: any) => {
+        const list = resp.data?.map((item: any) => {
           let typeText = "视频";
           switch (item.collectType) {
             case 1:
@@ -388,49 +388,75 @@ export default function CollectManagePage() {
       title: "操作",
       key: "action",
       align: "center",
-      width: 150,
+      width: 160,
       fixed: "right",
-      render: (_, record) => (
-        <Space>
-          {activeCollectIds.includes(record.id) ? (
+      render: (_, record) => {
+        const isRunning = activeCollectIds.includes(record.id);
+        return (
+          <Space>
+            {isRunning ? (
+              <Tooltip title="截断并重新开始">
+                <Popconfirm
+                  title="该站点正在采集中"
+                  description="是否截断当前任务并重新开始？"
+                  okText="截断重采"
+                  cancelText="取消"
+                  onConfirm={() => startTask(record)}
+                >
+                  <Button
+                    type="primary"
+                    icon={<PoweroffOutlined />}
+                    shape="circle"
+                    size="small"
+                    style={{ background: "#fa8c16", borderColor: "#fa8c16" }}
+                  />
+                </Popconfirm>
+              </Tooltip>
+            ) : (
+              <Tooltip title="开始采集">
+                <Button
+                  type="primary"
+                  icon={<PoweroffOutlined />}
+                  shape="circle"
+                  size="small"
+                  style={{ background: "#52c41a", borderColor: "#52c41a" }}
+                  onClick={() => startTask(record)}
+                />
+              </Tooltip>
+            )}
+            {isRunning && (
+              <Tooltip title="停止采集">
+                <Button
+                  type="primary"
+                  danger
+                  icon={<PauseOutlined />}
+                  shape="circle"
+                  size="small"
+                  onClick={() => stopTask(record.id)}
+                />
+              </Tooltip>
+            )}
             <Button
               type="primary"
-              danger
-              icon={<PauseOutlined />}
+              icon={<EditOutlined />}
               shape="circle"
               size="small"
-              onClick={() => stopTask(record.id)}
+              onClick={() => openEditDialog(record.id)}
             />
-          ) : (
-            <Button
-              type="primary"
-              icon={<PoweroffOutlined />}
-              shape="circle"
-              size="small"
-              style={{ background: "#52c41a", borderColor: "#52c41a" }}
-              onClick={() => startTask(record)}
-            />
-          )}
-          <Button
-            type="primary"
-            icon={<EditOutlined />}
-            shape="circle"
-            size="small"
-            onClick={() => openEditDialog(record.id)}
-          />
-          <Popconfirm
-            title="确认删除此采集站？"
-            onConfirm={() => delSource(record.id)}
-          >
-            <Button
-              danger
-              icon={<DeleteOutlined />}
-              shape="circle"
-              size="small"
-            />
-          </Popconfirm>
-        </Space>
-      ),
+            <Popconfirm
+              title="确认删除此采集站？"
+              onConfirm={() => delSource(record.id)}
+            >
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                shape="circle"
+                size="small"
+              />
+            </Popconfirm>
+          </Space>
+        );
+      },
     },
   ];
 
@@ -575,16 +601,48 @@ export default function CollectManagePage() {
         onOk={startBatchCollect}
         okText="确认执行"
       >
+        {(() => {
+          const activeInBatch = batchIds.filter((id) =>
+            activeCollectIds.includes(id)
+          );
+          const activeNames = batchOptions
+            .filter((o) => activeInBatch.includes(o.id))
+            .map((o) => o.name);
+          return activeNames.length > 0 ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="以下站点正在采集中，执行后将截断并重新开始"
+              description={activeNames.join("、")}
+            />
+          ) : null;
+        })()}
         <Form layout="vertical">
           <Form.Item label="执行站点">
             <Checkbox.Group
-              options={batchOptions.map((o) => ({
-                label: o.name,
-                value: o.id,
-              }))}
               value={batchIds}
               onChange={(v) => setBatchIds(v as string[])}
-            />
+            >
+              <Space direction="vertical">
+                {batchOptions.map((o) => (
+                  <Checkbox key={o.id} value={o.id}>
+                    <Space size={4}>
+                      {o.name}
+                      {activeCollectIds.includes(o.id) && (
+                        <Tag
+                          color="processing"
+                          icon={<LoadingOutlined />}
+                          style={{ marginLeft: 4 }}
+                        >
+                          采集中
+                        </Tag>
+                      )}
+                    </Space>
+                  </Checkbox>
+                ))}
+              </Space>
+            </Checkbox.Group>
           </Form.Item>
           <Form.Item label="采集时长">
             <Select

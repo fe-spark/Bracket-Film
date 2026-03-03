@@ -89,7 +89,7 @@ export default function FilmListPage() {
           pageSize: pg.pageSize,
         });
         if (resp.code === 0) {
-          const formattedList = (resp.data.list || []).map((item: any) => ({
+          const formattedList = resp.data?.list?.map((item: any) => ({
             ...item,
             year: item.year <= 0 ? "未知" : item.year,
             score: item.score === 0 ? "暂无" : item.score,
@@ -119,7 +119,7 @@ export default function FilmListPage() {
 
   const handleClassChange = (value: number) => {
     setClassId(value);
-    const selectedClass = (options.class || []).find((c: any) => c.id === value);
+    const selectedClass = options.class?.find((c: any) => c.id === value);
     if (!selectedClass) return;
 
     const newParams = { ...params };
@@ -329,7 +329,7 @@ export default function FilmListPage() {
           className={styles.filterItem}
           value={classId || undefined}
           onChange={handleClassChange}
-          options={(options.class || []).map((c: any) => ({
+          options={options.class?.map((c: any) => ({
             label: c.name,
             value: c.id,
           }))}
@@ -340,7 +340,7 @@ export default function FilmListPage() {
           className={styles.filterItem}
           value={params.plot || undefined}
           onChange={(v) => setParams({ ...params, plot: v })}
-          options={(options.Plot || []).map((i: any) => ({
+          options={options.Plot?.map((i: any) => ({
             label: i.Name,
             value: i.Value,
           }))}
@@ -351,7 +351,7 @@ export default function FilmListPage() {
           className={styles.filterItem}
           value={params.area || undefined}
           onChange={(v) => setParams({ ...params, area: v })}
-          options={(options.Area || []).map((i: any) => ({
+          options={options.Area?.map((i: any) => ({
             label: i.Name,
             value: i.Value,
           }))}
@@ -362,7 +362,7 @@ export default function FilmListPage() {
           className={styles.filterItem}
           value={params.language || undefined}
           onChange={(v) => setParams({ ...params, language: v })}
-          options={(options.Language || []).map((i: any) => ({
+          options={options.Language?.map((i: any) => ({
             label: i.Name,
             value: i.Value,
           }))}
@@ -373,7 +373,7 @@ export default function FilmListPage() {
           className={styles.filterItem}
           value={params.year || undefined}
           onChange={(v) => setParams({ ...params, year: v })}
-          options={(options.year || []).map((i: any) => ({
+          options={options.year?.map((i: any) => ({
             label: i.Name,
             value: i.Value,
           }))}
@@ -384,7 +384,7 @@ export default function FilmListPage() {
           className={styles.filterItem}
           value={params.remarks || undefined}
           onChange={(v) => setParams({ ...params, remarks: v })}
-          options={(options.remarks || []).map((i: any) => ({
+          options={options.remarks?.map((i: any) => ({
             label: i.Name,
             value: i.Value,
           }))}
