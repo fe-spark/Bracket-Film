@@ -109,24 +109,18 @@ func ConvertFilmDetail(detail collect.FilmDetail) model.MovieDetail {
 	return md
 }
 
-// GenFilmPlayList 处理影片播放地址数据, 只保留m3u8与mp4格式的链接,生成playList
+// GenFilmPlayList 处理影片播放地址数据, 保留播放链接,生成playList
 func GenFilmPlayList(playUrl, separator string) [][]model.MovieUrlInfo {
 	var res [][]model.MovieUrlInfo
 	if separator != "" {
 		// 1. 通过分隔符切分播放源地址
 		for _, l := range strings.Split(playUrl, separator) {
-			// 2.只对m3u8播放源 和 .mp4下载地址进行处理
-			if strings.Contains(l, ".m3u8") || strings.Contains(l, ".mp4") {
-				// 2. 将每组播放源对应的播放列表信息存储到列表中
-				res = append(res, ConvertPlayUrl(l))
-			}
+			// 将每组播放源对应的播放列表信息存储到列表中
+			res = append(res, ConvertPlayUrl(l))
 		}
 	} else {
-		// 1.只对m3u8播放源 和 .mp4下载地址进行处理
-		if strings.Contains(playUrl, ".m3u8") || strings.Contains(playUrl, ".mp4") {
-			// 2. 将每组播放源对应的播放列表信息存储到列表中
-			res = append(res, ConvertPlayUrl(playUrl))
-		}
+		// 将播放源对应的播放列表信息存储到列表中
+		res = append(res, ConvertPlayUrl(playUrl))
 	}
 	return res
 }

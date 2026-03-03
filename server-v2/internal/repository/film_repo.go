@@ -926,8 +926,12 @@ func GetMultiplePlay(siteId, key string) []model.MovieUrlInfo {
 	var playlist model.MoviePlaylist
 	var playList []model.MovieUrlInfo
 	if err := db.Mdb.Where("source_id = ? AND movie_key = ?", siteId, key).First(&playlist).Error; err == nil {
-		_ = json.Unmarshal([]byte(playlist.Content), &playList)
-		_ = db.Rdb.Set(db.Cxt, cacheKey, playlist.Content, config.FilmExpired).Err()
+		var allPlayList [][]model.MovieUrlInfo
+		if err := json.Unmarshal([]byte(playlist.Content), &allPlayList); err == nil && len(allPlayList) > 0 {
+			playList = allPlayList[0]
+			data, _ := json.Marshal(playList)
+			_ = db.Rdb.Set(db.Cxt, cacheKey, string(data), config.FilmExpired).Err()
+		}
 	}
 	return playList
 }
