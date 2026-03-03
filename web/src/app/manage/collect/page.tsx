@@ -85,19 +85,15 @@ export default function CollectManagePage() {
   const [reCollectOpen, setReCollectOpen] = useState(false);
   const [password, setPassword] = useState("");
 
-  // 批量选择中是否存在"有从站但无主站"的情况
-  const batchNeedsPrimary = useMemo(() => {
-    const selected = siteList.filter((s) => batchIds.includes(s.id));
-    return selected.some((s) => s.grade === 1) && !selected.some((s) => s.grade === 0);
-  }, [batchIds, siteList]);
-
-  // batchOptions 追加 grade 信息（与 siteList 合并）
+  // batchOptions 追加 grade 信息（与 siteList 合并），并过滤掉主站
   const enrichedBatchOptions = useMemo(
     () =>
-      batchOptions.map((o) => ({
-        ...o,
-        grade: siteList.find((s) => s.id === o.id)?.grade ?? 1,
-      })),
+      batchOptions
+        .map((o) => ({
+          ...o,
+          grade: siteList.find((s) => s.id === o.id)?.grade ?? 1,
+        }))
+        .filter((o) => o.grade !== 0),
     [batchOptions, siteList]
   );
 
@@ -275,9 +271,8 @@ export default function CollectManagePage() {
   };
 
   const startBatchCollect = async () => {
-    // 从站采集必须同时勾选对应主站
-    if (batchNeedsPrimary) {
-      message.warning("已选中从站，请同时勾选主站以确保数据正确关联");
+    if (batchIds.length === 0) {
+      message.warning("请至少选择一个站点");
       return;
     }
     const resp = await ApiPost("/manage/spider/start", {
@@ -592,14 +587,17 @@ export default function CollectManagePage() {
         <Button type="primary" icon={<PlusOutlined />} onClick={openAddDialog}>
           添加采集站
         </Button>
-        <Button
-          type="primary"
-          icon={<SendOutlined />}
-          style={{ background: "var(--ant-color-success)", borderColor: "var(--ant-color-success)" }}
-          onClick={openBatchCollect}
-        >
-          一键采集
-        </Button>
+        <Tooltip title={!hasMasterData ? "主站暂无数据，请先采集主站后再进行一键采集" : ""}>
+          <Button
+            type="primary"
+            icon={<SendOutlined />}
+            style={{ background: "var(--ant-color-success)", borderColor: "var(--ant-color-success)" }}
+            onClick={openBatchCollect}
+            disabled={!hasMasterData}
+          >
+            一键采集
+          </Button>
+        </Tooltip>
         <Button
           icon={<ReloadOutlined />}
           style={{ color: "var(--ant-color-warning)", borderColor: "var(--ant-color-warning)" }}
@@ -682,16 +680,7 @@ export default function CollectManagePage() {
             />
           ) : null;
         })()}
-        {/* 已选从站但未选主站的校验提示 */}
-        {batchNeedsPrimary && (
-          <Alert
-            type="error"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message="从站依赖主站数据"
-            description="已勾选从站，请同时勾选对应的主站，否则无法正确关联数据"
-          />
-        )}
+        {/* 执行站点列表（仅显示附属站） */}
         <Form layout="vertical">
           <Form.Item label="执行站点">
             <Checkbox.Group
@@ -764,7 +753,7 @@ export default function CollectManagePage() {
         okButtonProps={{ danger: true }}
       >
         <p style={{ color: "var(--ant-color-warning)", marginBottom: 16 }}>
-          此操作将<strong>先清空所有影视数据</strong>，再从零开始执行全量采集任务，操作不可逆。
+          此操作将<strong>先清空所有影视数据</strong>，再从零开始执行<strong>主站全量采集</strong>任务，操作不可逆。
         </p>
         <Input.Password
           placeholder="请输入管理密码"
