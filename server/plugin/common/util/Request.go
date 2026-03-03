@@ -54,37 +54,29 @@ func randomUA() string {
 func setBrowserHeaders(req *colly.Request, referer string) {
 	ua := randomUA()
 	req.Headers.Set("User-Agent", ua)
+	req.Headers.Set("Accept", "application/json, text/plain, */*")
 	req.Headers.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-	req.Headers.Set("Accept-Encoding", "gzip, deflate, br")
+	// 不声明 br：Go 标准库不支持 Brotli 解压，声明后服务端可能回 br 编码导致乱码
+	req.Headers.Set("Accept-Encoding", "gzip, deflate")
 	req.Headers.Set("Connection", "keep-alive")
 	req.Headers.Set("Cache-Control", "no-cache")
 
-	// 根据 UA 类型分别设置 Accept 和 Sec-Fetch 系列（Chrome/Edge 支持）
-	if len(ua) > 0 {
-		req.Headers.Set("Accept", "application/json, text/plain, */*")
-		// Sec-Fetch 头仅 Chrome/Edge 携带
-		if !isFirefox(ua) {
-			req.Headers.Set("Sec-Fetch-Dest", "empty")
-			req.Headers.Set("Sec-Fetch-Mode", "cors")
-			req.Headers.Set("Sec-Fetch-Site", "same-origin")
-			req.Headers.Set("Sec-Ch-Ua-Mobile", "?0")
-			req.Headers.Set("Sec-Ch-Ua-Platform", `"Windows"`)
+	// 同域 Referer（仅 host 相同时注入，避免 Sec-Fetch 校验失败）
+	if referer != "" && referer != req.URL.String() {
+		refHost := extractHost(referer)
+		if refHost != "" && refHost == req.URL.Host {
+			req.Headers.Set("Referer", referer)
 		}
 	}
+}
 
-	// 同域 Referer
-	if referer != "" && referer != req.URL.String() {
-		req.Headers.Set("Referer", referer)
+// extractHost 从 rawURL 中提取 host，解析失败时返回空字符串
+func extractHost(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
 	}
-}
-
-func isFirefox(ua string) bool {
-	return len(ua) > 7 && ua[len(ua)-7:len(ua)-3] == "Fire" ||
-		contains(ua, "Firefox")
-}
-
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsStr(s, sub))
+	return u.Host
 }
 
 func containsStr(s, sub string) bool {
