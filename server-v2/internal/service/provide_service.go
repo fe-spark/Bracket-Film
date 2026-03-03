@@ -31,60 +31,108 @@ func (p *ProvideService) GetClassList() ([]collect.FilmClass, map[string][]map[s
 			})
 
 			searchTags := repository.GetSearchTag(c.Id)
-			titles, _ := searchTags["titles"].(map[string]string)
-			tags, _ := searchTags["tags"].(map[string]interface{})
-			sortList, _ := searchTags["sortList"].([]string)
+			// Initialize to empty slice to avoid "null" in JSON
+			tvboxFilters := make([]map[string]interface{}, 0)
 
-			var tvboxFilters []map[string]interface{}
+			// Robustly get titles
+			titles := make(map[string]string)
+			if tIf, ok := searchTags["titles"]; ok {
+				switch t := tIf.(type) {
+				case map[string]interface{}:
+					for k, v := range t {
+						if vStr, ok := v.(string); ok {
+							titles[k] = vStr
+						}
+					}
+				case map[string]string:
+					titles = t
+				}
+			}
+
+			// Robustly get sortList
+			var sortList []string
+			if sIf, ok := searchTags["sortList"]; ok {
+				switch s := sIf.(type) {
+				case []interface{}:
+					for _, v := range s {
+						if vStr, ok := v.(string); ok {
+							sortList = append(sortList, vStr)
+						}
+					}
+				case []string:
+					sortList = s
+				}
+			}
+
+			// Robustly get tags
+			var tags map[string]interface{}
+			if tMap, ok := searchTags["tags"].(map[string]interface{}); ok {
+				tags = tMap
+			}
+
 			for _, key := range sortList {
 				name, ok := titles[key]
 				if !ok {
 					continue
 				}
-				var values []map[string]string
 
-				switch tagData := tags[key].(type) {
+				var values []map[string]string
+				tagDataIf := tags[key]
+				if tagDataIf == nil {
+					continue
+				}
+
+				switch td := tagDataIf.(type) {
 				case []map[string]string:
-					for _, t := range tagData {
-						v := t["Value"]
+					for _, item := range td {
+						v := item["Value"]
+						// TVBox tid filtering: if value is empty, it means "All", which maps to current type ID
 						if key == "Category" && v == "" {
 							v = strconv.FormatInt(c.Id, 10)
 						}
 						values = append(values, map[string]string{
-							"n": t["Name"],
+							"n": item["Name"],
 							"v": v,
 						})
 					}
 				case []interface{}:
-					for _, item := range tagData {
-						if t, ok := item.(map[string]interface{}); ok {
-							nameStr, _ := t["Name"].(string)
-							valueStr, _ := t["Value"].(string)
-
-							v := valueStr
+					for _, item := range td {
+						if m, ok := item.(map[string]interface{}); ok {
+							nStr, _ := m["Name"].(string)
+							vStr, _ := m["Value"].(string)
+							v := vStr
 							if key == "Category" && v == "" {
 								v = strconv.FormatInt(c.Id, 10)
 							}
 							values = append(values, map[string]string{
-								"n": nameStr,
+								"n": nStr,
+								"v": v,
+							})
+						} else if m, ok := item.(map[string]string); ok {
+							v := m["Value"]
+							if key == "Category" && v == "" {
+								v = strconv.FormatInt(c.Id, 10)
+							}
+							values = append(values, map[string]string{
+								"n": m["Name"],
 								"v": v,
 							})
 						}
 					}
-				default:
-					continue
 				}
 
-				tvboxKey := strings.ToLower(key)
-				if key == "Category" {
-					tvboxKey = "tid"
-				}
+				if len(values) > 0 {
+					tvboxKey := strings.ToLower(key)
+					if key == "Category" {
+						tvboxKey = "tid"
+					}
 
-				tvboxFilters = append(tvboxFilters, map[string]interface{}{
-					"key":   tvboxKey,
-					"name":  name,
-					"value": values,
-				})
+					tvboxFilters = append(tvboxFilters, map[string]interface{}{
+						"key":   tvboxKey,
+						"name":  name,
+						"value": values,
+					})
+				}
 			}
 			filters[strconv.FormatInt(c.Id, 10)] = tvboxFilters
 		}
