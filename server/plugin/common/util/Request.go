@@ -2,14 +2,13 @@ package util
 
 import (
 	"log"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gocolly/colly/v2"
-	"github.com/gocolly/colly/v2/extensions"
 )
 
 /*
@@ -29,40 +28,82 @@ type RequestInfo struct {
 	Err    string      `json:"err"`    // 错误信息
 }
 
-// RefererUrl 记录上次请求的url
-var RefererUrl string
+// userAgents 现代主流浏览器 UA 池（Chrome / Firefox / Edge，定期更新版本号即可）
+var userAgents = []string{
+	// Chrome Windows
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+	// Chrome macOS
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+	// Edge Windows
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0",
+	// Firefox Windows
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+	// Firefox macOS
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 14.3; rv:123.0) Gecko/20100101 Firefox/123.0",
+}
 
-// CreateClient 初始化请求客户端
+// randomUA 从 UA 池中随机选取一个
+func randomUA() string {
+	return userAgents[rand.Intn(len(userAgents))]
+}
+
+// setBrowserHeaders 为请求设置完整的浏览器伪装头部
+func setBrowserHeaders(req *colly.Request, referer string) {
+	ua := randomUA()
+	req.Headers.Set("User-Agent", ua)
+	req.Headers.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+	req.Headers.Set("Accept-Encoding", "gzip, deflate, br")
+	req.Headers.Set("Connection", "keep-alive")
+	req.Headers.Set("Cache-Control", "no-cache")
+
+	// 根据 UA 类型分别设置 Accept 和 Sec-Fetch 系列（Chrome/Edge 支持）
+	if len(ua) > 0 {
+		req.Headers.Set("Accept", "application/json, text/plain, */*")
+		// Sec-Fetch 头仅 Chrome/Edge 携带
+		if !isFirefox(ua) {
+			req.Headers.Set("Sec-Fetch-Dest", "empty")
+			req.Headers.Set("Sec-Fetch-Mode", "cors")
+			req.Headers.Set("Sec-Fetch-Site", "same-origin")
+			req.Headers.Set("Sec-Ch-Ua-Mobile", "?0")
+			req.Headers.Set("Sec-Ch-Ua-Platform", `"Windows"`)
+		}
+	}
+
+	// 同域 Referer
+	if referer != "" && referer != req.URL.String() {
+		req.Headers.Set("Referer", referer)
+	}
+}
+
+func isFirefox(ua string) bool {
+	return len(ua) > 7 && ua[len(ua)-7:len(ua)-3] == "Fire" ||
+		contains(ua, "Firefox")
+}
+
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsStr(s, sub))
+}
+
+func containsStr(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+// CreateClient 初始化请求客户端（不挂载 OnRequest，由各调用方按需设置）
 func CreateClient() *colly.Collector {
 	c := colly.NewCollector()
-
-	// 设置请求使用clash的socks5代理
-	//setProxy(c)
-
-	// 设置代理信息
-	//if proxy, err := proxy.RoundRobinProxySwitcher("127.0.0.1:7890"); err != nil {
-	//	c.SetProxyFunc(proxy)
-	//}
-	// 设置并发数量控制
-	//c.Async = true
-	// 访问深度
 	c.MaxDepth = 1
-	//可重复访问
 	c.AllowURLRevisit = true
-	// 设置超时时间 默认10s
 	c.SetRequestTimeout(20 * time.Second)
-	// 发起请求之前会调用的方法
-	c.OnRequest(func(request *colly.Request) {
-		// 设置一些请求头信息
-		// request.Headers.Set("Content-Type", "application/json;charset=UTF-8") // GET 请求通常不需要此头，且可能导致部分 API 报 Bad Request
-		request.Headers.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-		//request.Headers.Set("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
-		// 请求完成后设置请求头Referer
-		if len(RefererUrl) > 0 && strings.Contains(RefererUrl, request.URL.Host) {
-			request.Headers.Set("Referer", RefererUrl)
-		}
-	})
-	// 请求期间报错的回调
 	c.OnError(func(response *colly.Response, err error) {
 		log.Printf("请求异常: URL: %s Error: %s\n", response.Request.URL, err)
 	})
@@ -71,31 +112,31 @@ func CreateClient() *colly.Collector {
 
 // ApiGet 请求数据的方法
 func ApiGet(r *RequestInfo) {
-	// 每次请求使用独立的事件处理，防止全局回调累积
 	c := Client.Clone()
 
 	if r.Header != nil {
-		if t, err := strconv.Atoi(r.Header.Get("timeout")); err != nil && t > 0 {
+		if t, _ := strconv.Atoi(r.Header.Get("timeout")); t > 0 {
 			c.SetRequestTimeout(time.Duration(t) * time.Second)
 		}
 	}
-	// 设置随机请求头
-	extensions.RandomUserAgent(c)
 
-	// 请求成功后的响应
+	// 记录本次请求的 referer（局部变量，无竞态）
+	var lastURL string
+
+	c.OnRequest(func(req *colly.Request) {
+		setBrowserHeaders(req, lastURL)
+	})
+
 	c.OnResponse(func(response *colly.Response) {
 		if (response.StatusCode == 200 || (response.StatusCode >= 300 && response.StatusCode <= 399)) && len(response.Body) > 0 {
 			r.Resp = response.Body
 		} else {
 			r.Resp = []byte{}
 		}
-		RefererUrl = response.Request.URL.String()
+		lastURL = response.Request.URL.String()
 	})
 
-	// 构造完整 URL
 	targetUrl := buildUrl(r.Uri, r.Params)
-
-	// 执行请求
 	err := c.Visit(targetUrl)
 	if err != nil {
 		r.Err = err.Error()
@@ -105,10 +146,12 @@ func ApiGet(r *RequestInfo) {
 
 // ApiTest 处理API请求后的数据, 主测试
 func ApiTest(r *RequestInfo) error {
-	// 测试时使用完全独立的 Collector，避免状态污染
 	c := CreateClient()
 
-	// 请求成功后的响应
+	c.OnRequest(func(req *colly.Request) {
+		setBrowserHeaders(req, "")
+	})
+
 	c.OnResponse(func(response *colly.Response) {
 		if (response.StatusCode == 200 || (response.StatusCode >= 300 && response.StatusCode <= 399)) && len(response.Body) > 0 {
 			r.Resp = response.Body
@@ -132,8 +175,7 @@ func buildUrl(base string, params url.Values) string {
 	}
 	u, err := url.Parse(base)
 	if err != nil {
-		// 回退方案
-		if strings.Contains(base, "?") {
+		if containsStr(base, "?") {
 			return base + "&" + params.Encode()
 		}
 		return base + "?" + params.Encode()
@@ -148,8 +190,9 @@ func buildUrl(base string, params url.Values) string {
 	return u.String()
 }
 
-// 本地代理测试
+// setProxy 本地代理（需要时取消注释）
 func setProxy(c *colly.Collector) {
 	proxyUrl, _ := url.Parse("socks5://127.0.0.1:7890")
 	c.WithTransport(&http.Transport{Proxy: http.ProxyURL(proxyUrl)})
 }
+

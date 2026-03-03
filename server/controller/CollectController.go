@@ -53,7 +53,7 @@ func FilmSourceAdd(c *gin.Context) {
 	}
 	// 执行 spider
 	if err := spider.CollectApiTest(s); err != nil {
-		system.Failed("资源接口测试失败, 请确认接口有效再添加", c)
+		system.Failed(fmt.Sprint("资源接口测试失败: ", err.Error()), c)
 		return
 	}
 	// 测试通过后将资源站信息添加到list
@@ -96,7 +96,7 @@ func FilmSourceUpdate(c *gin.Context) {
 	if fs.Uri != s.Uri {
 		// 执行 spider
 		if err := spider.CollectApiTest(s); err != nil {
-			system.Failed("资源接口测试失败, 请确认更新的数据接口是否有效", c)
+			system.Failed(fmt.Sprint("资源接口测试失败: ", err.Error()), c)
 			return
 		}
 	}

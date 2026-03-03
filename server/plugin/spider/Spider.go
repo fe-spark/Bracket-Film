@@ -372,17 +372,18 @@ func FullRecoverSpider() {
 
 // CollectApiTest 测试采集接口是否可用
 func CollectApiTest(s system.FilmSource) error {
-	// 使用当前采集站接口采集一页数据
+	// 使用 ac=list 测试：获取分类列表，所有标准 Mac CMS 站均支持，
+	// 且不需要额外过滤参数（ac=detail 在无 h/t 参数时部分站点会返回 400）
 	r := util.RequestInfo{Uri: s.Uri, Params: url.Values{}}
-	r.Params.Set("ac", s.CollectType.GetActionType())
-	r.Params.Set("pg", "3")
+	r.Params.Set("ac", "list")
+	r.Params.Set("pg", "1")
 	err := util.ApiTest(&r)
 	// 首先核对接口返回值类型
 	if err == nil {
 		// 如果返回值类型为Json则执行Json序列化
 		if s.ResultModel == system.JsonResult {
-			dp := collect.FilmDetailLPage{}
-			if err = json.Unmarshal(r.Resp, &dp); err != nil {
+			lp := collect.FilmListPage{}
+			if err = json.Unmarshal(r.Resp, &lp); err != nil {
 				return errors.New(fmt.Sprint("测试失败, 返回数据异常, JSON序列化失败: ", err))
 			}
 			return nil
