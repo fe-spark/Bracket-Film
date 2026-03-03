@@ -159,6 +159,15 @@ REDIS_HOST=127.0.0.1 REDIS_PORT=6379 \
 
 从站采集完成后仅精准清除 `Cache:Play:*`，避免无效地清理主站列表缓存。
 
+## 📺 TVBox / MacCMS 兼容性
+
+Bracket-Film 提供原生的 TVBox 接口支持，可以用作家庭影院或第三方聚合平台的数据源：
+
+- **一键配置接口**: `http://<server_ip>:<PORT>/api/provide/config`
+- **MacCMS 兼容接口**: `http://<server_ip>:<PORT>/api/provide/vod`
+  - 自动将 Web 端的详细多维度筛选关联至 TVBox 客户端。
+  - 支持多线路整合及完整剧集渲染输出。
+
 ## 数据库表说明
 
 | 表名 | 说明 |

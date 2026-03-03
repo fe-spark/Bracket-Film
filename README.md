@@ -106,8 +106,8 @@ docker compose up --build -d
 
 Bracket-Film 对第三方播放器提供了深度支持：
 
-- **一键配置接口**: `http://<server_ip>:3601/provide/config`
-- **MacCMS 兼容接口**: `http://<server_ip>:3601/provide/vod`
+- **一键配置接口**: `http://<server_ip>:3601/api/provide/config`
+- **MacCMS 兼容接口**: `http://<server_ip>:3601/api/provide/vod`
     - 支持全量分类、搜索及高级筛选（地区、年份、语言、排序）。
     - 筛选数据与 Web 端保持实时一致。
 

@@ -41,21 +41,38 @@ func (p *ProvideService) GetClassList() ([]collect.FilmClass, map[string][]map[s
 				if !ok {
 					continue
 				}
-				tagData, ok := tags[key].([]map[string]string)
-				if !ok {
-					continue
-				}
-
 				var values []map[string]string
-				for _, t := range tagData {
-					v := t["Value"]
-					if key == "Category" && v == "" {
-						v = strconv.FormatInt(c.Id, 10)
+
+				switch tagData := tags[key].(type) {
+				case []map[string]string:
+					for _, t := range tagData {
+						v := t["Value"]
+						if key == "Category" && v == "" {
+							v = strconv.FormatInt(c.Id, 10)
+						}
+						values = append(values, map[string]string{
+							"n": t["Name"],
+							"v": v,
+						})
 					}
-					values = append(values, map[string]string{
-						"n": t["Name"],
-						"v": v,
-					})
+				case []interface{}:
+					for _, item := range tagData {
+						if t, ok := item.(map[string]interface{}); ok {
+							nameStr, _ := t["Name"].(string)
+							valueStr, _ := t["Value"].(string)
+
+							v := valueStr
+							if key == "Category" && v == "" {
+								v = strconv.FormatInt(c.Id, 10)
+							}
+							values = append(values, map[string]string{
+								"n": nameStr,
+								"v": v,
+							})
+						}
+					}
+				default:
+					continue
 				}
 
 				tvboxKey := strings.ToLower(key)

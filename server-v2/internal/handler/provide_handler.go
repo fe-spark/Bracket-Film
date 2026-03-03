@@ -124,7 +124,7 @@ func (h *ProvideHandler) HandleProvideConfig(c *gin.Context) {
 		scheme = "https"
 	}
 	host := c.Request.Host
-	apiPath := scheme + "://" + host + "/provide/vod"
+	apiPath := scheme + "://" + host + "/api/provide/vod"
 
 	configJson := gin.H{
 		"spider":    "",
