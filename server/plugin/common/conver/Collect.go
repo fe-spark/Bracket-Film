@@ -1,9 +1,7 @@
 package conver
 
 import (
-	"encoding/xml"
 	"fmt"
-	"log"
 	"strings"
 
 	"server/config"
@@ -244,8 +242,6 @@ func DetailCovertListXml(details []collect.FilmDetail) []collect.VideoList {
 			Note: collect.CDATA{Text: d.VodRemarks},
 		})
 	}
-	s, _ := xml.Marshal(vl[0])
-	log.Println(string(s))
 	return vl
 }
 

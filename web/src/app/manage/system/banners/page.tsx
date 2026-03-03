@@ -333,7 +333,7 @@ export default function BannersPage() {
   );
 
   return (
-    <div style={{ padding: 24, background: "transparent" }}>
+    <div style={{ background: "transparent" }}>
       <div
         style={{
           display: "flex",

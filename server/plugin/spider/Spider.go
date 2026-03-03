@@ -66,11 +66,9 @@ func HandleCollect(id string, h int) error {
 	// 1. 首先通过ID获取对应采集站信息
 	s := system.FindCollectSourceById(id)
 	if s == nil {
-		log.Println("Cannot Find Collect Source Site")
-		return errors.New(" Cannot Find Collect Source Site ")
+		return errors.New("采集站点不存在")
 	} else if !s.State {
-		log.Println(" The acquisition site was disabled ")
-		return errors.New(" The acquisition site was disabled ")
+		return errors.New("采集站点已停用")
 	}
 
 	// 如果是主站点且状态为启用则先获取分类tree信息
@@ -85,8 +83,7 @@ func HandleCollect(id string, h int) error {
 	r := util.RequestInfo{Uri: s.Uri, Params: url.Values{}}
 	// 如果 h == 0 则直接返回错误信息
 	if h == 0 {
-		log.Println(" Collect time cannot be zero ")
-		return errors.New(" Collect time cannot be zer ")
+		return errors.New("采集时长不能为 0")
 	}
 	// 如果 h = -1 则进行全量采集
 	if h > 0 {
@@ -145,7 +142,6 @@ func HandleCollect(id string, h int) error {
 		log.Println("暂未开放此采集功能!!!")
 		return errors.New("暂未开放此采集功能")
 	}
-	log.Println("Spider Task Exercise Success")
 	return nil
 }
 

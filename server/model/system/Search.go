@@ -245,7 +245,8 @@ func AddSearchIndex() {
 }
 
 // upsertColumns 是 search_infos 中重复采集时需要覆盖更新的列（mid 是冲突键，不在此列表中）
-// 包含 deleted_at：若记录曾被软删除，重新采集时自动恢复为可见状态（置 NULL）
+// 含 deleted_at：mid 唯一索引保证不会产生重复行，重新采集时将 deleted_at 置 NULL
+// 自动恢复被软删除的记录，避免同一影片出现两条数据。
 var upsertColumns = []string{
 	"cid", "pid", "name", "sub_title", "c_name", "class_tag",
 	"area", "language", "year", "initial", "score",
@@ -332,7 +333,7 @@ func GetMovieListByPid(pid int64, page *Page) []MovieBasicInfo {
 
 	var s []SearchInfo
 	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("pid", pid).Order("update_stamp DESC").Find(&s).Error; err != nil {
-		log.Println(err)
+		log.Printf("GetMovieListByPid Error: %v", err)
 		return nil
 	}
 
@@ -375,7 +376,7 @@ func GetMovieListByCid(cid int64, page *Page) []MovieBasicInfo {
 
 	var s []SearchInfo
 	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("cid", cid).Order("update_stamp DESC").Find(&s).Error; err != nil {
-		log.Println(err)
+		log.Printf("GetMovieListByCid Error: %v", err)
 		return nil
 	}
 
@@ -400,17 +401,10 @@ func GetMovieListByCid(cid int64, page *Page) []MovieBasicInfo {
 
 // GetHotMovieByPid  获取Pid指定类别的热门影片
 func GetHotMovieByPid(pid int64, page *Page) []SearchInfo {
-	// 返回分页参数
-	// var count int64
-	// db.Mdb.Model(&SearchInfo{}).Where("pid", pid).Count(&count)
-	// page.Total = int(count)
-	// page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
-	// 进行具体的信息查询
 	var s []SearchInfo
-	// 当前时间偏移一个月
 	t := time.Now().AddDate(0, -1, 0).Unix()
 	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("pid=? AND update_stamp > ?", pid, t).Order(" year DESC, hits DESC").Find(&s).Error; err != nil {
-		log.Println(err)
+		log.Printf("GetHotMovieByPid Error: %v", err)
 		return nil
 	}
 	return s
@@ -418,17 +412,10 @@ func GetHotMovieByPid(pid int64, page *Page) []SearchInfo {
 
 // GetHotMovieByCid 获取当前分类下的热门影片
 func GetHotMovieByCid(cid int64, page *Page) []SearchInfo {
-	// 返回分页参数
-	// var count int64
-	// db.Mdb.Model(&SearchInfo{}).Where("pid", pid).Count(&count)
-	// page.Total = int(count)
-	// page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
-	// 进行具体的信息查询
 	var s []SearchInfo
-	// 当前时间偏移一个月
 	t := time.Now().AddDate(0, -1, 0).Unix()
 	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("cid=? AND update_stamp > ?", cid, t).Order(" year DESC, hits DESC").Find(&s).Error; err != nil {
-		log.Println(err)
+		log.Printf("GetHotMovieByCid Error: %v", err)
 		return nil
 	}
 	return s
@@ -680,7 +667,7 @@ func GetSearchInfosByTags(st SearchTagsVO, page *Page) []SearchInfo {
 	// 查询具体的searchInfo 分页数据
 	var sl []SearchInfo
 	if err := qw.Limit(page.PageSize).Offset((page.Current - 1) * page.PageSize).Find(&sl).Error; err != nil {
-		log.Println(err)
+		log.Printf("GetSearchInfosByTags Error: %v", err)
 		return nil
 	}
 	return sl
@@ -703,7 +690,7 @@ func GetMovieListBySort(t int, pid int64, page *Page) []MovieBasicInfo {
 		qw.Order("update_stamp DESC")
 	}
 	if err := qw.Find(&sl).Error; err != nil {
-		log.Println(err)
+		log.Printf("GetMovieListBySort Error: %v", err)
 		return nil
 	}
 	return GetBasicInfoBySearchInfos(sl...)
@@ -756,7 +743,7 @@ func GetSearchPage(s SearchVo) []SearchInfo {
 	// 查询具体的数据
 	var sl []SearchInfo
 	if err := query.Limit(s.Paging.PageSize).Offset((s.Paging.Current - 1) * s.Paging.PageSize).Find(&sl).Error; err != nil {
-		log.Println(err)
+		log.Printf("GetSearchPage Error: %v", err)
 		return nil
 	}
 	return sl
@@ -775,37 +762,34 @@ func GetSearchOptions(pid int64) map[string]interface{} {
 func GetSearchInfoById(id int64) *SearchInfo {
 	s := SearchInfo{}
 	if err := db.Mdb.First(&s, id).Error; err != nil {
-		log.Println(err)
+		log.Printf("GetSearchInfoById Error: %v", err)
 		return nil
 	}
 	return &s
 }
 
-// DelFilmSearch 删除影片检索信息, (不影响后续更新, 逻辑删除)
+// DelFilmSearch 软删除影片检索记录（设 deleted_at），重新采集时 upsert 会自动恢复
 func DelFilmSearch(id int64) error {
-	// 通过检索id对影片检索信息进行删除
 	if err := db.Mdb.Delete(&SearchInfo{}, id).Error; err != nil {
-		log.Println(err)
+		log.Printf("DelFilmSearch Error: %v", err)
 		return err
 	}
 	return nil
 }
 
-// ShieldFilmSearch 删除所属分类下的所有影片检索信息
+// ShieldFilmSearch 软删除指定分类下的所有影片检索信息（分类隐藏时调用）
 func ShieldFilmSearch(cid int64) error {
-	// 通过检索id对影片检索信息进行删除
 	if err := db.Mdb.Where("cid = ?", cid).Delete(&SearchInfo{}).Error; err != nil {
-		log.Println(err)
+		log.Printf("ShieldFilmSearch Error: %v", err)
 		return err
 	}
 	return nil
 }
 
-// RecoverFilmSearch 恢复所属分类下的影片检索信息状态
+// RecoverFilmSearch 恢复指定分类下所有被软删除的影片检索信息（分类重新显示时调用）
 func RecoverFilmSearch(cid int64) error {
-	// 通过检索id对影片检索信息进行删除
 	if err := db.Mdb.Model(&SearchInfo{}).Unscoped().Where("cid = ?", cid).Update("deleted_at", nil).Error; err != nil {
-		log.Println(err)
+		log.Printf("RecoverFilmSearch Error: %v", err)
 		return err
 	}
 	return nil
