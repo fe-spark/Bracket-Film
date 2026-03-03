@@ -68,3 +68,19 @@ func GetChildrenTree(id int64) []*model.CategoryTree {
 	}
 	return nil
 }
+
+// GetParentId 获取指定分类的父级 ID，如果本身是一级分类则返回其自身 ID
+func GetParentId(id int64) int64 {
+	tree := GetCategoryTree()
+	for _, t := range tree.Children {
+		if t.Id == id {
+			return t.Id
+		}
+		for _, c := range t.Children {
+			if c.Id == id {
+				return t.Id
+			}
+		}
+	}
+	return id
+}

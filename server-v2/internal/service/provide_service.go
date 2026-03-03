@@ -11,6 +11,8 @@ import (
 	"server-v2/internal/repository"
 	"server-v2/pkg/db"
 	"server-v2/pkg/response"
+
+	"gorm.io/gorm"
 )
 
 type ProvideService struct{}
@@ -149,8 +151,10 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 
 	query := db.Mdb.Model(&model.SearchInfo{})
 
+	var pid int64
 	if t > 0 {
 		query = query.Where("cid = ? OR pid = ?", t, t)
+		pid = repository.GetParentId(int64(t))
 	}
 
 	if wd != "" {
@@ -165,15 +169,40 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 	if year > 0 {
 		query = query.Where("year = ?", year)
 	}
-	if area != "" && area != "全部" {
-		query = query.Where("area = ?", area)
+
+	// 统一处理“其它”逻辑
+	handleOther := func(curValue, tagType string, q *gorm.DB) *gorm.DB {
+		if curValue == "" || curValue == "全部" {
+			return q
+		}
+		if curValue == "其它" && pid > 0 {
+			tags := repository.GetTagsByTitle(pid, tagType)
+			var exclude []string
+			for _, tg := range tags {
+				if sl := strings.Split(tg, ":"); len(sl) > 1 {
+					exclude = append(exclude, sl[1])
+				}
+			}
+			if len(exclude) > 0 {
+				col := strings.ToLower(tagType)
+				if tagType == "Plot" {
+					for _, ex := range exclude {
+						q = q.Where("class_tag NOT LIKE ?", "%"+ex+"%")
+					}
+					return q
+				}
+				return q.Where(fmt.Sprintf("%s NOT IN ?", col), exclude)
+			}
+		}
+		if tagType == "Plot" {
+			return q.Where("class_tag LIKE ?", "%"+curValue+"%")
+		}
+		return q.Where(fmt.Sprintf("%s = ?", strings.ToLower(tagType)), curValue)
 	}
-	if lang != "" && lang != "全部" {
-		query = query.Where("language = ?", lang)
-	}
-	if plot != "" && plot != "全部" {
-		query = query.Where("class_tag LIKE ?", "%"+plot+"%")
-	}
+
+	query = handleOther(area, "Area", query)
+	query = handleOther(lang, "Language", query)
+	query = handleOther(plot, "Plot", query)
 
 	var count int64
 	query.Count(&count)
@@ -206,6 +235,7 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 			VodTime:     time.Unix(s.UpdateStamp, 0).Format("2006-01-02 15:04:05"),
 			VodRemarks:  s.Remarks,
 			VodPlayFrom: "bracket",
+			VodPic:      s.Picture,
 		})
 	}
 

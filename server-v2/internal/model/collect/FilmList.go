@@ -42,6 +42,7 @@ type FilmList struct {
 	VodTime     string `json:"vod_time"`      // 更新时间
 	VodRemarks  string `json:"vod_remarks"`   // 更新状态
 	VodPlayFrom string `json:"vod_play_from"` // 播放来源
+	VodPic      string `json:"vod_pic"`       // 影片图片
 }
 
 // FilmClass 影视分类信息结构体
