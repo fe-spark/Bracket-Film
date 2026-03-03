@@ -53,7 +53,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   useEffect(() => {
     const art = new Artplayer({
       container: artRef.current,
-      id: "bracket-player",
       url: finalSrc,
       poster: poster || "",
       autoplay,
@@ -69,7 +68,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       mutex: true,
       backdrop: true,
       playsInline: true,
-      autoPlayback: true,
+      // initialTime > 0 时业务层已指定跳转位置，关闭 autoPlayback 避免两套机制冲突；
+      // 否则开启，让 Artplayer 以视频 URL 为 key 自动恢复每集各自的播放进度
+      autoPlayback: initialTime <= 0,
       airplay: true,
       useSSR: typeof window === "undefined",
       customType: {
