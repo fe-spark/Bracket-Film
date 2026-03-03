@@ -116,14 +116,14 @@ func (s *InitService) CollectCrontabInit() {
 				}
 				task.Cid = cid
 			case 2:
-				cid, err := spider.AddFilmRecoverCron(task.Spec)
+				cid, err := spider.AddFilmRecoverCron(task.Id, task.Spec)
 				if err != nil {
 					log.Println("自动清理失败采集记录定时任务添加失败: ", err.Error())
 					continue
 				}
 				task.Cid = cid
 			case 3:
-				cid, err := spider.AddOrphanCleanCron(task.Spec)
+				cid, err := spider.AddOrphanCleanCron(task.Id, task.Spec)
 				if err != nil {
 					log.Println("孤儿数据清理定时任务添加失败: ", err.Error())
 					continue
@@ -151,7 +151,7 @@ func (s *InitService) CollectCrontabInit() {
 			Id: utils.GenerateSalt(), Time: 0, Spec: config.EveryWeekSpec,
 			Model: 2, State: false, Remark: "每周日凌晈12点4点清理一次采集失败的采集记录",
 		}
-		cid, err = spider.AddFilmRecoverCron(recoverTask.Spec)
+		cid, err = spider.AddFilmRecoverCron(recoverTask.Id, recoverTask.Spec)
 		if err != nil {
 			log.Println("失败采集恢复定时任务添加失败: ", err.Error())
 			return
@@ -164,7 +164,7 @@ func (s *InitService) CollectCrontabInit() {
 			Id: utils.GenerateSalt(), Time: 0, Spec: "0 0 3 * * 0",
 			Model: 3, State: false, Remark: "每周日凌晈13点清理已无效的孤儿播放列表记录",
 		}
-		cid, err = spider.AddOrphanCleanCron(orphanTask.Spec)
+		cid, err = spider.AddOrphanCleanCron(orphanTask.Id, orphanTask.Spec)
 		if err != nil {
 			log.Println("孤儿数据清理定时任务添加失败: ", err.Error())
 			return

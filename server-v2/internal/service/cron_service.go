@@ -9,6 +9,8 @@ import (
 	"server-v2/internal/repository"
 	"server-v2/internal/spider"
 	"server-v2/pkg/utils"
+
+	"github.com/robfig/cron/v3"
 )
 
 type CronService struct{}
@@ -21,27 +23,29 @@ func (s *CronService) AddFilmCrontab(cv model.FilmCronVo) error {
 		return err
 	}
 	task := model.FilmCollectTask{Id: utils.GenerateSalt(), Ids: cv.Ids, Time: cv.Time, Spec: cv.Spec, Model: cv.Model, State: cv.State, Remark: cv.Remark}
+	var cid cron.EntryID
+	var err error
 	switch task.Model {
 	case 0:
-		cid, err := spider.AddAutoUpdateCron(task.Id, task.Spec)
+		cid, err = spider.AddAutoUpdateCron(task.Id, task.Spec)
 		if err != nil {
 			return errors.New(fmt.Sprint("影视自动更新任务添加失败: ", err.Error()))
 		}
 		task.Cid = cid
 	case 1:
-		cid, err := spider.AddFilmUpdateCron(task.Id, task.Spec)
+		cid, err = spider.AddFilmUpdateCron(task.Id, task.Spec)
 		if err != nil {
 			return errors.New(fmt.Sprint("影视更新定时任务添加失败: ", err.Error()))
 		}
 		task.Cid = cid
 	case 2:
-		cid, err := spider.AddFilmRecoverCron(task.Spec)
+		cid, err = spider.AddFilmRecoverCron(task.Id, task.Spec)
 		if err != nil {
 			return errors.New(fmt.Sprint("失败采集处理定时任务添加失败: ", err.Error()))
 		}
 		task.Cid = cid
 	case 3:
-		cid, err := spider.AddOrphanCleanCron(task.Spec)
+		cid, err = spider.AddOrphanCleanCron(task.Id, task.Spec)
 		if err != nil {
 			return errors.New(fmt.Sprint("孤儿数据清理定时任务添加失败: ", err.Error()))
 		}
@@ -84,16 +88,20 @@ func (s *CronService) GetFilmCrontabById(id string) (model.FilmCollectTask, erro
 func (s *CronService) ChangeFilmCrontab(id string, state bool) error {
 	ft, err := repository.GetFilmTaskById(id)
 	if err != nil {
-		return fmt.Errorf("定时任务停止失败: %w", err)
+		return fmt.Errorf("定时任务状态切换失败: %w", err)
 	}
 	ft.State = state
 	repository.UpdateFilmTask(ft)
-	return err
+	// 同步重载运行时引擎
+	_ = spider.ReloadCronTask(id)
+	return nil
 }
 
 // UpdateFilmCron 更新定时任务的状态信息
 func (s *CronService) UpdateFilmCron(t model.FilmCollectTask) {
 	repository.UpdateFilmTask(t)
+	// 同步重载运行时引擎（可能修改了 Cron 表达式或采集站列表）
+	_ = spider.ReloadCronTask(t.Id)
 }
 
 // DelFilmCrontab 删除定时任务

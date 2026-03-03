@@ -86,15 +86,23 @@ func AddAutoUpdateCron(id, spec string) (cron.EntryID, error) {
 }
 
 // AddFilmRecoverCron 失败采集记录处理
-func AddFilmRecoverCron(spec string) (cron.EntryID, error) {
+func AddFilmRecoverCron(id, spec string) (cron.EntryID, error) {
 	// 校验 spec 表达式的有效性
 	if err := ValidSpec(spec); err != nil {
 		return -99, errors.New(fmt.Sprint("定时任务添加失败,Cron表达式校验失败: ", err.Error()))
 	}
 	return CronCollect.AddFunc(spec, func() {
-		// 执行失败采集记录恢复
-		FullRecoverSpider()
-		log.Println("执行一次失败采集恢复任务")
+		// 通过 Id 获取任务相关数据
+		ft, err := repository.GetFilmTaskById(id)
+		if err != nil {
+			log.Println("FilmRecoverCron Exec Failed: ", err)
+		}
+		// 只有任务开启时执行
+		if ft.State && ft.Model == 2 {
+			// 执行失败采集记录恢复
+			FullRecoverSpider()
+			log.Println("执行一次失败采集恢复任务")
+		}
 	})
 }
 
@@ -118,13 +126,21 @@ func ValidSpec(spec string) error {
 
 // AddOrphanCleanCron 添加孤儿数据清理定时任务
 // 定期删除 movie_playlists 中 movie_key 不再匹配任何 search_infos 记录的孤儿行
-func AddOrphanCleanCron(spec string) (cron.EntryID, error) {
+func AddOrphanCleanCron(id, spec string) (cron.EntryID, error) {
 	if err := ValidSpec(spec); err != nil {
 		return -99, errors.New(fmt.Sprint("定时任务添加失败，Cron 表达式校验失败: ", err.Error()))
 	}
 	return CronCollect.AddFunc(spec, func() {
-		n := repository.CleanOrphanPlaylists()
-		log.Printf("执行一次孤儿数据清理任务，共删除 %d 条记录\n", n)
+		// 通过 Id 获取任务相关数据
+		ft, err := repository.GetFilmTaskById(id)
+		if err != nil {
+			log.Println("OrphanCleanCron Exec Failed: ", err)
+		}
+		// 只有任务开启时执行
+		if ft.State && ft.Model == 3 {
+			n := repository.CleanOrphanPlaylists()
+			log.Printf("执行一次孤儿数据清理任务，共删除 %d 条记录\n", n)
+		}
 	})
 }
 
@@ -137,4 +153,36 @@ func ClearCache() {
 	repository.RemoveCacheByPattern("Cache:Hot:*")
 	repository.RemoveCacheByPattern("Cache:Search:*")
 	repository.RemoveCacheByPattern("Cache:Tag:*")
+}
+
+// ReloadCronTask 重新加载定时任务（当配置或状态发生变化时）
+func ReloadCronTask(id string) error {
+	// 1. 获取最新配置
+	ft, err := repository.GetFilmTaskById(id)
+	if err != nil {
+		return err
+	}
+
+	// 2. 移除旧任务
+	RemoveCronByTaskId(id)
+
+	// 3. 重新注册新任务
+	var cid cron.EntryID
+	switch ft.Model {
+	case 0:
+		cid, err = AddAutoUpdateCron(ft.Id, ft.Spec)
+	case 1:
+		cid, err = AddFilmUpdateCron(ft.Id, ft.Spec)
+	case 2:
+		cid, err = AddFilmRecoverCron(ft.Id, ft.Spec)
+	case 3:
+		cid, err = AddOrphanCleanCron(ft.Id, ft.Spec)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	RegisterTaskCid(id, cid)
+	return nil
 }
