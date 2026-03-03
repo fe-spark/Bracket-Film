@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"server-v2/config"
+	"server-v2/internal/model"
 	"server-v2/internal/repository"
 
 	"github.com/robfig/cron/v3"
@@ -54,14 +55,9 @@ func AddFilmUpdateCron(id, spec string) (cron.EntryID, error) {
 		ft, err := repository.GetFilmTaskById(id)
 		if err != nil {
 			log.Println("FilmCollectCron Exec Failed: ", err)
+			return
 		}
-		// 如果当前定时任务状态为开启则执行对应的采集任务
-		if ft.State && ft.Model == 1 {
-			// 对指定ids的资源站数据进行更新操作
-			BatchCollect(ft.Time, ft.Ids...)
-		}
-		// 任务执行完毕
-		log.Printf("执行一次定时任务: Task[%s]\n", ft.Id)
+		executeTask(ft)
 	})
 }
 
@@ -76,12 +72,9 @@ func AddAutoUpdateCron(id, spec string) (cron.EntryID, error) {
 		ft, err := repository.GetFilmTaskById(id)
 		if err != nil {
 			log.Println("FilmCollectCron Exec Failed: ", err)
+			return
 		}
-		// 开启对系统中已启用站点的自动更新
-		if ft.State && ft.Model == 0 {
-			AutoCollect(ft.Time)
-			log.Println("执行一次自动更新任务")
-		}
+		executeTask(ft)
 	})
 }
 
@@ -96,13 +89,9 @@ func AddFilmRecoverCron(id, spec string) (cron.EntryID, error) {
 		ft, err := repository.GetFilmTaskById(id)
 		if err != nil {
 			log.Println("FilmRecoverCron Exec Failed: ", err)
+			return
 		}
-		// 只有任务开启时执行
-		if ft.State && ft.Model == 2 {
-			// 执行失败采集记录恢复
-			FullRecoverSpider()
-			log.Println("执行一次失败采集恢复任务")
-		}
+		executeTask(ft)
 	})
 }
 
@@ -125,7 +114,7 @@ func ValidSpec(spec string) error {
 }
 
 // AddOrphanCleanCron 添加孤儿数据清理定时任务
-// 定期删除 movie_playlists 中 movie_key 不再匹配任何 search_infos 记录的孤儿行
+// 定期删除 movie_playlists 中 movie_key 不再匹配 any search_infos 记录的孤儿行
 func AddOrphanCleanCron(id, spec string) (cron.EntryID, error) {
 	if err := ValidSpec(spec); err != nil {
 		return -99, errors.New(fmt.Sprint("定时任务添加失败，Cron 表达式校验失败: ", err.Error()))
@@ -135,12 +124,9 @@ func AddOrphanCleanCron(id, spec string) (cron.EntryID, error) {
 		ft, err := repository.GetFilmTaskById(id)
 		if err != nil {
 			log.Println("OrphanCleanCron Exec Failed: ", err)
+			return
 		}
-		// 只有任务开启时执行
-		if ft.State && ft.Model == 3 {
-			n := repository.CleanOrphanPlaylists()
-			log.Printf("执行一次孤儿数据清理任务，共删除 %d 条记录\n", n)
-		}
+		executeTask(ft)
 	})
 }
 
@@ -185,4 +171,43 @@ func ReloadCronTask(id string) error {
 
 	RegisterTaskCid(id, cid)
 	return nil
+}
+
+// executeTask 执行特定的定时任务逻辑（内部统一调用）
+func executeTask(ft model.FilmCollectTask) {
+	if !ft.State {
+		return
+	}
+
+	log.Printf("开始执行定时任务: Task[%s] Model[%d]\n", ft.Id, ft.Model)
+
+	switch ft.Model {
+	case 0: // 自动更新已启用站点
+		AutoCollect(ft.Time)
+		log.Println("执行一次自动更新任务")
+	case 1: // 更新指定资源站
+		BatchCollect(ft.Time, ft.Ids...)
+	case 2: // 失败采集恢复
+		FullRecoverSpider()
+		log.Println("执行一次失败采集恢复任务")
+	case 3: // 孤儿数据清理
+		n := repository.CleanOrphanPlaylists()
+		log.Printf("执行一次孤儿数据清理任务，共删除 %d 条记录\n", n)
+	}
+
+	log.Printf("定时任务执行完毕: Task[%s]\n", ft.Id)
+}
+
+// RunTaskOnce 立即手动执行一次任务
+func RunTaskOnce(id string) {
+	go func() {
+		ft, err := repository.GetFilmTaskById(id)
+		if err != nil {
+			log.Println("RunTaskOnce Failed: ", err)
+			return
+		}
+		// 手动触发不需要再次检查 State，因为通常是在开启时主动调用
+		// 但为了安全，底层的 executeTask 依然会检查
+		executeTask(ft)
+	}()
 }

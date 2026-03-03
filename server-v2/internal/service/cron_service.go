@@ -94,6 +94,11 @@ func (s *CronService) ChangeFilmCrontab(id string, state bool) error {
 	repository.UpdateFilmTask(ft)
 	// 同步重载运行时引擎
 	_ = spider.ReloadCronTask(id)
+
+	// 如果切换为开启状态，则立即执行一次
+	if state {
+		spider.RunTaskOnce(id)
+	}
 	return nil
 }
 
