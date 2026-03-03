@@ -59,7 +59,16 @@ func (s *CronService) GetFilmCrontab() []model.CronTaskVo {
 	tl := repository.GetAllFilmTask()
 	for _, t := range tl {
 		e := spider.GetEntryByTaskId(t.Id)
-		taskVo := model.CronTaskVo{FilmCollectTask: t, PreV: e.Prev.In(cst).Format(time.DateTime), Next: e.Next.In(cst).Format(time.DateTime)}
+		var preV, nextV string
+		// 只有任务开启时，Next 才有意义
+		if t.State && !e.Next.IsZero() {
+			nextV = e.Next.In(cst).Format(time.DateTime)
+		}
+		// 上次执行时间，如果从来没执行过则是零值
+		if !e.Prev.IsZero() {
+			preV = e.Prev.In(cst).Format(time.DateTime)
+		}
+		taskVo := model.CronTaskVo{FilmCollectTask: t, PreV: preV, Next: nextV}
 		l = append(l, taskVo)
 	}
 	return l
