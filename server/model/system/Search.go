@@ -204,14 +204,24 @@ func BatchHandleSearchTag(infos ...SearchInfo) {
 
 // ================================= Spider 数据处理(mysql) =================================
 
-// CreateSearchTable 创建存储检索信息的数据表
+// CreateSearchTable 创建或更新存储检索信息的数据表
+// AutoMigrate 是幂等操作：表不存在则创建，已存在则补全缺失的列和索引（包括 mid 的唯一索引）。
+// 建索引前先去重，防止已有重复 mid 导致 CREATE UNIQUE INDEX 失败。
 func CreateSearchTable() {
-	// 如果不存在则创建表
-	if !ExistSearchTable() {
-		err := db.Mdb.AutoMigrate(&SearchInfo{})
-		if err != nil {
-			log.Println("Create Table SearchInfo Failed: ", err)
+	if ExistSearchTable() {
+		// 去除重复 mid（保留 id 最大的一条，即最近采集的数据）
+		// 使用子查询绕过 MySQL 不支持在 DELETE 中直接引用同一张表的限制
+		var s SearchInfo
+		dedup := fmt.Sprintf(
+			`DELETE FROM %s WHERE id NOT IN (SELECT max_id FROM (SELECT MAX(id) AS max_id FROM %[1]s GROUP BY mid) AS t)`,
+			s.TableName(),
+		)
+		if err := db.Mdb.Exec(dedup).Error; err != nil {
+			log.Println("Dedup search_infos Failed: ", err)
 		}
+	}
+	if err := db.Mdb.AutoMigrate(&SearchInfo{}); err != nil {
+		log.Println("AutoMigrate SearchInfo Failed: ", err)
 	}
 }
 
@@ -235,11 +245,12 @@ func AddSearchIndex() {
 }
 
 // upsertColumns 是 search_infos 中重复采集时需要覆盖更新的列（mid 是冲突键，不在此列表中）
+// 包含 deleted_at：若记录曾被软删除，重新采集时自动恢复为可见状态（置 NULL）
 var upsertColumns = []string{
 	"cid", "pid", "name", "sub_title", "c_name", "class_tag",
 	"area", "language", "year", "initial", "score",
 	"update_stamp", "hits", "state", "remarks", "release_stamp",
-	"picture", "actor", "director", "blurb", "updated_at",
+	"picture", "actor", "director", "blurb", "updated_at", "deleted_at",
 }
 
 // BatchSave 批量保存影片search信息（已统一为 upsert，保留函数签名兼容旧调用）
