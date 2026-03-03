@@ -15,9 +15,7 @@ import (
 网络请求, 数据爬取
 */
 
-var (
-	Client = CreateClient()
-)
+var Client = CreateClient()
 
 // RequestInfo 请求参数结构体
 type RequestInfo struct {
@@ -195,4 +193,3 @@ func setProxy(c *colly.Collector) {
 	proxyUrl, _ := url.Parse("socks5://127.0.0.1:7890")
 	c.WithTransport(&http.Transport{Proxy: http.ProxyURL(proxyUrl)})
 }
-

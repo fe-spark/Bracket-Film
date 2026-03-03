@@ -2,6 +2,7 @@ package SystemInit
 
 import (
 	"log"
+
 	"server/config"
 	"server/model/system"
 	"server/plugin/common/util"
@@ -87,8 +88,10 @@ func CollectCrontabInit() {
 			2. 添加一条默认任务, 定时处理采集失败的记录
 			3.生成任务信息
 		*/
-		task := system.FilmCollectTask{Id: util.GenerateSalt(), Time: config.DefaultUpdateTime, Spec: config.DefaultUpdateSpec,
-			Model: 0, State: false, Remark: "每20分钟执行一次已启用站点数据的自动更新"}
+		task := system.FilmCollectTask{
+			Id: util.GenerateSalt(), Time: config.DefaultUpdateTime, Spec: config.DefaultUpdateSpec,
+			Model: 0, State: false, Remark: "每20分钟执行一次已启用站点数据的自动更新",
+		}
 		// 添加一条定时任务-影片定时更新
 		cid, err := spider.AddAutoUpdateCron(task.Id, task.Spec)
 		// 如果任务添加失败则直接返回错误信息
@@ -102,8 +105,10 @@ func CollectCrontabInit() {
 		system.SaveFilmTask(task)
 
 		// 添加一条定时任务-定期处理失败请求
-		recoverTask := system.FilmCollectTask{Id: util.GenerateSalt(), Time: 0, Spec: config.EveryWeekSpec,
-			Model: 2, State: false, Remark: "每周日凌晨4点清理一次采集失败的采集记录"}
+		recoverTask := system.FilmCollectTask{
+			Id: util.GenerateSalt(), Time: 0, Spec: config.EveryWeekSpec,
+			Model: 2, State: false, Remark: "每周日凌晨4点清理一次采集失败的采集记录",
+		}
 		// 添加一条定时任务-影片定时更新
 		cid, err = spider.AddFilmRecoverCron(recoverTask.Spec)
 		// 如果任务添加失败则直接返回错误信息

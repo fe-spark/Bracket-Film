@@ -2,11 +2,12 @@ package controller
 
 import (
 	"fmt"
+	"strconv"
+	"time"
+
 	"server/logic"
 	"server/model/system"
 	"server/plugin/spider"
-	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -35,7 +36,7 @@ func FindFilmSource(c *gin.Context) {
 
 // FilmSourceAdd 添加采集源
 func FilmSourceAdd(c *gin.Context) {
-	var s = system.FilmSource{}
+	s := system.FilmSource{}
 	// 获取请求参数
 	if err := c.ShouldBindJSON(&s); err != nil {
 		system.Failed("请求参数异常", c)
@@ -66,7 +67,7 @@ func FilmSourceAdd(c *gin.Context) {
 
 // FilmSourceUpdate 采集站点信息更新
 func FilmSourceUpdate(c *gin.Context) {
-	var s = system.FilmSource{}
+	s := system.FilmSource{}
 	// 获取请求参数
 	if err := c.ShouldBindJSON(&s); err != nil {
 		system.Failed("请求参数异常", c)
@@ -110,7 +111,7 @@ func FilmSourceUpdate(c *gin.Context) {
 
 // FilmSourceChange 采集站点状态变更
 func FilmSourceChange(c *gin.Context) {
-	var s = system.FilmSource{}
+	s := system.FilmSource{}
 	// 获取请求参数
 	if err := c.ShouldBindJSON(&s); err != nil {
 		system.Failed("请求参数异常", c)
@@ -175,7 +176,7 @@ func FilmSourceDel(c *gin.Context) {
 
 // FilmSourceTest 测试影视站点数据是否可用
 func FilmSourceTest(c *gin.Context) {
-	var s = system.FilmSource{}
+	s := system.FilmSource{}
 	// 获取请求参数
 	if err := c.ShouldBindJSON(&s); err != nil {
 		system.Failed("请求参数异常", c)
@@ -228,11 +229,11 @@ func GetNormalFilmSource(c *gin.Context) {
 // FailureRecordList 失效采集记录分页数据
 func FailureRecordList(c *gin.Context) {
 	// 数据返回对象
-	var params = system.RecordRequestVo{Paging: &system.Page{}}
+	params := system.RecordRequestVo{Paging: &system.Page{}}
 	var err error
 	// 获取筛选条件
 	params.OriginId = c.DefaultQuery("originId", "")
-	//params.CollectType, err = strconv.Atoi(c.DefaultQuery("collectType", "-1"))
+	// params.CollectType, err = strconv.Atoi(c.DefaultQuery("collectType", "-1"))
 	params.Hour, err = strconv.Atoi(c.DefaultQuery("hour", "0"))
 	params.Status, err = strconv.Atoi(c.DefaultQuery("status", "-1"))
 
