@@ -6,11 +6,12 @@ import (
 	"hash/fnv"
 	"log"
 	"regexp"
-	"server/config"
-	"server/plugin/db"
 	"strconv"
 	"strings"
 	"time"
+
+	"server/config"
+	"server/plugin/db"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -30,45 +31,45 @@ type Movie struct {
 
 // MovieDescriptor 影片详情介绍信息
 type MovieDescriptor struct {
-	SubTitle    string `json:"subTitle"`    //子标题
-	CName       string `json:"cName"`       //分类名称
-	EnName      string `json:"enName"`      //英文名
-	Initial     string `json:"initial"`     //首字母
-	ClassTag    string `json:"classTag"`    //分类标签
-	Actor       string `json:"actor"`       //主演
-	Director    string `json:"director"`    //导演
-	Writer      string `json:"writer"`      //作者
-	Blurb       string `json:"blurb"`       //简介, 残缺,不建议使用
+	SubTitle    string `json:"subTitle"`    // 子标题
+	CName       string `json:"cName"`       // 分类名称
+	EnName      string `json:"enName"`      // 英文名
+	Initial     string `json:"initial"`     // 首字母
+	ClassTag    string `json:"classTag"`    // 分类标签
+	Actor       string `json:"actor"`       // 主演
+	Director    string `json:"director"`    // 导演
+	Writer      string `json:"writer"`      // 作者
+	Blurb       string `json:"blurb"`       // 简介, 残缺,不建议使用
 	Remarks     string `json:"remarks"`     // 更新情况
-	ReleaseDate string `json:"releaseDate"` //上映时间
+	ReleaseDate string `json:"releaseDate"` // 上映时间
 	Area        string `json:"area"`        // 地区
-	Language    string `json:"language"`    //语言
-	Year        string `json:"year"`        //年份
-	State       string `json:"state"`       //影片状态 正片|预告...
-	UpdateTime  string `json:"updateTime"`  //更新时间
-	AddTime     int64  `json:"addTime"`     //资源添加时间戳
-	DbId        int64  `json:"dbId"`        //豆瓣id
+	Language    string `json:"language"`    // 语言
+	Year        string `json:"year"`        // 年份
+	State       string `json:"state"`       // 影片状态 正片|预告...
+	UpdateTime  string `json:"updateTime"`  // 更新时间
+	AddTime     int64  `json:"addTime"`     // 资源添加时间戳
+	DbId        int64  `json:"dbId"`        // 豆瓣id
 	DbScore     string `json:"dbScore"`     // 豆瓣评分
-	Hits        int64  `json:"hits"`        //影片热度
-	Content     string `json:"content"`     //内容简介
+	Hits        int64  `json:"hits"`        // 影片热度
+	Content     string `json:"content"`     // 内容简介
 }
 
 // MovieBasicInfo 影片基本信息
 type MovieBasicInfo struct {
-	Id       int64  `json:"id"`       //影片Id
-	Cid      int64  `json:"cid"`      //分类ID
-	Pid      int64  `json:"pid"`      //一级分类ID
-	Name     string `json:"name"`     //片名
-	SubTitle string `json:"subTitle"` //子标题
-	CName    string `json:"cName"`    //分类名称
-	State    string `json:"state"`    //影片状态 正片|预告...
-	Picture  string `json:"picture"`  //简介图片
-	Actor    string `json:"actor"`    //主演
-	Director string `json:"director"` //导演
-	Blurb    string `json:"blurb"`    //简介, 不完整
+	Id       int64  `json:"id"`       // 影片Id
+	Cid      int64  `json:"cid"`      // 分类ID
+	Pid      int64  `json:"pid"`      // 一级分类ID
+	Name     string `json:"name"`     // 片名
+	SubTitle string `json:"subTitle"` // 子标题
+	CName    string `json:"cName"`    // 分类名称
+	State    string `json:"state"`    // 影片状态 正片|预告...
+	Picture  string `json:"picture"`  // 简介图片
+	Actor    string `json:"actor"`    // 主演
+	Director string `json:"director"` // 导演
+	Blurb    string `json:"blurb"`    // 简介, 不完整
 	Remarks  string `json:"remarks"`  // 更新情况
 	Area     string `json:"area"`     // 地区
-	Year     string `json:"year"`     //年份
+	Year     string `json:"year"`     // 年份
 }
 
 // MovieUrlInfo 影视资源url信息
@@ -79,17 +80,17 @@ type MovieUrlInfo struct {
 
 // MovieDetail 影片详情信息
 type MovieDetail struct {
-	Id       int64    `json:"id"`       //影片Id
-	Cid      int64    `json:"cid"`      //分类ID
-	Pid      int64    `json:"pid"`      //一级分类ID
-	Name     string   `json:"name"`     //片名
-	Picture  string   `json:"picture"`  //简介图片
+	Id       int64    `json:"id"`       // 影片Id
+	Cid      int64    `json:"cid"`      // 分类ID
+	Pid      int64    `json:"pid"`      // 一级分类ID
+	Name     string   `json:"name"`     // 片名
+	Picture  string   `json:"picture"`  // 简介图片
 	PlayFrom []string `json:"playFrom"` // 播放来源
-	DownFrom string   `json:"DownFrom"` //下载来源 例: http
-	//PlaySeparator   string              `json:"playSeparator"` // 播放信息分隔符
-	PlayList        [][]MovieUrlInfo    `json:"playList"`     //播放地址url
+	DownFrom string   `json:"DownFrom"` // 下载来源 例: http
+	// PlaySeparator   string              `json:"playSeparator"` // 播放信息分隔符
+	PlayList        [][]MovieUrlInfo    `json:"playList"`     // 播放地址url
 	DownloadList    [][]MovieUrlInfo    `json:"downloadList"` // 下载url地址
-	MovieDescriptor `json:"descriptor"` //影片描述信息
+	MovieDescriptor `json:"descriptor"` // 影片描述信息
 }
 
 // MoviePlaySource 多站播放源信息
@@ -174,32 +175,33 @@ func SaveDetail(detail MovieDetail) (err error) {
 }
 
 // SaveSitePlayList 仅保存播放url列表信息到当前站点 (MySQL 持久化)
+// Content 存储格式为 [][]MovieUrlInfo（完整多线路），读取侧按线路展开为多个 MoviePlaySource。
 func SaveSitePlayList(id string, list []MovieDetail) (err error) {
 	if len(list) <= 0 {
 		return nil
 	}
 	var playlists []MoviePlaylist
 	for _, d := range list {
-		if len(d.PlayList) > 0 {
-			data, _ := json.Marshal(d.PlayList[0])
-			if strings.Contains(d.CName, "解说") {
-				continue
-			}
-			// 保存 DbId key
-			if d.DbId != 0 {
-				playlists = append(playlists, MoviePlaylist{
-					SourceId: id,
-					MovieKey: GenerateHashKey(d.DbId),
-					Content:  string(data),
-				})
-			}
-			// 保存 Name key
+		// 过滤解说类内容 + 无播放列表的条目
+		if len(d.PlayList) == 0 || strings.Contains(d.CName, "解说") {
+			continue
+		}
+		// 存储全部线路（[][]MovieUrlInfo），避免只保存第一个线路
+		data, _ := json.Marshal(d.PlayList)
+		// 保存 DbId key
+		if d.DbId != 0 {
 			playlists = append(playlists, MoviePlaylist{
 				SourceId: id,
-				MovieKey: GenerateHashKey(d.Name),
+				MovieKey: GenerateHashKey(d.DbId),
 				Content:  string(data),
 			})
 		}
+		// 保存 Name key
+		playlists = append(playlists, MoviePlaylist{
+			SourceId: id,
+			MovieKey: GenerateHashKey(d.Name),
+			Content:  string(data),
+		})
 	}
 	if len(playlists) > 0 {
 		// 使用 Upsert 逻辑
@@ -235,18 +237,19 @@ func GetMovieDetailByDBID(mid int64, name string) []MoviePlaySource {
 			if mid == 0 {
 				key = GenerateHashKey(name)
 			}
-			if err := db.Mdb.Where("source_id = ? AND movie_key = ?", s.Id, key).First(&playlist).Error; err == nil {
-				var ps MoviePlaySource
-				_ = json.Unmarshal([]byte(playlist.Content), &ps)
-				ps.SiteName = s.Name
-				mps = append(mps, ps)
-			} else if mid != 0 {
-				// 如果传了 mid 但没搜到，再尝试搜一次 name
-				if err := db.Mdb.Where("source_id = ? AND movie_key = ?", s.Id, GenerateHashKey(name)).First(&playlist).Error; err == nil {
-					var ps MoviePlaySource
-					_ = json.Unmarshal([]byte(playlist.Content), &ps)
-					ps.SiteName = s.Name
-					mps = append(mps, ps)
+			if err := db.Mdb.Where("source_id = ? AND movie_key = ?", s.Id, key).First(&playlist).Error; err != nil && mid != 0 {
+				// DBID 未命中时回退到名称匹配
+				db.Mdb.Where("source_id = ? AND movie_key = ?", s.Id, GenerateHashKey(name)).First(&playlist)
+			}
+			if playlist.ID > 0 {
+				// Content 格式为 [][]MovieUrlInfo，每个子列表对应一条播放线路
+				var playLists [][]MovieUrlInfo
+				if jsonErr := json.Unmarshal([]byte(playlist.Content), &playLists); jsonErr == nil {
+					for _, pl := range playLists {
+						if len(pl) > 0 {
+							mps = append(mps, MoviePlaySource{SiteName: s.Name, PlayList: pl})
+						}
+					}
 				}
 			}
 		}
@@ -370,16 +373,16 @@ func GetBasicInfoBySearchInfos(infos ...SearchInfo) []MovieBasicInfo {
 // GenerateHashKey 存储播放源信息时对影片名称进行处理, 提高各站点间同一影片的匹配度
 func GenerateHashKey[K string | ~int | int64](key K) string {
 	mName := fmt.Sprint(key)
-	//1. 去除name中的所有空格
+	// 1. 去除name中的所有空格
 	mName = regexp.MustCompile(`\s`).ReplaceAllString(mName, "")
-	//2. 去除name中含有的别名～.*～
+	// 2. 去除name中含有的别名～.*～
 	mName = regexp.MustCompile(`～.*～$`).ReplaceAllString(mName, "")
-	//3. 去除name首尾的标点符号
+	// 3. 去除name首尾的标点符号
 	mName = regexp.MustCompile(`^[[:punct:]]+|[[:punct:]]+$`).ReplaceAllString(mName, "")
 	// 部分站点包含 动画版, 特殊别名 等字符, 需进行删除
-	//mName = regexp.MustCompile(`动画版`).ReplaceAllString(mName, "")
+	// mName = regexp.MustCompile(`动画版`).ReplaceAllString(mName, "")
 	mName = regexp.MustCompile(`季.*`).ReplaceAllString(mName, "季")
-	//4. 将处理完成后的name转化为hash值作为存储时的key
+	// 4. 将处理完成后的name转化为hash值作为存储时的key
 	h := fnv.New32a()
 	_, err := h.Write([]byte(mName))
 	if err != nil {

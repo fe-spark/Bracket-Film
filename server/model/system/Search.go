@@ -22,27 +22,27 @@ import (
 // SearchInfo 存储用于检索的信息
 type SearchInfo struct {
 	gorm.Model
-	Mid          int64   `json:"mid"`          // 影片ID gorm:"uniqueIndex:idx_mid"
-	Cid          int64   `json:"cid"`          // 分类ID
-	Pid          int64   `json:"pid"`          // 上级分类ID
-	Name         string  `json:"name"`         // 片名
-	SubTitle     string  `json:"subTitle"`     // 影片子标题
-	CName        string  `json:"cName"`        // 分类名称
-	ClassTag     string  `json:"classTag"`     // 类型标签
-	Area         string  `json:"area"`         // 地区
-	Language     string  `json:"language"`     // 语言
-	Year         int64   `json:"year"`         // 年份
-	Initial      string  `json:"initial"`      // 首字母
-	Score        float64 `json:"score"`        // 评分
-	UpdateStamp  int64   `json:"updateStamp"`  // 更新时间
-	Hits         int64   `json:"hits"`         // 热度排行
-	State        string  `json:"state"`        // 状态 正片|预告
-	Remarks      string  `json:"remarks"`      // 完结 | 更新至x集
-	ReleaseStamp int64   `json:"releaseStamp"` // 上映时间 时间戳
-	Picture      string  `json:"picture"`      // 简介图片
-	Actor        string  `json:"actor"`        // 主演
-	Director     string  `json:"director"`     // 导演
-	Blurb        string  `json:"blurb"`        // 简介, 不完整
+	Mid          int64   `json:"mid" gorm:"uniqueIndex:idx_mid"` // 影片ID
+	Cid          int64   `json:"cid"`                            // 分类ID
+	Pid          int64   `json:"pid"`                            // 上级分类ID
+	Name         string  `json:"name"`                           // 片名
+	SubTitle     string  `json:"subTitle"`                       // 影片子标题
+	CName        string  `json:"cName"`                          // 分类名称
+	ClassTag     string  `json:"classTag"`                       // 类型标签
+	Area         string  `json:"area"`                           // 地区
+	Language     string  `json:"language"`                       // 语言
+	Year         int64   `json:"year"`                           // 年份
+	Initial      string  `json:"initial"`                        // 首字母
+	Score        float64 `json:"score"`                          // 评分
+	UpdateStamp  int64   `json:"updateStamp"`                    // 更新时间
+	Hits         int64   `json:"hits"`                           // 热度排行
+	State        string  `json:"state"`                          // 状态 正片|预告
+	Remarks      string  `json:"remarks"`                        // 完结 | 更新至x集
+	ReleaseStamp int64   `json:"releaseStamp"`                   // 上映时间 时间戳
+	Picture      string  `json:"picture"`                        // 简介图片
+	Actor        string  `json:"actor"`                          // 主演
+	Director     string  `json:"director"`                       // 导演
+	Blurb        string  `json:"blurb"`                          // 简介, 不完整
 }
 
 // Tag 影片分类标签结构体
@@ -234,80 +234,52 @@ func AddSearchIndex() {
 	db.Mdb.Exec(fmt.Sprintf("CREATE INDEX idx_year ON %s (year DESC)", tableName))
 }
 
-// BatchSave 批量保存影片search信息
-func BatchSave(list []SearchInfo) {
-	tx := db.Mdb.Begin()
-	// 防止程序异常终止
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-	if err := tx.CreateInBatches(list, len(list)).Error; err != nil {
-		// 插入失败则回滚事务, 重新进行插入
-		tx.Rollback()
-	}
-	tx.Commit()
-	// 保存成功后将相应 tag 数据写入 MySQL
-	BatchHandleSearchTag(list...)
+// upsertColumns 是 search_infos 中重复采集时需要覆盖更新的列（mid 是冲突键，不在此列表中）
+var upsertColumns = []string{
+	"cid", "pid", "name", "sub_title", "c_name", "class_tag",
+	"area", "language", "year", "initial", "score",
+	"update_stamp", "hits", "state", "remarks", "release_stamp",
+	"picture", "actor", "director", "blurb", "updated_at",
 }
 
-// BatchSaveOrUpdate 判断数据库中是否存在对应mid的数据, 如果存在则更新, 否则插入
+// BatchSave 批量保存影片search信息（已统一为 upsert，保留函数签名兼容旧调用）
+func BatchSave(list []SearchInfo) {
+	BatchSaveOrUpdate(list)
+}
+
+// BatchSaveOrUpdate 批量 upsert 影片检索信息
+// 使用 ON CONFLICT (mid) DO UPDATE 替代原有的「先 count 再 create/update」循环事务，
+// 彻底消除：① Rollback-without-return 导致整批丢失；② 并发 TOCTOU 重复主键冲突。
 func BatchSaveOrUpdate(list []SearchInfo) {
-	tx := db.Mdb.Begin()
-	for _, info := range list {
-		var count int64
-		// 通过当前影片id 对应的记录数
-		tx.Model(&SearchInfo{}).Where("mid", info.Mid).Count(&count)
-		// 如果存在对应数据则进行更新, 否则保存相应数据
-		if count > 0 {
-			// 记录已经存在则执行更新部分内容
-			err := tx.Model(&SearchInfo{}).Where("mid", info.Mid).Updates(SearchInfo{
-				UpdateStamp: info.UpdateStamp, Hits: info.Hits, State: info.State,
-				Remarks: info.Remarks, Score: info.Score, ReleaseStamp: info.ReleaseStamp,
-			}).Error
-			if err != nil {
-				tx.Rollback()
-			}
-		} else {
-			// 执行插入操作
-			if err := tx.Create(&info).Error; err != nil {
-				tx.Rollback()
-			}
-		}
+	if len(list) == 0 {
+		return
 	}
-	// 提交事务
-	tx.Commit()
+	if err := db.Mdb.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "mid"}},
+		DoUpdates: clause.AssignmentColumns(upsertColumns),
+	}).CreateInBatches(&list, 200).Error; err != nil {
+		log.Printf("BatchSaveOrUpdate upsert 失败: %v\n", err)
+		return
+	}
 	// 插入/更新成功后将相应 tag 数据写入 MySQL
 	BatchHandleSearchTag(list...)
 }
 
-// SaveSearchInfo 添加影片检索信息
+// SaveSearchInfo 保存单条影片检索信息（upsert）
 func SaveSearchInfo(s SearchInfo) error {
-	// 先查询数据库中是否存在对应记录
-	// 如果不存在对应记录则 保存当前记录
-	tx := db.Mdb.Begin()
-	if !ExistSearchInfo(s.Mid) {
-		// 执行插入操作
-		if err := tx.Create(&s).Error; err != nil {
-			tx.Rollback()
-			return err
-		}
-		// 新增时保存 tag 数据
-		BatchHandleSearchTag(s)
-	} else {
-		// 如果已经存在当前记录则将当前记录进行更新
-		err := tx.Model(&SearchInfo{}).Where("mid", s.Mid).Updates(SearchInfo{
-			UpdateStamp: s.UpdateStamp, Hits: s.Hits, State: s.State,
-			Remarks: s.Remarks, Score: s.Score, ReleaseStamp: s.ReleaseStamp,
-		}).Error
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
+	isNew := !ExistSearchInfo(s.Mid)
+	err := db.Mdb.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "mid"}},
+		DoUpdates: clause.AssignmentColumns(upsertColumns),
+	}).Create(&s).Error
+	if err != nil {
+		log.Printf("SaveSearchInfo upsert 失败 mid=%d: %v\n", s.Mid, err)
+		return err
 	}
-	// 提交事务
-	tx.Commit()
+	// 新增时才写 tag（更新时 tag 不做回收，由 BatchHandleSearchTag 增量维护）
+	if isNew {
+		BatchHandleSearchTag(s)
+	}
 	return nil
 }
 
