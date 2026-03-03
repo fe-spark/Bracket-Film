@@ -119,7 +119,7 @@ export default function FailureRecordPage() {
       title: "ID",
       dataIndex: "ID",
       width: 60,
-      render: (v) => <span style={{ color: "#8b40ff" }}>{v}</span>,
+      render: (v) => <span style={{ color: "var(--ant-color-purple)" }}>{v}</span>,
     },
     {
       title: "采集站",
@@ -200,7 +200,7 @@ export default function FailureRecordPage() {
   ];
 
   return (
-    <div>
+    <div className={styles.container}>
       <div className={styles.filterBar}>
         <Select
           placeholder="采集来源"
@@ -263,7 +263,7 @@ export default function FailureRecordPage() {
           <Popconfirm title="确认清除已处理记录？" onConfirm={handleCleanDone}>
             <Button
               icon={<WarningOutlined />}
-              style={{ color: "#fa8c16", borderColor: "#fa8c16" }}
+              style={{ color: "var(--ant-color-warning)", borderColor: "var(--ant-color-warning)" }}
             >
               清除已处理
             </Button>

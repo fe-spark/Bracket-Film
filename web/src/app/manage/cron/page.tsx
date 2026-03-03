@@ -162,7 +162,7 @@ export default function CronManagePage() {
       align: "center",
       render: (v) => (
         <Tag color="cyan">
-          {v === 0 ? "自动更新" : v === 1 ? "自定义更新" : "采集重试"}
+          {v === 0 ? "自动更新" : v === 1 ? "自定义更新" : v === 2 ? "采集重试" : "孤儿清理"}
         </Tag>
       ),
     },
@@ -267,6 +267,9 @@ export default function CronManagePage() {
           <Tooltip title="失败采集重试处理">
             <Radio value={2}>采集重试</Radio>
           </Tooltip>
+          <Tooltip title="清理从站中已无法匹配主站影片的孤儿播放记录">
+            <Radio value={3}>孤儿清理</Radio>
+          </Tooltip>
         </Radio.Group>
       </Form.Item>
       {currentModel === 1 && (
@@ -279,7 +282,7 @@ export default function CronManagePage() {
           />
         </Form.Item>
       )}
-      {currentModel !== 2 && (
+      {currentModel !== 2 && currentModel !== 3 && (
         <Form.Item label="采集时长" name="time">
           <InputNumber style={{ width: "100%" }} placeholder="负数则默认全量" />
         </Form.Item>

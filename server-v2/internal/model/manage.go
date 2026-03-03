@@ -1,0 +1,53 @@
+package model
+
+import "gorm.io/gorm"
+
+// BasicConfig 网站基本信息 (返回前端DTO与Redis缓存结构相同)
+type BasicConfig struct {
+	SiteName string `json:"siteName"` // 网站名称
+	Domain   string `json:"domain"`   // 网站域名
+	Logo     string `json:"logo"`     // 网站logo
+	Keyword  string `json:"keyword"`  // seo关键字
+	Describe string `json:"describe"` // 网站描述信息
+	State    bool   `json:"state"`    // 网站状态 开启 || 关闭
+	Hint     string `json:"hint"`     // 网站关闭提示
+}
+
+// Banner 首页横幅信息
+type Banner struct {
+	Id      string `json:"id"`      // 唯一标识
+	Mid     int64  `json:"mid"`     // 绑定所属影片Id
+	Name    string `json:"name"`    // 影片名称
+	Year    int64  `json:"year"`    // 上映年份
+	CName   string `json:"cName"`   // 分类名称
+	Poster  string `json:"poster"`  // 海报图片链接
+	Picture string `json:"picture"` // 横幅大图链接
+	Remark  string `json:"remark"`  // 更新状态描述信息
+	Sort    int64  `json:"sort"`    // 排序分値
+}
+
+type Banners []Banner
+
+func (bl Banners) Len() int           { return len(bl) }
+func (bl Banners) Less(i, j int) bool { return bl[i].Sort < bl[j].Sort }
+func (bl Banners) Swap(i, j int)      { bl[i], bl[j] = bl[j], bl[i] }
+
+// ------------------------------------------------------ MySQL 持久化模型 ---
+
+// SiteConfigRecord 网站基础配置持久化 (MySQL单行表)
+type SiteConfigRecord struct {
+	gorm.Model
+	SiteName string `gorm:"size:128"`
+	Domain   string `gorm:"size:256"`
+	Logo     string `gorm:"size:512"`
+	Keyword  string `gorm:"size:256"`
+	Describe string `gorm:"size:512"`
+	State    bool
+	Hint     string `gorm:"size:512"`
+}
+
+// BannersRecord 轮播配置持久化 (MySQL, JSON blob)
+type BannersRecord struct {
+	gorm.Model
+	Content string `gorm:"type:text"`
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Table,
   Tag,
@@ -65,6 +65,9 @@ export default function CollectManagePage() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const { message } = useAppMessage();
 
+  // 主站是否已有采集数据（从服务端获取）
+  const [hasMasterData, setHasMasterData] = useState(false);
+
   // 批量采集弹窗
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchIds, setBatchIds] = useState<string[]>([]);
@@ -81,6 +84,31 @@ export default function CollectManagePage() {
   const [clearOpen, setClearOpen] = useState(false);
   const [reCollectOpen, setReCollectOpen] = useState(false);
   const [password, setPassword] = useState("");
+
+  // 批量选择中是否存在"有从站但无主站"的情况
+  const batchNeedsPrimary = useMemo(() => {
+    const selected = siteList.filter((s) => batchIds.includes(s.id));
+    return selected.some((s) => s.grade === 1) && !selected.some((s) => s.grade === 0);
+  }, [batchIds, siteList]);
+
+  // batchOptions 追加 grade 信息（与 siteList 合并）
+  const enrichedBatchOptions = useMemo(
+    () =>
+      batchOptions.map((o) => ({
+        ...o,
+        grade: siteList.find((s) => s.id === o.id)?.grade ?? 1,
+      })),
+    [batchOptions, siteList]
+  );
+
+  // 主站是否正在采集中
+  const masterIsCollecting = useMemo(
+    () => siteList.filter((s) => s.grade === 0).some((s) => activeCollectIds.includes(s.id)),
+    [siteList, activeCollectIds]
+  );
+
+  // 从站可采集条件：主站已有数据 且 主站当前未在采集
+  const slaveCanCollect = hasMasterData && !masterIsCollecting;
 
   const getCollectList = useCallback(async () => {
     setLoading(true);
@@ -123,14 +151,23 @@ export default function CollectManagePage() {
     }
   }, []);
 
+  const getMasterDataStatus = useCallback(async () => {
+    const resp = await ApiGet("/manage/spider/master/status");
+    if (resp.code === 0) setHasMasterData(resp.data === true);
+  }, []);
+
   useEffect(() => {
     getCollectList();
     getCollectingState();
-    timerRef.current = setInterval(getCollectingState, 4000);
+    getMasterDataStatus();
+    timerRef.current = setInterval(() => {
+      getCollectingState();
+      getMasterDataStatus();
+    }, 4000);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [getCollectList, getCollectingState]);
+  }, [getCollectList, getCollectingState, getMasterDataStatus]);
 
   const changeSourceState = async (record: FilmSource) => {
     const resp = await ApiPost("/manage/collect/change", {
@@ -238,6 +275,11 @@ export default function CollectManagePage() {
   };
 
   const startBatchCollect = async () => {
+    // 从站采集必须同时勾选对应主站
+    if (batchNeedsPrimary) {
+      message.warning("已选中从站，请同时勾选主站以确保数据正确关联");
+      return;
+    }
     const resp = await ApiPost("/manage/spider/start", {
       ids: batchIds,
       time: batchTime,
@@ -285,7 +327,7 @@ export default function CollectManagePage() {
         <Space>
           <span>{name}</span>
           {activeCollectIds.includes(record.id) && (
-            <LoadingOutlined style={{ color: "#1677ff" }} />
+            <LoadingOutlined style={{ color: "var(--ant-color-primary)" }} />
           )}
         </Space>
       ),
@@ -392,38 +434,62 @@ export default function CollectManagePage() {
       fixed: "right",
       render: (_, record) => {
         const isRunning = activeCollectIds.includes(record.id);
-        return (
-          <Space>
-            {isRunning ? (
-              <Tooltip title="截断并重新开始">
-                <Popconfirm
-                  title="该站点正在采集中"
-                  description="是否截断当前任务并重新开始？"
-                  okText="截断重采"
-                  cancelText="取消"
-                  onConfirm={() => startTask(record)}
-                >
-                  <Button
-                    type="primary"
-                    icon={<PoweroffOutlined />}
-                    shape="circle"
-                    size="small"
-                    style={{ background: "#fa8c16", borderColor: "#fa8c16" }}
-                  />
-                </Popconfirm>
-              </Tooltip>
-            ) : (
-              <Tooltip title="开始采集">
+        const isSlave = record.grade === 1;
+
+        // 从站采集按钮（开始/截断）的渲染逻辑
+        const renderStartBtn = () => {
+          // 从站：主站无数据时完全不渲染采集按钮
+          if (isSlave && !hasMasterData) return null;
+          // 从站：主站采集中时渲染禁用按钮并提示原因
+          if (isSlave && masterIsCollecting) {
+            return (
+              <Tooltip title="主站正在采集中，请等待主站采集完成后再采集从站">
                 <Button
                   type="primary"
                   icon={<PoweroffOutlined />}
                   shape="circle"
                   size="small"
-                  style={{ background: "#52c41a", borderColor: "#52c41a" }}
-                  onClick={() => startTask(record)}
+                  disabled
                 />
               </Tooltip>
-            )}
+            );
+          }
+          // 正常情况：正在运行时显示截断重采，否则显示开始采集
+          return isRunning ? (
+            <Tooltip title="截断并重新开始">
+              <Popconfirm
+                title="该站点正在采集中"
+                description="是否截断当前任务并重新开始？"
+                okText="截断重采"
+                cancelText="取消"
+                onConfirm={() => startTask(record)}
+              >
+                <Button
+                  type="primary"
+                  icon={<PoweroffOutlined />}
+                  shape="circle"
+                  size="small"
+                  style={{ background: "var(--ant-color-warning)", borderColor: "var(--ant-color-warning)" }}
+                />
+              </Popconfirm>
+            </Tooltip>
+          ) : (
+            <Tooltip title="开始采集">
+              <Button
+                type="primary"
+                icon={<PoweroffOutlined />}
+                shape="circle"
+                size="small"
+                style={{ background: "var(--ant-color-success)", borderColor: "var(--ant-color-success)" }}
+                onClick={() => startTask(record)}
+              />
+            </Tooltip>
+          );
+        };
+
+        return (
+          <Space>
+            {renderStartBtn()}
             {isRunning && (
               <Tooltip title="停止采集">
                 <Button
@@ -529,17 +595,17 @@ export default function CollectManagePage() {
         <Button
           type="primary"
           icon={<SendOutlined />}
-          style={{ background: "#52c41a", borderColor: "#52c41a" }}
+          style={{ background: "var(--ant-color-success)", borderColor: "var(--ant-color-success)" }}
           onClick={openBatchCollect}
         >
           一键采集
         </Button>
         <Button
           icon={<ReloadOutlined />}
-          style={{ color: "#fa8c16", borderColor: "#fa8c16" }}
+          style={{ color: "var(--ant-color-warning)", borderColor: "var(--ant-color-warning)" }}
           onClick={() => setReCollectOpen(true)}
         >
-          重新采集
+          清空重采
         </Button>
         <Button
           danger
@@ -601,12 +667,10 @@ export default function CollectManagePage() {
         onOk={startBatchCollect}
         okText="确认执行"
       >
+        {/* 正在采集中的站点提示 */}
         {(() => {
-          const activeInBatch = batchIds.filter((id) =>
-            activeCollectIds.includes(id)
-          );
-          const activeNames = batchOptions
-            .filter((o) => activeInBatch.includes(o.id))
+          const activeNames = enrichedBatchOptions
+            .filter((o) => batchIds.includes(o.id) && activeCollectIds.includes(o.id))
             .map((o) => o.name);
           return activeNames.length > 0 ? (
             <Alert
@@ -618,6 +682,16 @@ export default function CollectManagePage() {
             />
           ) : null;
         })()}
+        {/* 已选从站但未选主站的校验提示 */}
+        {batchNeedsPrimary && (
+          <Alert
+            type="error"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="从站依赖主站数据"
+            description="已勾选从站，请同时勾选对应的主站，否则无法正确关联数据"
+          />
+        )}
         <Form layout="vertical">
           <Form.Item label="执行站点">
             <Checkbox.Group
@@ -625,9 +699,15 @@ export default function CollectManagePage() {
               onChange={(v) => setBatchIds(v as string[])}
             >
               <Space direction="vertical">
-                {batchOptions.map((o) => (
+                {enrichedBatchOptions.map((o) => (
                   <Checkbox key={o.id} value={o.id}>
                     <Space size={4}>
+                      <Tag
+                        color={o.grade === 0 ? "green" : "default"}
+                        style={{ marginRight: 0 }}
+                      >
+                        {o.grade === 0 ? "主站" : "从站"}
+                      </Tag>
                       {o.name}
                       {activeCollectIds.includes(o.id) && (
                         <Tag
@@ -665,7 +745,7 @@ export default function CollectManagePage() {
         okText="确认执行"
         okButtonProps={{ danger: true }}
       >
-        <p style={{ color: "red", marginBottom: 16 }}>
+        <p style={{ color: "var(--ant-color-error)", marginBottom: 16 }}>
           此操作不可逆，将清空数据库中所有影片信息！
         </p>
         <Input.Password
@@ -676,14 +756,15 @@ export default function CollectManagePage() {
       </Modal>
 
       <Modal
-        title="重新采集"
+        title="清空数据并重新全量采集"
         open={reCollectOpen}
         onCancel={() => setReCollectOpen(false)}
         onOk={reCollect}
         okText="确认执行"
+        okButtonProps={{ danger: true }}
       >
-        <p style={{ color: "#fa8c16", marginBottom: 16 }}>
-          此操作将清空现有数据并从零开启全量采集任务。
+        <p style={{ color: "var(--ant-color-warning)", marginBottom: 16 }}>
+          此操作将<strong>先清空所有影视数据</strong>，再从零开始执行全量采集任务，操作不可逆。
         </p>
         <Input.Password
           placeholder="请输入管理密码"
