@@ -147,41 +147,50 @@ func GenAllFilmPlayList(playUrl, separator string) [][]model.MovieUrlInfo {
 	return res
 }
 
-// ConvertPlayUrl 将单个playFrom的播放地址字符串处理成列表形式
-// 格式：Episode$Link#Episode$Link#...
-func ConvertPlayUrl(playUrl string) []model.MovieUrlInfo {
-	var l []model.MovieUrlInfo
-	for _, p := range strings.Split(playUrl, "#") {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		episode, link, found := strings.Cut(p, "$")
-		episode = strings.TrimSpace(episode)
-		link = strings.TrimSpace(link)
-		if !found {
-			// 整条即为 link，无集数名（如 "http://..." 无 $）
-			episode, link = fmt.Sprintf("第%d集", len(l)+1), episode
-		} else if link == "" {
-			// "$http://..." 形式：Cut 取到 episode="", link="http://..."
-			// 或 "$" 末尾无内容，均跳过
-			if strings.HasPrefix(episode, "http") {
-				// episode 实际是有效 URL（原始数据以 $ 开头）
-				link, episode = episode, ""
-			} else {
-				continue
-			}
-		}
-		if link == "" {
-			continue
-		}
-		// 保证 episode 非空，防止空字符串入库
-		if episode == "" {
-			episode = fmt.Sprintf("第%d集", len(l)+1)
-		}
-		l = append(l, model.MovieUrlInfo{Episode: episode, Link: link})
+// parseEpisode 从单个片段解析集数名和播放链接，支持以下格式：
+//
+//	"集名$URL"  → episode=集名, link=URL
+//	"URL"       → episode="",  link=URL  (无集名，调用方自动补全)
+//	"$URL"      → episode="",  link=URL  (部分采集站数据以 $ 开头)
+//	"集名$"     → ok=false              (link 缺失，无效)
+func parseEpisode(seg string) (episode, link string, ok bool) {
+	ep, lk, hasDollar := strings.Cut(seg, "$")
+	ep, lk = strings.TrimSpace(ep), strings.TrimSpace(lk)
+	switch {
+	case !hasDollar:
+		return "", ep, ep != "" // 整条是 URL
+	case lk != "":
+		return ep, lk, true // 正常 "集名$URL"
+	case strings.HasPrefix(ep, "http"):
+		return "", ep, true // "$URL" 形式，ep 实为 URL
+	default:
+		return "", "", false // "集名$"，link 为空
 	}
-	return l
+}
+
+// isVideoURL 判断是否为视频直链，过滤 share/ 等网页链接
+func isVideoURL(link string) bool {
+	lower := strings.ToLower(link)
+	return strings.Contains(lower, ".m3u8") ||
+		strings.Contains(lower, ".mp4") ||
+		strings.Contains(lower, ".flv")
+}
+
+// ConvertPlayUrl 将单条 playFrom 地址字符串解析为播放列表
+// 片段格式：集名$URL，多集以 # 分隔
+func ConvertPlayUrl(playUrl string) []model.MovieUrlInfo {
+	var result []model.MovieUrlInfo
+	for _, seg := range strings.Split(playUrl, "#") {
+		episode, link, ok := parseEpisode(strings.TrimSpace(seg))
+		if !ok || !isVideoURL(link) {
+			continue
+		}
+		if episode == "" {
+			episode = fmt.Sprintf("第%d集", len(result)+1)
+		}
+		result = append(result, model.MovieUrlInfo{Episode: episode, Link: link})
+	}
+	return result
 }
 
 // ConvertVirtualPicture 将影片详情信息转化为虚拟图片信息

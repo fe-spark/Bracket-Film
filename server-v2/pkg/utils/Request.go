@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"crypto/tls"
 	"log"
 	"math/rand"
 	"net/http"
@@ -89,11 +90,15 @@ func containsStr(s, sub string) bool {
 }
 
 // CreateClient 初始化请求客户端（不挂载 OnRequest，由各调用方按需设置）
+// 跳过 TLS 证书验证：采集站部分使用过期/自签证书，浏览器会忽略警告继续访问，此处与之对齐
 func CreateClient() *colly.Collector {
 	c := colly.NewCollector()
 	c.MaxDepth = 1
 	c.AllowURLRevisit = true
 	c.SetRequestTimeout(20 * time.Second)
+	c.WithTransport(&http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	})
 	c.OnError(func(response *colly.Response, err error) {
 		log.Printf("请求异常: URL: %s Error: %s\n", response.Request.URL, err)
 	})
