@@ -310,13 +310,35 @@ func ClearRedisOnly() {
 	repository.RedisOnlyFlush()
 }
 
-// StarZero 清空站点内所有影片信息并从零开始采集
-func StarZero(h int) {
-	// 1. 清除影视信息
-	repository.FilmZero()
+// MasterOnlyCollect 仅对已启用的主站执行采集
+// 清空重采场景下使用：优先保证主站数据就绪，从站由定时任务补充
+func MasterOnlyCollect(h int) {
+	masters := repository.GetCollectSourceListByGrade(model.MasterCollect)
+	enabled := make([]model.FilmSource, 0)
+	for _, s := range masters {
+		if s.State {
+			enabled = append(enabled, s)
+		}
+	}
+	if len(enabled) == 0 {
+		log.Println("[StarZero] 未找到已启用的主站，跳过采集")
+		return
+	}
+	for _, s := range enabled {
+		go func(fs model.FilmSource) {
+			log.Printf("[StarZero] 开始主站全量采集: %s", fs.Name)
+			if err := HandleCollect(fs.Id, h); err != nil {
+				log.Printf("[StarZero] 主站采集失败 %s: %v", fs.Name, err)
+			}
+		}(s)
+	}
+}
 
-	// 2. 开启自动采集（每个站点的 HandleCollect 会自动抢断同站旧任务）
-	AutoCollect(h)
+// StarZero 清空所有影视数据后仅重采主站
+// 从站数据量大、独立更新，由定时任务或手动触发补采
+func StarZero(h int) {
+	repository.FilmZero()
+	MasterOnlyCollect(h)
 }
 
 // CollectSingleFilm 通过影片唯一ID获取影片信息

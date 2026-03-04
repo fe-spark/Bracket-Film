@@ -603,7 +603,7 @@ export default function CollectManagePage() {
           style={{ color: "var(--ant-color-warning)", borderColor: "var(--ant-color-warning)" }}
           onClick={() => setReCollectOpen(true)}
         >
-          清空重采
+          清空重建
         </Button>
         <Button
           danger
@@ -745,7 +745,7 @@ export default function CollectManagePage() {
       </Modal>
 
       <Modal
-        title="清空数据并重新全量采集"
+        title="清空数据并重建主站"
         open={reCollectOpen}
         onCancel={() => setReCollectOpen(false)}
         onOk={reCollect}
@@ -753,7 +753,7 @@ export default function CollectManagePage() {
         okButtonProps={{ danger: true }}
       >
         <p style={{ color: "var(--ant-color-warning)", marginBottom: 16 }}>
-          此操作将<strong>先清空所有影视数据</strong>，再从零开始执行<strong>主站全量采集</strong>任务，操作不可逆。
+          此操作将<strong>清空主站与从站的全部影视数据</strong>，随后仅对<strong>已启用的主站</strong>执行全量采集重建，从站数据由定时任务自动补充，操作不可逆。
         </p>
         <Input.Password
           placeholder="请输入管理密码"
