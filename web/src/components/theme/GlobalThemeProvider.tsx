@@ -112,13 +112,6 @@ export default function GlobalThemeProvider({
         colorPrimary: getCssVar("--primary-color"),
         fontFamily,
       },
-      components: {
-        Popover: {
-          colorBgElevated: getCssVar("--public-surface-2"),
-          colorText: getCssVar("--public-text-2"),
-          colorTextHeading: getCssVar("--public-text-1"),
-        },
-      },
     }),
     [fontFamily, isDark, getCssVar],
   );

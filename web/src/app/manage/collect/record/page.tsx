@@ -35,6 +35,7 @@ interface FailRecord {
   hour: number;
   cause: string;
   status: number;
+  retryCount: number;
   UpdatedAt: string;
 }
 
@@ -169,6 +170,13 @@ export default function FailureRecordPage() {
         ),
     },
     {
+      title: "重试次数",
+      dataIndex: "retryCount",
+      align: "center",
+      width: 100,
+      render: (v) => <Tag color={v > 1 ? "volcano" : "default"}>{v || 1}</Tag>,
+    },
+    {
       title: "执行时间",
       dataIndex: "UpdatedAt",
       align: "center",
@@ -255,12 +263,18 @@ export default function FailureRecordPage() {
 
       <div className={styles.toolbar}>
         <Space>
-          <Popconfirm title="确认重试所有失效记录？" onConfirm={handleRetryAll}>
+          <Popconfirm
+            title="确认重试所有失效记录？"
+            onConfirm={handleRetryAll}
+          >
             <Button type="primary" icon={<ReloadOutlined />}>
               全部重试
             </Button>
           </Popconfirm>
-          <Popconfirm title="确认清除已处理记录？" onConfirm={handleCleanDone}>
+          <Popconfirm
+            title="确认清除已处理记录？"
+            onConfirm={handleCleanDone}
+          >
             <Button
               icon={<WarningOutlined />}
               style={{ color: "var(--ant-color-warning)", borderColor: "var(--ant-color-warning)" }}
@@ -268,7 +282,10 @@ export default function FailureRecordPage() {
               清除已处理
             </Button>
           </Popconfirm>
-          <Popconfirm title="确认清除所有记录？" onConfirm={handleCleanAll}>
+          <Popconfirm
+            title="确认清除所有记录？"
+            onConfirm={handleCleanAll}
+          >
             <Button danger icon={<DeleteOutlined />}>
               清除所有
             </Button>
