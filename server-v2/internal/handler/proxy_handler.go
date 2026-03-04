@@ -61,9 +61,6 @@ func (h *ProxyHandler) ProxyVideo(c *gin.Context) {
 	}
 	req.Header.Set("User-Agent", proxyUA)
 	req.Header.Set("Accept", "*/*")
-	if u, err := url.Parse(targetUrl); err == nil {
-		req.Header.Set("Referer", u.Scheme+"://"+u.Host+"/")
-	}
 
 	// TS 分片使用带 context 超时的 tsClient，避免 Timeout 截断流式传输
 	var resp *http.Response

@@ -191,6 +191,21 @@ func executeTask(ft model.FilmCollectTask) {
 		FullRecoverSpider()
 		log.Println("执行一次失败采集恢复任务")
 	case 3: // 孤儿数据清理
+		// 检查是否有主站正在采集中，若有则跳过本次清理，避免误删从站刚写入的有效数据
+		activeIds := GetActiveTasks()
+		if len(activeIds) > 0 {
+			masters := repository.GetCollectSourceListByGrade(model.MasterCollect)
+			masterIdSet := make(map[string]struct{}, len(masters))
+			for _, m := range masters {
+				masterIdSet[m.Id] = struct{}{}
+			}
+			for _, activeId := range activeIds {
+				if _, isMaster := masterIdSet[activeId]; isMaster {
+					log.Println("[CleanOrphan] 主站正在采集中，跳过本次孤儿清理，等待下次执行")
+					return
+				}
+			}
+		}
 		n := repository.CleanOrphanPlaylists()
 		log.Printf("执行一次孤儿数据清理任务，共删除 %d 条记录\n", n)
 	}
