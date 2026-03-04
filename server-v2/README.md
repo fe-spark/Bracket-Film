@@ -133,14 +133,14 @@ REDIS_HOST=127.0.0.1 REDIS_PORT=6379 \
 
 ## 采集站设计
 
-### 主站 / 从站模型
+### 主站 / 附属站模型
 
 - **主站（grade=0）**：提供影片基础信息（名称、简介、封面、分类等），写入 `search_infos` 和 `movie_detail_infos`
-- **从站（grade=1）**：仅提供播放列表，写入 `movie_playlists`，通过影片名 Hash 与主站数据关联
+- **附属站（grade=1）**：仅提供播放列表，写入 `movie_playlists`，通过影片名 Hash 与主站数据关联
 
 约束：
-- 从站采集前必须存在已启用的主站且主站已有数据（接口 `/master/status` 提供状态查询）
-- 定时任务按主站优先顺序执行；手动采集页面在主站未就绪时隐藏从站按钮
+- 附属站采集前必须存在已启用的主站且主站已有数据（接口 `/master/status` 提供状态查询）
+- 定时任务按主站优先顺序执行；手动采集页面在主站未就绪时隐藏附属站按钮
 
 ### 定时任务
 
@@ -157,7 +157,7 @@ REDIS_HOST=127.0.0.1 REDIS_PORT=6379 \
 | 配置类（站点配置、Banner、分类树） | 24h | write-through（写时直接更新） |
 | 影片数据类（列表、详情、热门、搜索、播放源） | 2h | 主站采集完成后 `ClearCache()` 主动清除 |
 
-从站采集完成后仅精准清除 `Cache:Play:*`，避免无效地清理主站列表缓存。
+附属站采集完成后仅精准清除 `Cache:Play:*`，避免无效地清理主站列表缓存。
 
 ## 📺 TVBox / MacCMS 兼容性
 
@@ -174,7 +174,7 @@ Bracket-Film 提供原生的 TVBox 接口支持，可以用作家庭影院或第
 |---|---|
 | `search_infos` | 影片检索宽表，承载所有列表、搜索、标签过滤查询 |
 | `movie_detail_infos` | 影片完整详情（JSON 存储） |
-| `movie_playlists` | 从站播放列表（按 source_id + movie_key 索引） |
+| `movie_playlists` | 附属站播放列表（按 source_id + movie_key 索引） |
 | `search_tag_items` | 搜索标签持久化（剧情 / 地区 / 语言 / 年份等） |
 | `film_sources` | 采集站配置 |
 | `crontabs` | 定时任务配置 |
@@ -196,3 +196,7 @@ Bracket-Film 提供原生的 TVBox 接口支持，可以用作家庭影院或第
 | 密码 | `admin` |
 
 > 请在首次登录后修改默认密码。
+
+## 常见问题
+
+- 常见问题与排障指南见 [../README-FAQ.md](../README-FAQ.md)

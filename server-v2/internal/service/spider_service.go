@@ -22,7 +22,7 @@ func (s *SpiderService) StartCollect(id string, h int) error {
 	if !fs.State {
 		return errors.New("采集任务开启失败，该采集站已被禁用，请先启用后再采集")
 	}
-	// 从站必须在主站有数据后才能采集
+	// 附属站必须在主站有数据后才能采集
 	if fs.Grade == model.SlaveCollect && !repository.HasMasterData() {
 		return errors.New("附属站点采集失败，请先完成主站采集")
 	}
@@ -37,7 +37,7 @@ func (s *SpiderService) StartCollect(id string, h int) error {
 
 // BatchCollect 批量采集
 func (s *SpiderService) BatchCollect(time int, ids []string) error {
-	// 如果包含从站且主站尚无数据，驱逐所有从站 id，只保留主站
+	// 如果包含附属站且主站尚无数据，驱逐所有附属站 id，只保留主站
 	if !repository.HasMasterData() {
 		var masterOnlyIds []string
 		for _, id := range ids {

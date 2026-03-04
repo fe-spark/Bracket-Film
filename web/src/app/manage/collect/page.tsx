@@ -85,15 +85,13 @@ export default function CollectManagePage() {
   const [reCollectOpen, setReCollectOpen] = useState(false);
   const [password, setPassword] = useState("");
 
-  // batchOptions 追加 grade 信息（与 siteList 合并），并过滤掉主站
+  // batchOptions 追加 grade 信息（与 siteList 合并）
   const enrichedBatchOptions = useMemo(
     () =>
-      batchOptions
-        .map((o) => ({
-          ...o,
-          grade: siteList.find((s) => s.id === o.id)?.grade ?? 1,
-        }))
-        .filter((o) => o.grade !== 0),
+      batchOptions.map((o) => ({
+        ...o,
+        grade: siteList.find((s) => s.id === o.id)?.grade ?? 1,
+      })),
     [batchOptions, siteList]
   );
 
@@ -103,7 +101,7 @@ export default function CollectManagePage() {
     [siteList, activeCollectIds]
   );
 
-  // 从站可采集条件：主站已有数据 且 主站当前未在采集
+  // 附属站可采集条件：主站已有数据 且 主站当前未在采集
   const slaveCanCollect = hasMasterData && !masterIsCollecting;
 
   const getCollectList = useCallback(async () => {
@@ -431,14 +429,14 @@ export default function CollectManagePage() {
         const isRunning = activeCollectIds.includes(record.id);
         const isSlave = record.grade === 1;
 
-        // 从站采集按钮（开始/截断）的渲染逻辑
+        // 附属站采集按钮（开始/截断）的渲染逻辑
         const renderStartBtn = () => {
-          // 从站：主站无数据时完全不渲染采集按钮
+          // 附属站：主站无数据时完全不渲染采集按钮
           if (isSlave && !hasMasterData) return null;
-          // 从站：主站采集中时渲染禁用按钮并提示原因
+          // 附属站：主站采集中时渲染禁用按钮并提示原因
           if (isSlave && masterIsCollecting) {
             return (
-              <Tooltip title="主站正在采集中，请等待主站采集完成后再采集从站">
+              <Tooltip title="主站正在采集中，请等待主站采集完成后再采集附属站">
                 <Button
                   type="primary"
                   icon={<PoweroffOutlined />}
@@ -587,13 +585,12 @@ export default function CollectManagePage() {
         <Button type="primary" icon={<PlusOutlined />} onClick={openAddDialog}>
           添加采集站
         </Button>
-        <Tooltip title={!hasMasterData ? "主站暂无数据，请先采集主站后再进行一键采集" : ""}>
+        <Tooltip title="支持全站点选择；执行时将按主站→附属站顺序调度">
           <Button
             type="primary"
             icon={<SendOutlined />}
             style={{ background: "var(--ant-color-success)", borderColor: "var(--ant-color-success)" }}
             onClick={openBatchCollect}
-            disabled={!hasMasterData}
           >
             一键采集
           </Button>
@@ -680,7 +677,7 @@ export default function CollectManagePage() {
             />
           ) : null;
         })()}
-        {/* 执行站点列表（仅显示附属站） */}
+        {/* 执行站点列表（显示所有已启用站点） */}
         <Form layout="vertical">
           <Form.Item label="执行站点">
             <Checkbox.Group
@@ -695,7 +692,7 @@ export default function CollectManagePage() {
                         color={o.grade === 0 ? "green" : "default"}
                         style={{ marginRight: 0 }}
                       >
-                        {o.grade === 0 ? "主站" : "从站"}
+                        {o.grade === 0 ? "主站" : "附属站"}
                       </Tag>
                       {o.name}
                       {activeCollectIds.includes(o.id) && (
@@ -753,7 +750,7 @@ export default function CollectManagePage() {
         okButtonProps={{ danger: true }}
       >
         <p style={{ color: "var(--ant-color-warning)", marginBottom: 16 }}>
-          此操作将<strong>清空主站与从站的全部影视数据</strong>，随后仅对<strong>已启用的主站</strong>执行全量采集重建，从站数据由定时任务自动补充，操作不可逆。
+          此操作将<strong>清空主站与附属站的全部影视数据</strong>，随后仅对<strong>已启用的主站</strong>执行全量采集重建，附属站数据由定时任务自动补充，操作不可逆。
         </p>
         <Input.Password
           placeholder="请输入管理密码"

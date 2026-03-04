@@ -205,7 +205,7 @@ func HandleCollect(id string, h int) error {
 			// 主站数据变更：清理所有影片相关缓存
 			ClearCache()
 		case model.SlaveCollect:
-			// 从站只更新播放源，仅清 Cache:Play:*
+			// 附属站只更新播放源，仅清 Cache:Play:*
 			repository.RemoveCacheByPattern("Cache:Play:*")
 		}
 
@@ -349,27 +349,76 @@ func ConcurrentPageSpider(ctx context.Context, capacity int, s *model.FilmSource
 
 // BatchCollect 批量采集, 采集指定的所有站点最近x小时内更新的数据
 func BatchCollect(h int, ids ...string) {
-	enabledSources := make([]model.FilmSource, 0)
+	masters := make([]model.FilmSource, 0)
+	slaves := make([]model.FilmSource, 0)
 	for _, id := range ids {
 		// 如果查询到对应Id的资源站信息, 且资源站处于启用状态
 		if fs := repository.FindCollectSourceById(id); fs != nil && fs.State {
-			enabledSources = append(enabledSources, *fs)
+			if fs.Grade == model.MasterCollect {
+				masters = append(masters, *fs)
+			} else if fs.Grade == model.SlaveCollect {
+				slaves = append(slaves, *fs)
+			}
 		}
 	}
-	runSourcesWithLimit(enabledSources, h, "Spider")
+
+	if len(masters) > 0 {
+		runSourcesWithLimit(masters, h, "Spider-Master")
+	}
+	if len(slaves) == 0 {
+		return
+	}
+
+	if len(getEnabledSourcesByGrade(model.MasterCollect)) == 0 {
+		log.Println("[Spider] 批量采集：当前无启用主站，跳过附属站阶段")
+		return
+	}
+	if !repository.HasMasterData() {
+		log.Println("[Spider] 批量采集：主站数据未就绪，跳过附属站阶段")
+		return
+	}
+	runSourcesWithLimit(slaves, h, "Spider-Slave")
+}
+
+func getEnabledSourcesByGrade(grade model.SourceGrade) []model.FilmSource {
+	sources := repository.GetCollectSourceListByGrade(grade)
+	enabled := make([]model.FilmSource, 0, len(sources))
+	for _, s := range sources {
+		if s.State {
+			enabled = append(enabled, s)
+		}
+	}
+	return enabled
 }
 
 // AutoCollect 自动进行对所有已启用站点的采集任务
 func AutoCollect(h int) {
-	enabledSources := make([]model.FilmSource, 0)
-	// 获取采集站中所有站点, 进行遍历
-	for _, s := range repository.GetCollectSourceList() {
-		// 如果当前站点为启用状态 则执行 HandleCollect 进行数据采集
-		if s.State {
-			enabledSources = append(enabledSources, s)
-		}
+	// 阶段1：先采集主站（严格先主后从）
+	masters := getEnabledSourcesByGrade(model.MasterCollect)
+	if len(masters) == 0 {
+		log.Println("[Spider] 自动采集：未找到已启用主站，跳过主站阶段")
+		return
 	}
-	runSourcesWithLimit(enabledSources, h, "Spider")
+	runSourcesWithLimit(masters, h, "Spider-Master")
+
+	// 主站阶段结束后再次检查主站启用状态（兼容运行期间被禁用/删除）
+	if len(getEnabledSourcesByGrade(model.MasterCollect)) == 0 {
+		log.Println("[Spider] 自动采集：主站阶段后无启用主站，跳过附属站阶段")
+		return
+	}
+
+	// 阶段2：仅当主站数据存在时再采集附属站，防止主站异常变动导致附属站孤立更新
+	if !repository.HasMasterData() {
+		log.Println("[Spider] 自动采集：主站数据未就绪，跳过附属站阶段")
+		return
+	}
+
+	slaves := getEnabledSourcesByGrade(model.SlaveCollect)
+	if len(slaves) == 0 {
+		log.Println("[Spider] 自动采集：无已启用附属站，任务完成")
+		return
+	}
+	runSourcesWithLimit(slaves, h, "Spider-Slave")
 }
 
 // ClearSpider  删除所有已采集的影片信息
@@ -383,7 +432,7 @@ func ClearRedisOnly() {
 }
 
 // MasterOnlyCollect 仅对已启用的主站执行采集
-// 清空重采场景下使用：优先保证主站数据就绪，从站由定时任务补充
+// 清空重采场景下使用：优先保证主站数据就绪，附属站由定时任务补充
 func MasterOnlyCollect(h int) {
 	masters := repository.GetCollectSourceListByGrade(model.MasterCollect)
 	enabled := make([]model.FilmSource, 0)
@@ -400,7 +449,7 @@ func MasterOnlyCollect(h int) {
 }
 
 // StarZero 清空所有影视数据后仅重采主站
-// 从站数据量大、独立更新，由定时任务或手动触发补采
+// 附属站数据量大、独立更新，由定时任务或手动触发补采
 func StarZero(h int) {
 	repository.FilmZero()
 	MasterOnlyCollect(h)

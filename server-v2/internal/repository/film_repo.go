@@ -807,7 +807,7 @@ func FilmZero() {
 }
 
 // MasterFilmZero 仅清理主站相关数据 (search_infos / movie_detail_infos / category)
-// 保留从站 movie_playlists 数据，用于主站切换时防止从站数据丢失
+// 保留附属站 movie_playlists 数据，用于主站切换时防止附属站数据丢失
 func MasterFilmZero() {
 	var s model.SearchInfo
 	db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", s.TableName()))

@@ -191,7 +191,7 @@ func executeTask(ft model.FilmCollectTask) {
 		FullRecoverSpider()
 		log.Println("执行一次失败采集恢复任务")
 	case 3: // 孤儿数据清理
-		// 检查是否有主站正在采集中，若有则跳过本次清理，避免误删从站刚写入的有效数据
+		// 检查是否有主站正在采集中，若有则跳过本次清理，避免误删附属站刚写入的有效数据
 		activeIds := GetActiveTasks()
 		if len(activeIds) > 0 {
 			masters := repository.GetCollectSourceListByGrade(model.MasterCollect)

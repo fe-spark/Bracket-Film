@@ -26,9 +26,9 @@ func (s *CollectService) UpdateFilmSource(source model.FilmSource) error {
 	if old == nil {
 		return errors.New("采集站信息不存在")
 	}
-	// 检测到主站切换: 原来是从站、现在升级为主站，或 URI 发生变更
+	// 检测到主站切换: 原来是附属站、现在升级为主站，或 URI 发生变更
 	// 旧主站数据的 mid 与新主站不同，需要清理 search_infos / movie_detail_infos / category
-	// 保留 movie_playlists（从站数据按名字 hash 匹配，切换后仍可复用）
+	// 保留 movie_playlists（附属站数据按名字 hash 匹配，切换后仍可复用）
 	masterSwitch := old.Grade == model.SlaveCollect && source.Grade == model.MasterCollect
 	masterUriChanged := old.Grade == model.MasterCollect && source.Grade == model.MasterCollect && old.Uri != source.Uri
 	if masterSwitch || masterUriChanged {

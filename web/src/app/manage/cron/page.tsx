@@ -267,7 +267,7 @@ export default function CronManagePage() {
           <Tooltip title="失败采集重试处理">
             <Radio value={2}>采集重试</Radio>
           </Tooltip>
-          <Tooltip title="清理从站中已无法匹配主站影片的孤儿播放记录">
+          <Tooltip title="清理附属站中已无法匹配主站影片的孤儿播放记录">
             <Radio value={3}>孤儿清理</Radio>
           </Tooltip>
         </Radio.Group>
