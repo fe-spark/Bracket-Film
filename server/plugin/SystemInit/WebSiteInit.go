@@ -1,21 +1,26 @@
 package SystemInit
 
 import (
+	"server/config"
 	"server/model/system"
 	"server/plugin/common/util"
+	"server/plugin/db"
 )
 
 // SiteConfigInit 网站配置初始化
 func SiteConfigInit() {
+
 }
 
 // BasicConfigInit 初始化网站基本配置信息
 func BasicConfigInit() {
-	// 如果 MySQL 中已经存在配置，则不再初始化，防止覆盖用户修改后的设置
-	if system.ExistSiteConfig() {
+	// 如果 Redis 中已经存在配置，则不再初始化，防止覆盖用户修改后的设置
+	exists, _ := db.Rdb.Exists(db.Cxt, config.SiteConfigBasic).Result()
+	if exists == 1 {
 		return
 	}
-	bc := system.BasicConfig{
+
+	var bc = system.BasicConfig{
 		SiteName: "Bracket",
 		Domain:   "http://127.0.0.1:3600",
 		Logo:     "https://s2.loli.net/2023/12/05/O2SEiUcMx5aWlv4.jpg",
@@ -28,11 +33,13 @@ func BasicConfigInit() {
 }
 
 func BannersInit() {
-	// 如果 MySQL 中已经存在轮播图配置，则不再初始化
-	if system.ExistBannersConfig() {
+	// 如果 Redis 中已经存在轮播图配置，则不再初始化
+	exists, _ := db.Rdb.Exists(db.Cxt, config.BannersKey).Result()
+	if exists == 1 {
 		return
 	}
-	bl := system.Banners{
+
+	var bl = system.Banners{
 		system.Banner{Id: util.GenerateSalt(), Name: "樱花庄的宠物女孩", Year: 2020, CName: "日韩动漫", Poster: "https://s2.loli.net/2024/02/21/Wt1QDhabdEI7HcL.jpg", Picture: "https://img.bfzypic.com/upload/vod/20230424-43/06e79232a4650aea00f7476356a49847.jpg", Remark: "已完结"},
 		system.Banner{Id: util.GenerateSalt(), Name: "从零开始的异世界生活", Year: 2020, CName: "日韩动漫", Poster: "https://s2.loli.net/2024/02/21/UkpdhIRO12fsy6C.jpg", Picture: "https://img.bfzypic.com/upload/vod/20230424-43/06e79232a4650aea00f7476356a49847.jpg", Remark: "已完结"},
 		system.Banner{Id: util.GenerateSalt(), Name: "五等分的花嫁", Year: 2020, CName: "日韩动漫", Poster: "https://s2.loli.net/2024/02/21/wXJr59Zuv4tcKNp.jpg", Picture: "https://img.bfzypic.com/upload/vod/20230424-43/06e79232a4650aea00f7476356a49847.jpg", Remark: "已完结"},

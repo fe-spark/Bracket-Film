@@ -2,7 +2,6 @@ package SystemInit
 
 import (
 	"log"
-
 	"server/config"
 	"server/model/system"
 	"server/plugin/common/util"
@@ -29,7 +28,7 @@ func FilmSourceInit() {
 		{Id: util.GenerateSalt(), Name: "HD(HM)", Uri: `https://json.heimuer.xyz/api.php/provide/vod/`, ResultModel: system.JsonResult, Grade: system.SlaveCollect, SyncPictures: false, CollectType: system.CollectVideo, State: false},
 		{Id: util.GenerateSalt(), Name: "HD(LY)", Uri: `https://360zy.com/api.php/provide/vod/at/json`, ResultModel: system.JsonResult, Grade: system.SlaveCollect, SyncPictures: false, CollectType: system.CollectVideo, State: false},
 		{Id: util.GenerateSalt(), Name: "HD(SN)", Uri: `https://suoniapi.com/api.php/provide/vod/from/snm3u8/`, ResultModel: system.JsonResult, Grade: system.SlaveCollect, SyncPictures: false, CollectType: system.CollectVideo, State: false, Interval: 2000},
-		{Id: util.GenerateSalt(), Name: "HD(DB)", Uri: `https://caiji.dbzy.tv/api.php/provide/vod/from/dbm3u8/at/json/`, ResultModel: system.JsonResult, Grade: system.SlaveCollect, SyncPictures: false, CollectType: system.CollectVideo, State: false},
+		{Id: util.GenerateSalt(), Name: "HD(DB)", Uri: `https://caiji.dbzy.tv/api.php/provide/vod/from/dbm3u8/at/josn/`, ResultModel: system.JsonResult, Grade: system.SlaveCollect, SyncPictures: false, CollectType: system.CollectVideo, State: false},
 		{Id: util.GenerateSalt(), Name: "HD(IK)", Uri: `https://ikunzyapi.com/api.php/provide/vod/at/json`, ResultModel: system.JsonResult, Grade: system.SlaveCollect, SyncPictures: false, CollectType: system.CollectVideo, State: false},
 		//{Id: util.GenerateSalt(), Name: "WX(T2)", Uri: `https://api.wuxianzy.net/api.php/provide/vod/`, ResultModel: system.JsonResult, Grade: system.SlaveCollect, SyncPictures: false, CollectType: system.CollectVideo, State: false},
 		//{Id: util.GenerateSalt(), Name: "OK(BK)", Uri: `https://api.okzy.org/api.php/provide/vod/`, ResultModel: system.JsonResult, Grade: system.SlaveCollect, SyncPictures: false, CollectType: system.CollectVideo, State: false},
@@ -38,9 +37,9 @@ func FilmSourceInit() {
 		//{Id: util.GenerateSalt(), Name: "HD(fs)", Uri: `https://www.feisuzyapi.com/api.php/provide/vod/`, ResultModel: system.JsonResult, Grade: system.SlaveCollect, SyncPictures: false, CollectType: system.CollectVideo, State: false},
 		//{Id: util.GenerateSalt(), Name: "HD(bfBk)", Uri: `http://app.bfzyapi.com/api.php/provide/vod/`, ResultModel: system.JsonResult, Grade: system.SlaveCollect, SyncPictures: false, CollectType: system.CollectVideo, State: false},
 	}
-	err := system.BatchAddCollectSource(l)
+	err := system.SaveCollectSourceList(l)
 	if err != nil {
-		log.Println("BatchAddCollectSource Error: ", err)
+		log.Println("SaveSourceApiList Error: ", err)
 	}
 }
 
@@ -88,10 +87,8 @@ func CollectCrontabInit() {
 			2. 添加一条默认任务, 定时处理采集失败的记录
 			3.生成任务信息
 		*/
-		task := system.FilmCollectTask{
-			Id: util.GenerateSalt(), Time: config.DefaultUpdateTime, Spec: config.DefaultUpdateSpec,
-			Model: 0, State: false, Remark: "每20分钟执行一次已启用站点数据的自动更新",
-		}
+		task := system.FilmCollectTask{Id: util.GenerateSalt(), Time: config.DefaultUpdateTime, Spec: config.DefaultUpdateSpec,
+			Model: 0, State: false, Remark: "每20分钟执行一次已启用站点数据的自动更新"}
 		// 添加一条定时任务-影片定时更新
 		cid, err := spider.AddAutoUpdateCron(task.Id, task.Spec)
 		// 如果任务添加失败则直接返回错误信息
@@ -105,10 +102,8 @@ func CollectCrontabInit() {
 		system.SaveFilmTask(task)
 
 		// 添加一条定时任务-定期处理失败请求
-		recoverTask := system.FilmCollectTask{
-			Id: util.GenerateSalt(), Time: 0, Spec: config.EveryWeekSpec,
-			Model: 2, State: false, Remark: "每周日凌晨4点清理一次采集失败的采集记录",
-		}
+		recoverTask := system.FilmCollectTask{Id: util.GenerateSalt(), Time: 0, Spec: config.EveryWeekSpec,
+			Model: 2, State: false, Remark: "每周日凌晨4点清理一次采集失败的采集记录"}
 		// 添加一条定时任务-影片定时更新
 		cid, err = spider.AddFilmRecoverCron(recoverTask.Spec)
 		// 如果任务添加失败则直接返回错误信息

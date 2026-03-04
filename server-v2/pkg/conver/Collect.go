@@ -110,17 +110,21 @@ func ConvertFilmDetail(detail collect.FilmDetail) model.MovieDetail {
 }
 
 // GenFilmPlayList 处理影片播放地址数据, 保留播放链接,生成playList
+// 只 append 有效（非空）的播放列表，防止 ConvertPlayUrl("") 产生 nil inner slice → JSON [null]
 func GenFilmPlayList(playUrl, separator string) [][]model.MovieUrlInfo {
 	var res [][]model.MovieUrlInfo
 	if separator != "" {
 		// 1. 通过分隔符切分播放源地址
 		for _, l := range strings.Split(playUrl, separator) {
-			// 将每组播放源对应的播放列表信息存储到列表中
-			res = append(res, ConvertPlayUrl(l))
+			// 只保留解析出有效链接的播放源
+			if pl := ConvertPlayUrl(l); len(pl) > 0 {
+				res = append(res, pl)
+			}
 		}
 	} else {
-		// 将播放源对应的播放列表信息存储到列表中
-		res = append(res, ConvertPlayUrl(playUrl))
+		if pl := ConvertPlayUrl(playUrl); len(pl) > 0 {
+			res = append(res, pl)
+		}
 	}
 	return res
 }
@@ -131,13 +135,15 @@ func GenAllFilmPlayList(playUrl, separator string) [][]model.MovieUrlInfo {
 	if separator != "" {
 		// 1. 通过分隔符切分播放源地址
 		for _, l := range strings.Split(playUrl, separator) {
-			// 将playUrl中的所有播放格式链接均进行转换保存
-			res = append(res, ConvertPlayUrl(l))
+			if pl := ConvertPlayUrl(l); len(pl) > 0 {
+				res = append(res, pl)
+			}
 		}
 		return res
 	}
-	// 将playUrl中的所有播放格式链接均进行转换保存
-	res = append(res, ConvertPlayUrl(playUrl))
+	if pl := ConvertPlayUrl(playUrl); len(pl) > 0 {
+		res = append(res, pl)
+	}
 	return res
 }
 

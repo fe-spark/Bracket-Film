@@ -1,11 +1,10 @@
 package controller
 
 import (
-	"strconv"
-	"strings"
-
 	"server/logic"
 	"server/model/system"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,7 +23,7 @@ func Index(c *gin.Context) {
 
 // CategoriesInfo 分类信息获取
 func CategoriesInfo(c *gin.Context) {
-	// data := logic.IL.GetCategoryInfo()
+	//data := logic.IL.GetCategoryInfo()
 	data := logic.IL.GetNavCategory()
 	if len(data) <= 0 {
 		system.Failed("暂无分类信息", c)
@@ -64,42 +63,16 @@ func FilmPlayInfo(c *gin.Context) {
 	}
 	// 获取影片详情信息
 	detail := logic.IL.GetFilmDetail(id)
-	// 过滤所有播放源内 link 为空的条目，避免前端展示不可播放的集数按钮
-	for i := range detail.List {
-		var valid []system.MovieUrlInfo
-		for _, ep := range detail.List[i].LinkList {
-			if ep.Link != "" {
-				valid = append(valid, ep)
-			}
-		}
-		detail.List[i].LinkList = valid
-	}
-	// 验证 playFrom 是否存在于当前 list，不存在则回退到第一个有效播放源
-	if len(detail.List) > 0 {
-		found := false
-		for _, v := range detail.List {
-			if v.Id == playFrom {
-				found = true
-				break
-			}
-		}
-		if !found {
-			playFrom = detail.List[0].Id
-		}
+	// 如果 playFrom 为空, 则设置默认播放源和默认影片数据
+	if len(playFrom) <= 1 && len(detail.List) > 0 {
+		playFrom = detail.List[0].Id
+
 	}
 	// 获取当前影片播放信息
 	var currentPlay system.MovieUrlInfo
 	for _, v := range detail.List {
 		if v.Id == playFrom {
-			if len(v.LinkList) > 0 {
-				if episode < len(v.LinkList) {
-					currentPlay = v.LinkList[episode]
-				} else {
-					currentPlay = v.LinkList[0]
-					episode = 0
-				}
-			}
-			break
+			currentPlay = v.LinkList[episode]
 		}
 	}
 

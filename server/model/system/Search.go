@@ -3,46 +3,40 @@ package system
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 	"log"
 	"math"
 	"reflect"
 	"regexp"
-	"strconv"
-	"strings"
-	"time"
-
 	"server/config"
 	"server/plugin/common/param"
 	"server/plugin/db"
-
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
+	"strconv"
+	"strings"
+	"time"
 )
 
 // SearchInfo 存储用于检索的信息
 type SearchInfo struct {
 	gorm.Model
-	Mid          int64   `json:"mid" gorm:"uniqueIndex:idx_mid"` // 影片ID
-	Cid          int64   `json:"cid"`                            // 分类ID
-	Pid          int64   `json:"pid"`                            // 上级分类ID
-	Name         string  `json:"name"`                           // 片名
-	SubTitle     string  `json:"subTitle"`                       // 影片子标题
-	CName        string  `json:"cName"`                          // 分类名称
-	ClassTag     string  `json:"classTag"`                       // 类型标签
-	Area         string  `json:"area"`                           // 地区
-	Language     string  `json:"language"`                       // 语言
-	Year         int64   `json:"year"`                           // 年份
-	Initial      string  `json:"initial"`                        // 首字母
-	Score        float64 `json:"score"`                          // 评分
-	UpdateStamp  int64   `json:"updateStamp"`                    // 更新时间
-	Hits         int64   `json:"hits"`                           // 热度排行
-	State        string  `json:"state"`                          // 状态 正片|预告
-	Remarks      string  `json:"remarks"`                        // 完结 | 更新至x集
-	ReleaseStamp int64   `json:"releaseStamp"`                   // 上映时间 时间戳
-	Picture      string  `json:"picture"`                        // 简介图片
-	Actor        string  `json:"actor"`                          // 主演
-	Director     string  `json:"director"`                       // 导演
-	Blurb        string  `json:"blurb"`                          // 简介, 不完整
+	Mid          int64   `json:"mid"`          //影片ID gorm:"uniqueIndex:idx_mid"
+	Cid          int64   `json:"cid"`          //分类ID
+	Pid          int64   `json:"pid"`          //上级分类ID
+	Name         string  `json:"name"`         // 片名
+	SubTitle     string  `json:"subTitle"`     // 影片子标题
+	CName        string  `json:"cName"`        // 分类名称
+	ClassTag     string  `json:"classTag"`     //类型标签
+	Area         string  `json:"area"`         // 地区
+	Language     string  `json:"language"`     // 语言
+	Year         int64   `json:"year"`         // 年份
+	Initial      string  `json:"initial"`      // 首字母
+	Score        float64 `json:"score"`        //评分
+	UpdateStamp  int64   `json:"updateStamp"`  // 更新时间
+	Hits         int64   `json:"hits"`         // 热度排行
+	State        string  `json:"state"`        //状态 正片|预告
+	Remarks      string  `json:"remarks"`      // 完结 | 更新至x集
+	ReleaseStamp int64   `json:"releaseStamp"` //上映时间 时间戳
 }
 
 // Tag 影片分类标签结构体
@@ -55,144 +49,165 @@ func (s *SearchInfo) TableName() string {
 	return config.SearchTableName
 }
 
-// SearchTagItem 影片检索标签持久化模型 (MySQL)
-// 取代原 Redis ZSet/Hash 存储，持久化影片分类筛选标签
-type SearchTagItem struct {
-	gorm.Model
-	Pid     int64  `gorm:"uniqueIndex:uidx_search_tag;not null"`
-	TagType string `gorm:"uniqueIndex:uidx_search_tag;size:32;not null"`  // Category/Plot/Area/Language/Year/Initial/Sort
-	Name    string `gorm:"size:128;not null"`                             // 展示名称
-	Value   string `gorm:"uniqueIndex:uidx_search_tag;size:128;not null"` // 筛选值
-	Score   int64  `gorm:"default:0"`                                     // 热度权重，用于排序
+// ================================= Spider 数据处理(redis) =================================
+
+// RdbSaveSearchInfo 批量保存检索信息到redis
+func RdbSaveSearchInfo(list []SearchInfo) {
+	// 1.整合一下zset数据集
+	var members []redis.Z
+	for _, s := range list {
+		member, _ := json.Marshal(s)
+		members = append(members, redis.Z{Score: float64(s.Mid), Member: member})
+	}
+	// 2.批量保存到zset集合中
+	db.Rdb.ZAdd(db.Cxt, config.SearchInfoTemp, members...)
 }
 
-// CreateSearchTagTable 创建检索标签持久化表
-func CreateSearchTagTable() {
-	if !db.Mdb.Migrator().HasTable(&SearchTagItem{}) {
-		_ = db.Mdb.AutoMigrate(&SearchTagItem{})
+// FilmZero 删除所有库存数据
+func FilmZero() {
+	// 删除redis中当前库存储的所有数据
+	//db.Rdb.FlushDB(db.Cxt)
+	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "MovieBasicInfoKey*").Val()...)
+	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "MovieDetail*").Val()...)
+	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "MultipleSource*").Val()...)
+	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "OriginalResource*").Val()...)
+	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "Search*").Val()...)
+	// 删除mysql中留存的检索表
+	var s SearchInfo
+	//db.Mdb.Exec(fmt.Sprintf(`drop table if exists %s`, s.TableName()))
+	// 截断数据表 truncate table users
+	if ExistSearchTable() {
+		db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", s.TableName()))
 	}
 }
 
-// RedisOnlyFlush 仅清空 Redis 缓存 (不影响 MySQL 持久化数据)
-// SearchTag 已迁移至 MySQL，不再清理 Search:Pid* 键
-func RedisOnlyFlush() {
-	// 1. 清理基础缓存
-	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "MovieBasicInfo:*").Val()...)
-	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "MovieDetail:*").Val()...)
-	db.Rdb.Del(db.Cxt, db.Rdb.Keys(db.Cxt, "MultipleSource:*").Val()...)
-
-	// 2. 清理分类树与临时队列
-	db.Rdb.Del(db.Cxt, config.CategoryTreeKey)
-	db.Rdb.Del(db.Cxt, config.VirtualPictureKey)
+// ResetSearchTable 重置Search表
+func ResetSearchTable() {
+	// 删除 Search 表
+	var s SearchInfo
+	db.Mdb.Exec(fmt.Sprintf("drop table if exists %s", s.TableName()))
+	// 重新创建 Search 表
+	CreateSearchTable()
 }
 
-// FilmZero 删除所有库存数据 (包含 MySQL 持久化表)
-func FilmZero() {
-	// 1. 清理 Redis (基础缓存)
-	RedisOnlyFlush()
-
-	// 2. 清理 MySQL (详情表与检索表)
-	db.Mdb.Exec("TRUNCATE table movie_details")
-	var s SearchInfo
-	db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", s.TableName()))
-	// 3. 清理新引入的持久化表
-	db.Mdb.Exec("TRUNCATE table movie_playlists")
-	db.Mdb.Exec("TRUNCATE table category_persistents")
-	db.Mdb.Exec("TRUNCATE table virtual_picture_queues")
+// DelMtPlay 清空附加播放源信息
+func DelMtPlay(keys []string) {
+	db.Rdb.Del(db.Cxt, keys...)
 }
 
 /*
 SearchKeyword 设置search关键字集合(影片分类检索类型数据)
 	类型, 剧情 , 地区, 语言, 年份, 首字母, 排序
-	1. 在影片详情保存到 MySQL 并可选缓存到 Redis 时将影片相关数据进行记录
+	1. 在影片详情缓存到redis时将影片的相关数据进行记录, 存在相同类型则分值加一
 	2. 通过分值对类型进行排序类型展示到页面
 */
 
-// ensureStaticTagsForPid 确保静态标签 (Year/Initial/Sort) 已写入 MySQL
-func ensureStaticTagsForPid(pid int64) {
-	// Year: 近 12 年
-	var yCount int64
-	db.Mdb.Model(&SearchTagItem{}).Where("pid = ? AND tag_type = ?", pid, "Year").Count(&yCount)
-	if yCount == 0 {
-		currentYear := time.Now().Year()
-		var items []SearchTagItem
-		for i := 0; i < 12; i++ {
-			y := fmt.Sprint(currentYear - i)
-			items = append(items, SearchTagItem{Pid: pid, TagType: "Year", Name: y, Value: y, Score: int64(currentYear - i)})
-		}
-		db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&items)
-	}
-	// Initial: A-Z
-	var iCount int64
-	db.Mdb.Model(&SearchTagItem{}).Where("pid = ? AND tag_type = ?", pid, "Initial").Count(&iCount)
-	if iCount == 0 {
-		var items []SearchTagItem
-		for i := 65; i <= 90; i++ {
-			v := string(rune(i))
-			items = append(items, SearchTagItem{Pid: pid, TagType: "Initial", Name: v, Value: v, Score: int64(90 - i)})
-		}
-		db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&items)
-	}
-	// Sort: 固定 4 个选项
-	var sCount int64
-	db.Mdb.Model(&SearchTagItem{}).Where("pid = ? AND tag_type = ?", pid, "Sort").Count(&sCount)
-	if sCount == 0 {
-		items := []SearchTagItem{
-			{Pid: pid, TagType: "Sort", Name: "时间排序", Value: "update_stamp", Score: 3},
-			{Pid: pid, TagType: "Sort", Name: "人气排序", Value: "hits", Score: 2},
-			{Pid: pid, TagType: "Sort", Name: "评分排序", Value: "score", Score: 1},
-			{Pid: pid, TagType: "Sort", Name: "最新上映", Value: "release_stamp", Score: 0},
-		}
-		db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&items)
-	}
-}
-
-// SaveSearchTag 保存影片检索标签到 MySQL
 func SaveSearchTag(search SearchInfo) {
-	// 确保静态标签已存在
-	ensureStaticTagsForPid(search.Pid)
-	// Category: 从分类树实时同步
-	for _, t := range GetChildrenTree(search.Pid) {
-		db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(
-			&SearchTagItem{Pid: search.Pid, TagType: "Category", Name: t.Name, Value: fmt.Sprint(t.Id), Score: 0})
+	// 声明用于存储采集的影片的分类检索信息
+	//searchMap := make(map[string][]map[string]int)
+
+	// Redis中的记录形式 Search:SearchKeys:Pid1:Title Hash
+	// Redis中的记录形式 Search:SearchKeys:Pid1:xxx Hash
+
+	// 获取redis中的searchMap
+	key := fmt.Sprintf(config.SearchTitle, search.Pid)
+	searchMap := db.Rdb.HGetAll(db.Cxt, key).Val()
+	// 是否存在对应分类的map, 如果不存在则缓存一份
+	if len(searchMap) == 0 {
+		searchMap = make(map[string]string)
+		searchMap["Category"] = "类型"
+		searchMap["Plot"] = "剧情"
+		searchMap["Area"] = "地区"
+		searchMap["Language"] = "语言"
+		searchMap["Year"] = "年份"
+		searchMap["Initial"] = "首字母"
+		searchMap["Sort"] = "排序"
+		db.Rdb.HMSet(db.Cxt, key, searchMap)
 	}
-	// Plot / Area / Language: 动态 upsert，score 累计热度
-	HandleSearchTags(search.ClassTag, "Plot", search.Pid)
-	HandleSearchTags(search.Area, "Area", search.Pid)
-	HandleSearchTags(search.Language, "Language", search.Pid)
+	// 对searchMap中的各个类型进行处理
+	for k, _ := range searchMap {
+		tagKey := fmt.Sprintf(config.SearchTag, search.Pid, k)
+		tagCount := db.Rdb.ZCard(db.Cxt, tagKey).Val()
+		switch k {
+		case "Category":
+			// 获取 Category 数据, 如果不存在则缓存一份
+			if tagCount == 0 {
+				for _, t := range GetChildrenTree(search.Pid) {
+					db.Rdb.ZAdd(db.Cxt, fmt.Sprintf(config.SearchTag, search.Pid, k),
+						redis.Z{Score: float64(-t.Id), Member: fmt.Sprintf("%v:%v", t.Name, t.Id)})
+				}
+			}
+		case "Year":
+			// 获取 Year 数据, 如果不存在则缓存一份
+			if tagCount == 0 {
+				currentYear := time.Now().Year()
+				for i := 0; i < 12; i++ {
+					db.Rdb.ZAdd(db.Cxt, fmt.Sprintf(config.SearchTag, search.Pid, k),
+						redis.Z{Score: float64(currentYear - i), Member: fmt.Sprintf("%v:%v", currentYear-i, currentYear-i)})
+				}
+			}
+		case "Initial":
+			// 如果不存在 首字母 Tag 数据, 则缓存一份
+			if tagCount == 0 {
+				for i := 65; i <= 90; i++ {
+					db.Rdb.ZAdd(db.Cxt, fmt.Sprintf(config.SearchTag, search.Pid, k),
+						redis.Z{Score: float64(90 - i), Member: fmt.Sprintf("%c:%c", i, i)})
+				}
+			}
+		case "Sort":
+			if tagCount == 0 {
+				tags := []redis.Z{
+					{3, "时间排序:update_stamp"},
+					{2, "人气排序:hits"},
+					{1, "评分排序:score"},
+					{0, "最新上映:release_stamp"},
+				}
+				db.Rdb.ZAdd(db.Cxt, fmt.Sprintf(config.SearchTag, search.Pid, k), tags...)
+			}
+		case "Plot":
+			HandleSearchTags(search.ClassTag, tagKey)
+		case "Area":
+			HandleSearchTags(search.Area, tagKey)
+		case "Language":
+			HandleSearchTags(search.Language, tagKey)
+		default:
+			break
+		}
+	}
+
 }
 
-// HandleSearchTags 将 preTags 字符串中的各标签 upsert 到 MySQL (score+1)
-func HandleSearchTags(preTags string, tagType string, pid int64) {
+func HandleSearchTags(preTags string, k string) {
+	// 先处理字符串中的空白符 然后对处理前的tag字符串进行分割
 	preTags = regexp.MustCompile(`[\s\n\r]+`).ReplaceAllString(preTags, "")
-	if preTags == "" || preTags == "其它" {
-		return
-	}
-	upsert := func(v string) {
-		v = strings.TrimSpace(v)
-		if v == "" || v == "其它" {
-			return
+	f := func(sep string) {
+		for _, t := range strings.Split(preTags, sep) {
+			// 获取 tag对应的score
+			score := db.Rdb.ZScore(db.Cxt, k, fmt.Sprintf("%v:%v", t, t)).Val()
+			// 在原score的基础上+1 重新存入redis中
+			db.Rdb.ZAdd(db.Cxt, k, redis.Z{Score: score + 1, Member: fmt.Sprintf("%v:%v", t, t)})
 		}
-		db.Mdb.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "pid"}, {Name: "tag_type"}, {Name: "value"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{"score": gorm.Expr("score + 1")}),
-		}).Create(&SearchTagItem{Pid: pid, TagType: tagType, Name: v, Value: v, Score: 1})
 	}
-	var vals []string
 	switch {
 	case strings.Contains(preTags, "/"):
-		vals = strings.Split(preTags, "/")
+		f("/")
 	case strings.Contains(preTags, ","):
-		vals = strings.Split(preTags, ",")
+		f(",")
 	case strings.Contains(preTags, "，"):
-		vals = strings.Split(preTags, "，")
+		f("，")
 	case strings.Contains(preTags, "、"):
-		vals = strings.Split(preTags, "、")
+		f("、")
 	default:
-		vals = []string{preTags}
-	}
-	for _, v := range vals {
-		upsert(v)
+		// 获取 tag对应的score
+		if len(preTags) == 0 {
+			// 如果没有 tag信息则不进行缓存
+			//db.Rdb.ZAdd(db.Cxt, k, redis.Z{Score: 0, Member: fmt.Sprintf("%v:%v", "未知", "未知")})
+		} else if preTags == "其它" {
+			db.Rdb.ZAdd(db.Cxt, k, redis.Z{Score: 0, Member: fmt.Sprintf("%v:%v", preTags, preTags)})
+		} else {
+			score := db.Rdb.ZScore(db.Cxt, k, fmt.Sprintf("%v:%v", preTags, preTags)).Val()
+			db.Rdb.ZAdd(db.Cxt, k, redis.Z{Score: score + 1, Member: fmt.Sprintf("%v:%v", preTags, preTags)})
+		}
 	}
 }
 
@@ -204,24 +219,14 @@ func BatchHandleSearchTag(infos ...SearchInfo) {
 
 // ================================= Spider 数据处理(mysql) =================================
 
-// CreateSearchTable 创建或更新存储检索信息的数据表
-// AutoMigrate 是幂等操作：表不存在则创建，已存在则补全缺失的列和索引（包括 mid 的唯一索引）。
-// 建索引前先去重，防止已有重复 mid 导致 CREATE UNIQUE INDEX 失败。
+// CreateSearchTable 创建存储检索信息的数据表
 func CreateSearchTable() {
-	if ExistSearchTable() {
-		// 去除重复 mid（保留 id 最大的一条，即最近采集的数据）
-		// 使用子查询绕过 MySQL 不支持在 DELETE 中直接引用同一张表的限制
-		var s SearchInfo
-		dedup := fmt.Sprintf(
-			`DELETE FROM %s WHERE id NOT IN (SELECT max_id FROM (SELECT MAX(id) AS max_id FROM %[1]s GROUP BY mid) AS t)`,
-			s.TableName(),
-		)
-		if err := db.Mdb.Exec(dedup).Error; err != nil {
-			log.Println("Dedup search_infos Failed: ", err)
+	// 如果不存在则创建表
+	if !ExistSearchTable() {
+		err := db.Mdb.AutoMigrate(&SearchInfo{})
+		if err != nil {
+			log.Println("Create Table SearchInfo Failed: ", err)
 		}
-	}
-	if err := db.Mdb.AutoMigrate(&SearchInfo{}); err != nil {
-		log.Println("AutoMigrate SearchInfo Failed: ", err)
 	}
 }
 
@@ -242,56 +247,79 @@ func AddSearchIndex() {
 	db.Mdb.Exec(fmt.Sprintf("CREATE INDEX idx_score ON %s (score DESC)", tableName))
 	db.Mdb.Exec(fmt.Sprintf("CREATE INDEX idx_release ON %s (release_stamp DESC)", tableName))
 	db.Mdb.Exec(fmt.Sprintf("CREATE INDEX idx_year ON %s (year DESC)", tableName))
+
 }
 
-// upsertColumns 是 search_infos 中重复采集时需要覆盖更新的列（mid 是冲突键，不在此列表中）
-// 含 deleted_at：mid 唯一索引保证不会产生重复行，重新采集时将 deleted_at 置 NULL
-// 自动恢复被软删除的记录，避免同一影片出现两条数据。
-var upsertColumns = []string{
-	"cid", "pid", "name", "sub_title", "c_name", "class_tag",
-	"area", "language", "year", "initial", "score",
-	"update_stamp", "hits", "state", "remarks", "release_stamp",
-	"picture", "actor", "director", "blurb", "updated_at", "deleted_at",
-}
-
-// BatchSave 批量保存影片search信息（已统一为 upsert，保留函数签名兼容旧调用）
+// BatchSave 批量保存影片search信息
 func BatchSave(list []SearchInfo) {
-	BatchSaveOrUpdate(list)
-}
-
-// BatchSaveOrUpdate 批量 upsert 影片检索信息
-// 使用 ON CONFLICT (mid) DO UPDATE 替代原有的「先 count 再 create/update」循环事务，
-// 彻底消除：① Rollback-without-return 导致整批丢失；② 并发 TOCTOU 重复主键冲突。
-func BatchSaveOrUpdate(list []SearchInfo) {
-	if len(list) == 0 {
-		return
+	tx := db.Mdb.Begin()
+	// 防止程序异常终止
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+	if err := tx.CreateInBatches(list, len(list)).Error; err != nil {
+		// 插入失败则回滚事务, 重新进行插入
+		tx.Rollback()
 	}
-	if err := db.Mdb.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "mid"}},
-		DoUpdates: clause.AssignmentColumns(upsertColumns),
-	}).CreateInBatches(&list, 200).Error; err != nil {
-		log.Printf("BatchSaveOrUpdate upsert 失败: %v\n", err)
-		return
-	}
-	// 插入/更新成功后将相应 tag 数据写入 MySQL
+	// 保存成功后将相应tag数据缓存到redis中
 	BatchHandleSearchTag(list...)
+	tx.Commit()
 }
 
-// SaveSearchInfo 保存单条影片检索信息（upsert）
+// BatchSaveOrUpdate 判断数据库中是否存在对应mid的数据, 如果存在则更新, 否则插入
+func BatchSaveOrUpdate(list []SearchInfo) {
+	tx := db.Mdb.Begin()
+	for _, info := range list {
+		var count int64
+		// 通过当前影片id 对应的记录数
+		tx.Model(&SearchInfo{}).Where("mid", info.Mid).Count(&count)
+		// 如果存在对应数据则进行更新, 否则保存相应数据
+		if count > 0 {
+			// 记录已经存在则执行更新部分内容
+			err := tx.Model(&SearchInfo{}).Where("mid", info.Mid).Updates(SearchInfo{UpdateStamp: info.UpdateStamp, Hits: info.Hits, State: info.State,
+				Remarks: info.Remarks, Score: info.Score, ReleaseStamp: info.ReleaseStamp}).Error
+			if err != nil {
+				tx.Rollback()
+			}
+		} else {
+			// 执行插入操作
+			if err := tx.Create(&info).Error; err != nil {
+				tx.Rollback()
+			}
+			// 插入成功后保存一份tag信息到redis中
+			BatchHandleSearchTag(info)
+		}
+	}
+	// 提交事务
+	tx.Commit()
+}
+
+// SaveSearchInfo 添加影片检索信息
 func SaveSearchInfo(s SearchInfo) error {
-	isNew := !ExistSearchInfo(s.Mid)
-	err := db.Mdb.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "mid"}},
-		DoUpdates: clause.AssignmentColumns(upsertColumns),
-	}).Create(&s).Error
-	if err != nil {
-		log.Printf("SaveSearchInfo upsert 失败 mid=%d: %v\n", s.Mid, err)
-		return err
-	}
-	// 新增时才写 tag（更新时 tag 不做回收，由 BatchHandleSearchTag 增量维护）
-	if isNew {
+	// 先查询数据库中是否存在对应记录
+	// 如果不存在对应记录则 保存当前记录
+	tx := db.Mdb.Begin()
+	if !ExistSearchInfo(s.Mid) {
+		// 执行插入操作
+		if err := tx.Create(&s).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+		// 执行添加操作时保存一份tag信息
 		BatchHandleSearchTag(s)
+	} else {
+		// 如果已经存在当前记录则将当前记录进行更新
+		err := tx.Model(&SearchInfo{}).Where("mid", s.Mid).Updates(SearchInfo{UpdateStamp: s.UpdateStamp, Hits: s.Hits, State: s.State,
+			Remarks: s.Remarks, Score: s.Score, ReleaseStamp: s.ReleaseStamp}).Error
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
 	}
+	// 提交事务
+	tx.Commit()
 	return nil
 }
 
@@ -311,100 +339,115 @@ func TunCateSearchTable() {
 	}
 }
 
+// SyncSearchInfo 同步影片检索信息
+func SyncSearchInfo(model int) {
+	switch model {
+	case 0:
+		// 重置Search表, (恢复为初始状态, 未添加索引)
+		ResetSearchTable()
+		// 批量添加 SearchInfo
+		SearchInfoToMdb(model)
+		// 保存完所有 SearchInfo 后添加字段索引
+		AddSearchIndex()
+	case 1:
+		// 批量更新或添加
+		SearchInfoToMdb(model)
+	}
+}
+
+// SearchInfoToMdb 扫描redis中的检索信息, 并批量存入mysql (model 执行模式 0-清空并保存 || 1-更新)
+func SearchInfoToMdb(model int) {
+	// 获取集合中的元素数量, 如果集合中没有元素则直接返回
+	count := db.Rdb.ZCard(db.Cxt, config.SearchInfoTemp).Val()
+	if count <= 0 {
+		return
+	}
+	// 1.从redis中批量扫描详情信息
+	list := db.Rdb.ZPopMax(db.Cxt, config.SearchInfoTemp, config.MaxScanCount).Val()
+	// 如果扫描到的信息为空则直接退出
+	if len(list) <= 0 {
+		return
+	}
+	// 2. 处理数据
+	var sl []SearchInfo
+	for _, s := range list {
+		// 解析详情数据
+		info := SearchInfo{}
+		_ = json.Unmarshal([]byte(s.Member.(string)), &info)
+		sl = append(sl, info)
+	}
+	// 通过model执行对应的保存方法
+	switch model {
+	case 0:
+		// 批量添加 SearchInfo
+		BatchSave(sl)
+	case 1:
+		// 批量更新或添加
+		BatchSaveOrUpdate(sl)
+	}
+	//  如果 SearchInfoTemp 依然存在数据, 则递归执行
+	SearchInfoToMdb(model)
+}
+
 // ================================= API 数据接口信息处理 =================================
 
 // GetMovieListByPid  通过Pid 分类ID 获取对应影片的数据信息
 func GetMovieListByPid(pid int64, page *Page) []MovieBasicInfo {
-	// 1. 优先尝试从 Redis 获取缓存列表
-	cacheKey := fmt.Sprintf("Cache:List:Pid%d:Pg%d:Sz%d", pid, page.Current, page.PageSize)
-	cacheData := db.Rdb.Get(db.Cxt, cacheKey).Val()
-	if cacheData != "" {
-		var list []MovieBasicInfo
-		if err := json.Unmarshal([]byte(cacheData), &list); err == nil {
-			return list
-		}
-	}
-
-	// 2. Redis 未命中，查询 MySQL
+	// 返回分页参数
 	var count int64
 	db.Mdb.Model(&SearchInfo{}).Where("pid", pid).Count(&count)
 	page.Total = int(count)
 	page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
-
+	// 进行具体的信息查询
 	var s []SearchInfo
 	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("pid", pid).Order("update_stamp DESC").Find(&s).Error; err != nil {
-		log.Printf("GetMovieListByPid Error: %v", err)
+		log.Println(err)
 		return nil
 	}
-
+	// 通过影片ID去redis中获取id对应数据信息
 	var list []MovieBasicInfo
 	for _, v := range s {
-		list = append(list, MovieBasicInfo{
-			Id: v.Mid, Cid: v.Cid, Pid: v.Pid, Name: v.Name, SubTitle: v.SubTitle,
-			CName: v.CName, State: v.State, Picture: v.Picture, Actor: v.Actor,
-			Director: v.Director, Blurb: v.Blurb, Remarks: v.Remarks,
-			Area: v.Area, Year: fmt.Sprint(v.Year),
-		})
+		// 通过key搜索指定的影片信息 , MovieDetail:Cid6:Id15441
+		list = append(list, GetBasicInfoByKey(fmt.Sprintf(config.MovieBasicInfoKey, v.Cid, v.Mid)))
 	}
-
-	// 3. 将结果回填 Redis 缓存 (短效)
-	if len(list) > 0 {
-		data, _ := json.Marshal(list)
-		_ = db.Rdb.Set(db.Cxt, cacheKey, data, time.Minute*30).Err() // 列表页缓存 30 分钟即可
-	}
-
 	return list
 }
 
-// GetMovieListByCid 通过Cid查找对应的影片分页数据
+// GetMovieListByCid 通过Cid查找对应的影片分页数据, 不适合GetMovieListByPid 糅合
 func GetMovieListByCid(cid int64, page *Page) []MovieBasicInfo {
-	// 1. 优先尝试从 Redis 获取缓存列表
-	cacheKey := fmt.Sprintf("Cache:List:Cid%d:Pg%d:Sz%d", cid, page.Current, page.PageSize)
-	cacheData := db.Rdb.Get(db.Cxt, cacheKey).Val()
-	if cacheData != "" {
-		var list []MovieBasicInfo
-		if err := json.Unmarshal([]byte(cacheData), &list); err == nil {
-			return list
-		}
-	}
-
-	// 2. Redis 未命中，查询 MySQL
+	// 返回分页参数
 	var count int64
 	db.Mdb.Model(&SearchInfo{}).Where("cid", cid).Count(&count)
 	page.Total = int(count)
 	page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
-
+	// 进行具体的信息查询
 	var s []SearchInfo
 	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("cid", cid).Order("update_stamp DESC").Find(&s).Error; err != nil {
-		log.Printf("GetMovieListByCid Error: %v", err)
+		log.Println(err)
 		return nil
 	}
-
+	// 通过影片ID去redis中获取id对应数据信息
 	var list []MovieBasicInfo
 	for _, v := range s {
-		list = append(list, MovieBasicInfo{
-			Id: v.Mid, Cid: v.Cid, Pid: v.Pid, Name: v.Name, SubTitle: v.SubTitle,
-			CName: v.CName, State: v.State, Picture: v.Picture, Actor: v.Actor,
-			Director: v.Director, Blurb: v.Blurb, Remarks: v.Remarks,
-			Area: v.Area, Year: fmt.Sprint(v.Year),
-		})
+		// 通过key搜索指定的影片信息 , MovieDetail:Cid6:Id15441
+		list = append(list, GetBasicInfoByKey(fmt.Sprintf(config.MovieBasicInfoKey, v.Cid, v.Mid)))
 	}
-
-	// 3. 将结果回填 Redis 缓存 (短效)
-	if len(list) > 0 {
-		data, _ := json.Marshal(list)
-		_ = db.Rdb.Set(db.Cxt, cacheKey, data, time.Minute*30).Err()
-	}
-
 	return list
 }
 
 // GetHotMovieByPid  获取Pid指定类别的热门影片
 func GetHotMovieByPid(pid int64, page *Page) []SearchInfo {
+	// 返回分页参数
+	//var count int64
+	//db.Mdb.Model(&SearchInfo{}).Where("pid", pid).Count(&count)
+	//page.Total = int(count)
+	//page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
+	// 进行具体的信息查询
 	var s []SearchInfo
+	// 当前时间偏移一个月
 	t := time.Now().AddDate(0, -1, 0).Unix()
 	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("pid=? AND update_stamp > ?", pid, t).Order(" year DESC, hits DESC").Find(&s).Error; err != nil {
-		log.Printf("GetHotMovieByPid Error: %v", err)
+		log.Println(err)
 		return nil
 	}
 	return s
@@ -412,10 +455,17 @@ func GetHotMovieByPid(pid int64, page *Page) []SearchInfo {
 
 // GetHotMovieByCid 获取当前分类下的热门影片
 func GetHotMovieByCid(cid int64, page *Page) []SearchInfo {
+	// 返回分页参数
+	//var count int64
+	//db.Mdb.Model(&SearchInfo{}).Where("pid", pid).Count(&count)
+	//page.Total = int(count)
+	//page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
+	// 进行具体的信息查询
 	var s []SearchInfo
+	// 当前时间偏移一个月
 	t := time.Now().AddDate(0, -1, 0).Unix()
 	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("cid=? AND update_stamp > ?", cid, t).Order(" year DESC, hits DESC").Find(&s).Error; err != nil {
-		log.Printf("GetHotMovieByCid Error: %v", err)
+		log.Println(err)
 		return nil
 	}
 	return s
@@ -423,33 +473,15 @@ func GetHotMovieByCid(cid int64, page *Page) []SearchInfo {
 
 // SearchFilmKeyword 通过关键字搜索库存中满足条件的影片名
 func SearchFilmKeyword(keyword string, page *Page) []SearchInfo {
-	// 1. 优先尝试从 Redis 获取缓存
-	cacheKey := fmt.Sprintf("Cache:Search:%s:Pg%d:Sz%d", keyword, page.Current, page.PageSize)
-	cacheData := db.Rdb.Get(db.Cxt, cacheKey).Val()
-	if cacheData != "" {
-		var list []SearchInfo
-		if err := json.Unmarshal([]byte(cacheData), &list); err == nil {
-			return list
-		}
-	}
-
 	var searchList []SearchInfo
-	// 2. 先统计搜索满足条件的数据量
+	// 1. 先统计搜索满足条件的数据量
 	var count int64
 	db.Mdb.Model(&SearchInfo{}).Where("name LIKE ?", fmt.Sprint(`%`, keyword, `%`)).Or("sub_title LIKE ?", fmt.Sprint(`%`, keyword, `%`)).Count(&count)
 	page.Total = int(count)
 	page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
-
-	// 3. 获取满足条件的数据
+	// 2. 获取满足条件的数据
 	db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).
 		Where("name LIKE ?", fmt.Sprintf(`%%%s%%`, keyword)).Or("sub_title LIKE ?", fmt.Sprintf(`%%%s%%`, keyword)).Order("year DESC, update_stamp DESC").Find(&searchList)
-
-	// 4. 将结果回填 Redis 缓存 (短效)
-	if len(searchList) > 0 {
-		data, _ := json.Marshal(searchList)
-		_ = db.Rdb.Set(db.Cxt, cacheKey, data, time.Minute*10).Err() // 搜索缓存建议时间更短
-	}
-
 	return searchList
 }
 
@@ -467,7 +499,7 @@ func GetRelateMovieBasicInfo(search SearchInfo, page *Page) []MovieBasicInfo {
 	sql := ""
 
 	// 优先进行名称相似匹配
-	// search.Name = regexp.MustCompile("第.{1,3}季").ReplaceAllString(search.Name, "")
+	//search.Name = regexp.MustCompile("第.{1,3}季").ReplaceAllString(search.Name, "")
 	name := regexp.MustCompile(`(第.{1,3}季.*)|([0-9]{1,3})|(剧场版)|(\s\S*$)|(之.*)|([\p{P}\p{S}].*)`).ReplaceAllString(search.Name, "")
 	// 如果处理后的影片名称依旧没有改变 且具有一定长度 则截取部分内容作为搜索条件
 	if len(name) == len(search.Name) && len(name) > 10 {
@@ -476,7 +508,7 @@ func GetRelateMovieBasicInfo(search SearchInfo, page *Page) []MovieBasicInfo {
 	}
 	sql = fmt.Sprintf(`select * from %s where (name LIKE "%%%s%%" or sub_title LIKE "%%%[2]s%%") AND cid=%d AND search.deleted_at IS NULL union`, search.TableName(), name, search.Cid)
 	// 执行后续匹配内容, 匹配结果过少,减少过滤条件
-	// sql = fmt.Sprintf(`%s select * from %s where cid=%d AND area="%s" AND language="%s" AND`, sql, search.TableName(), search.Cid, search.Area, search.Language)
+	//sql = fmt.Sprintf(`%s select * from %s where cid=%d AND area="%s" AND language="%s" AND`, sql, search.TableName(), search.Cid, search.Area, search.Language)
 
 	// 添加其他相似匹配规则
 	sql = fmt.Sprintf(`%s (select * from %s where cid=%d AND `, sql, search.TableName(), search.Cid)
@@ -500,7 +532,7 @@ func GetRelateMovieBasicInfo(search SearchInfo, page *Page) []MovieBasicInfo {
 		sql = fmt.Sprintf(`%s class_tag like "%%%s%%"`, sql, search.ClassTag)
 	}
 	// 除名称外的相似影片使用随机排序
-	// sql = fmt.Sprintf("%s ORDER BY RAND() limit %d,%d)", sql, page.Current, page.PageSize)
+	//sql = fmt.Sprintf("%s ORDER BY RAND() limit %d,%d)", sql, page.Current, page.PageSize)
 	sql = fmt.Sprintf("%s AND search.deleted_at IS NULL limit %d,%d)", sql, page.Current, page.PageSize)
 	// 条件拼接完成后加上limit参数
 	sql = fmt.Sprintf("(%s)  limit %d,%d", sql, page.Current, page.PageSize)
@@ -517,80 +549,62 @@ func GetRelateMovieBasicInfo(search SearchInfo, page *Page) []MovieBasicInfo {
 	return basicList
 }
 
-// GetMultiplePlay 通过影片名hash值匹配播放源 (MySQL 优先)
+// GetMultiplePlay 通过影片名hash值匹配播放源
 func GetMultiplePlay(siteId, key string) []MovieUrlInfo {
-	// 1. 优先从 Redis 获取 (可选)
-	cacheKey := fmt.Sprintf("Cache:Play:%s:%s", siteId, key)
-	cacheData := db.Rdb.Get(db.Cxt, cacheKey).Val()
-	if cacheData != "" {
-		var playList []MovieUrlInfo
-		if err := json.Unmarshal([]byte(cacheData), &playList); err == nil {
-			return playList
-		}
-	}
-
-	// 2. Redis 未命中，查询 MySQL
-	var playlist MoviePlaylist
+	data := db.Rdb.HGet(db.Cxt, fmt.Sprintf(config.MultipleSiteDetail, siteId), key).Val()
 	var playList []MovieUrlInfo
-	if err := db.Mdb.Where("source_id = ? AND movie_key = ?", siteId, key).First(&playlist).Error; err == nil {
-		_ = json.Unmarshal([]byte(playlist.Content), &playList)
-		// 3. 回填缓存
-		_ = db.Rdb.Set(db.Cxt, cacheKey, playlist.Content, time.Minute*30).Err()
-	}
+	_ = json.Unmarshal([]byte(data), &playList)
 	return playList
 }
 
-// GetSearchTag 通过影片分类 Pid 返回对应分类的 tag 信息 (纯 MySQL)
+// GetSearchTag 通过影片分类 Pid 返回对应分类的tag信息
 func GetSearchTag(pid int64) map[string]interface{} {
+	// 整合searchTag相关内容
 	res := make(map[string]interface{})
-	sortList := []string{"Category", "Plot", "Area", "Language", "Year", "Sort"}
-	res["sortList"] = sortList
-	// titles 为固定映射，不再依赖 Redis
-	res["titles"] = map[string]string{
-		"Category": "类型",
-		"Plot":     "剧情",
-		"Area":     "地区",
-		"Language": "语言",
-		"Year":     "年份",
-		"Sort":     "排序",
-	}
+	titles := db.Rdb.HGetAll(db.Cxt, fmt.Sprintf(config.SearchTitle, pid)).Val()
+	res["titles"] = titles
+	// 处理单一分类的数据格式
 	tagMap := make(map[string]interface{})
-	for _, t := range sortList {
+	for t, _ := range titles {
 		tagMap[t] = HandleTagStr(t, GetTagsByTitle(pid, t)...)
 	}
 	res["tags"] = tagMap
+	// 分类列表展示的顺序
+	res["sortList"] = []string{"Category", "Plot", "Area", "Language", "Year", "Sort"}
 	return res
 }
 
-// GetTagsByTitle 从 MySQL 返回 Pid+TagType 对应的检索标签 ("Name:Value" 格式)
+// GetTagsByTitle 返回Pid和title对应的用于检索的tag
 func GetTagsByTitle(pid int64, t string) []string {
-	if t == "Category" {
-		// Category 直接从分类树获取，保证实时性
-		var tags []string
+	// 通过 k 获取对应的 tag , 并以score进行排序
+	var tags []string
+	// 过滤分类tag
+	switch t {
+	case "Category":
+		//tags = db.Rdb.ZRevRange(db.Cxt, fmt.Sprintf(config.SearchTag, pid, t), 0, -1).Val()
+		// 获取所有展示的子分类
 		for _, c := range GetChildrenTree(pid) {
 			if c.Show {
 				tags = append(tags, fmt.Sprintf("%s:%d", c.Name, c.Id))
 			}
 		}
-		return tags
-	}
-	limits := map[string]int{"Plot": 11, "Area": 12, "Language": 7}
-	var items []SearchTagItem
-	q := db.Mdb.Where("pid = ? AND tag_type = ?", pid, t).Order("score DESC")
-	if limit, ok := limits[t]; ok {
-		q = q.Limit(limit)
-	}
-	q.Find(&items)
-	tags := make([]string, 0, len(items))
-	for _, item := range items {
-		tags = append(tags, fmt.Sprintf("%s:%s", item.Name, item.Value))
+	case "Plot":
+		tags = db.Rdb.ZRevRange(db.Cxt, fmt.Sprintf(config.SearchTag, pid, t), 0, 10).Val()
+	case "Area":
+		tags = db.Rdb.ZRevRange(db.Cxt, fmt.Sprintf(config.SearchTag, pid, t), 0, 11).Val()
+	case "Language":
+		tags = db.Rdb.ZRevRange(db.Cxt, fmt.Sprintf(config.SearchTag, pid, t), 0, 6).Val()
+	case "Year", "Initial", "Sort":
+		tags = db.Rdb.ZRevRange(db.Cxt, fmt.Sprintf(config.SearchTag, pid, t), 0, -1).Val()
+	default:
+		break
 	}
 	return tags
 }
 
 // HandleTagStr 处理tag数据格式
 func HandleTagStr(title string, tags ...string) []map[string]string {
-	r := make([]map[string]string, 0)
+	var r []map[string]string
 	if !strings.EqualFold(title, "Sort") {
 		r = append(r, map[string]string{
 			"Name":  "全部",
@@ -667,10 +681,11 @@ func GetSearchInfosByTags(st SearchTagsVO, page *Page) []SearchInfo {
 	// 查询具体的searchInfo 分页数据
 	var sl []SearchInfo
 	if err := qw.Limit(page.PageSize).Offset((page.Current - 1) * page.PageSize).Find(&sl).Error; err != nil {
-		log.Printf("GetSearchInfosByTags Error: %v", err)
+		log.Println(err)
 		return nil
 	}
 	return sl
+
 }
 
 // GetMovieListBySort 通过排序类型返回对应的影片基本信息
@@ -690,10 +705,11 @@ func GetMovieListBySort(t int, pid int64, page *Page) []MovieBasicInfo {
 		qw.Order("update_stamp DESC")
 	}
 	if err := qw.Find(&sl).Error; err != nil {
-		log.Printf("GetMovieListBySort Error: %v", err)
+		log.Println(err)
 		return nil
 	}
 	return GetBasicInfoBySearchInfos(sl...)
+
 }
 
 // ================================= Manage 管理后台 =================================
@@ -743,17 +759,26 @@ func GetSearchPage(s SearchVo) []SearchInfo {
 	// 查询具体的数据
 	var sl []SearchInfo
 	if err := query.Limit(s.Paging.PageSize).Offset((s.Paging.Current - 1) * s.Paging.PageSize).Find(&sl).Error; err != nil {
-		log.Printf("GetSearchPage Error: %v", err)
+		log.Println(err)
 		return nil
 	}
 	return sl
+
 }
 
-// GetSearchOptions 获取影片分类检索的筛选标签 (纯 MySQL)
+// GetSearchOptions 获取全部影片的检索标签信息
 func GetSearchOptions(pid int64) map[string]interface{} {
+	// 整合searchTag相关内容
+	titles := db.Rdb.HGetAll(db.Cxt, fmt.Sprintf(config.SearchTitle, pid)).Val()
+	// 处理单一分类的数据格式
 	tagMap := make(map[string]interface{})
-	for _, t := range []string{"Plot", "Area", "Language", "Year"} {
-		tagMap[t] = HandleTagStr(t, GetTagsByTitle(pid, t)...)
+	for t, _ := range titles {
+		switch t {
+		// 只获取对应几个类型的标签
+		case "Plot", "Area", "Language", "Year":
+			tagMap[t] = HandleTagStr(t, GetTagsByTitle(pid, t)...)
+		default:
+		}
 	}
 	return tagMap
 }
@@ -762,34 +787,37 @@ func GetSearchOptions(pid int64) map[string]interface{} {
 func GetSearchInfoById(id int64) *SearchInfo {
 	s := SearchInfo{}
 	if err := db.Mdb.First(&s, id).Error; err != nil {
-		log.Printf("GetSearchInfoById Error: %v", err)
+		log.Println(err)
 		return nil
 	}
 	return &s
 }
 
-// DelFilmSearch 软删除影片检索记录（设 deleted_at），重新采集时 upsert 会自动恢复
+// DelFilmSearch 删除影片检索信息, (不影响后续更新, 逻辑删除)
 func DelFilmSearch(id int64) error {
+	// 通过检索id对影片检索信息进行删除
 	if err := db.Mdb.Delete(&SearchInfo{}, id).Error; err != nil {
-		log.Printf("DelFilmSearch Error: %v", err)
+		log.Println(err)
 		return err
 	}
 	return nil
 }
 
-// ShieldFilmSearch 软删除指定分类下的所有影片检索信息（分类隐藏时调用）
+// ShieldFilmSearch 删除所属分类下的所有影片检索信息
 func ShieldFilmSearch(cid int64) error {
+	// 通过检索id对影片检索信息进行删除
 	if err := db.Mdb.Where("cid = ?", cid).Delete(&SearchInfo{}).Error; err != nil {
-		log.Printf("ShieldFilmSearch Error: %v", err)
+		log.Println(err)
 		return err
 	}
 	return nil
 }
 
-// RecoverFilmSearch 恢复指定分类下所有被软删除的影片检索信息（分类重新显示时调用）
+// RecoverFilmSearch 恢复所属分类下的影片检索信息状态
 func RecoverFilmSearch(cid int64) error {
+	// 通过检索id对影片检索信息进行删除
 	if err := db.Mdb.Model(&SearchInfo{}).Unscoped().Where("cid = ?", cid).Update("deleted_at", nil).Error; err != nil {
-		log.Printf("RecoverFilmSearch Error: %v", err)
+		log.Println(err)
 		return err
 	}
 	return nil

@@ -1,7 +1,12 @@
 package collect
 
 import (
+	"encoding/json"
 	"encoding/xml"
+	"fmt"
+	"log"
+	"server/config"
+	"server/plugin/db"
 )
 
 /*
@@ -160,13 +165,37 @@ type DD struct {
 
 //-------------------------------------------------Json 格式-------------------------------------------------
 
-// BatchSaveOriginalDetail 批量保存原始影片详情数据 (已废弃，调用方已注释)
-func BatchSaveOriginalDetail(_ []FilmDetail) {}
+// BatchSaveOriginalDetail 批量保存原始影片详情数据
+func BatchSaveOriginalDetail(dl []FilmDetail) {
+	for _, d := range dl {
+		SaveOriginalDetail(d)
+	}
+}
 
-// SaveOriginalDetail 保存未处理的完整影片详情信息 (已废弃，调用方已注释)
-func SaveOriginalDetail(_ FilmDetail) {}
+// SaveOriginalDetail 保存未处理的完整影片详情信息到redis
+func SaveOriginalDetail(fd FilmDetail) {
+	data, err := json.Marshal(fd)
+	if err != nil {
+		log.Println("Json Marshal FilmDetail Error: ", err)
+	}
+	if err = db.Rdb.Set(db.Cxt, fmt.Sprintf(config.OriginalFilmDetailKey, fd.VodID), data, config.ResourceExpired).Err(); err != nil {
+		log.Println("Save Original FilmDetail Error: ", err)
+	}
+}
 
-// GetOriginalDetailById 获取原始的影片详情数据 (已废弃)
-func GetOriginalDetailById(_ int64) (FilmDetail, error) {
-	return FilmDetail{}, nil
+// GetOriginalDetailById 获取原始的影片详情数据
+func GetOriginalDetailById(id int64) (FilmDetail, error) {
+	data, err := db.Rdb.Get(db.Cxt, fmt.Sprintf(config.OriginalFilmDetailKey, id)).Result()
+	if err != nil {
+		log.Println("Get OriginalDetail Fail: ", err)
+	}
+	var fd = FilmDetail{}
+	err = json.Unmarshal([]byte(data), &fd)
+	if err != nil {
+		log.Println("json.Unmarshal OriginalDetail Fail: ", err)
+		return fd, err
+	}
+
+	return fd, nil
+
 }

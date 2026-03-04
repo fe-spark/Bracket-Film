@@ -72,7 +72,7 @@ func (i *IndexService) ClearIndexCache() {
 func (i *IndexService) GetFilmDetail(id int) model.MovieDetailVo {
 	search := repository.GetSearchInfoById(int64(id))
 	if search == nil {
-		return model.MovieDetailVo{}
+		return model.MovieDetailVo{List: make([]model.PlayLinkVo, 0)}
 	}
 	movieDetail := repository.GetDetailByKey(fmt.Sprintf(config.MovieDetailKey, search.Cid, search.Mid))
 	res := model.MovieDetailVo{MovieDetail: movieDetail}
@@ -170,7 +170,11 @@ func multipleSource(detail *model.MovieDetail) []model.PlayLinkVo {
 	if len(master) == 0 || len(detail.PlayList) == 0 {
 		return make([]model.PlayLinkVo, 0)
 	}
-	playList := []model.PlayLinkVo{{Id: master[0].Id, Name: master[0].Name, LinkList: detail.PlayList[0]}}
+	firstList := detail.PlayList[0]
+	if firstList == nil {
+		firstList = []model.MovieUrlInfo{}
+	}
+	playList := []model.PlayLinkVo{{Id: master[0].Id, Name: master[0].Name, LinkList: firstList}}
 
 	names := make(map[string]int)
 	if detail.DbId > 0 {

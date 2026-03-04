@@ -499,7 +499,38 @@ func GetDetailByKey(key string) model.MovieDetail {
 		var info model.MovieDetailInfo
 		if err := db.Mdb.Where("mid = ?", mid).First(&info).Error; err == nil {
 			_ = json.Unmarshal([]byte(info.Content), &detail)
-			_ = db.Rdb.Set(db.Cxt, key, info.Content, config.FilmExpired).Err()
+			// 注意：不在此处写 Redis，由下方 nil 修复完成后统一写入干净数据
+		}
+	}
+	// Go nil slice → JSON null → Dart `as List<dynamic>` 非空 cast crash
+	// 统一将 nil slice 初始化为空 slice，保证前端始终收到 [] 而非 null
+	// 同时过滤内层 nil 元素（GenFilmPlayList 对空 URL 会 append(res, nil) → JSON [null]）
+	if detail.PlayFrom == nil {
+		detail.PlayFrom = []string{}
+	}
+	if detail.PlayList == nil {
+		detail.PlayList = [][]model.MovieUrlInfo{}
+	} else {
+		for i, inner := range detail.PlayList {
+			if inner == nil {
+				detail.PlayList[i] = []model.MovieUrlInfo{}
+			}
+		}
+	}
+	if detail.DownloadList == nil {
+		detail.DownloadList = [][]model.MovieUrlInfo{}
+	} else {
+		for i, inner := range detail.DownloadList {
+			if inner == nil {
+				detail.DownloadList[i] = []model.MovieUrlInfo{}
+			}
+		}
+	}
+	// 如果 Redis 中没有数据（MySQL fallback 路径），写入修复后的干净数据
+	// 避免将 MySQL 中的历史脏数据 (playList:[null]) 缓存到 Redis
+	if len(data) == 0 && detail.Id != 0 {
+		if clean, err := json.Marshal(detail); err == nil {
+			_ = db.Rdb.Set(db.Cxt, key, clean, config.FilmExpired).Err()
 		}
 	}
 	return detail
@@ -927,7 +958,7 @@ func GetMultiplePlay(siteId, key string) []model.MovieUrlInfo {
 	var playList []model.MovieUrlInfo
 	if err := db.Mdb.Where("source_id = ? AND movie_key = ?", siteId, key).First(&playlist).Error; err == nil {
 		var allPlayList [][]model.MovieUrlInfo
-		if err := json.Unmarshal([]byte(playlist.Content), &allPlayList); err == nil && len(allPlayList) > 0 {
+		if err := json.Unmarshal([]byte(playlist.Content), &allPlayList); err == nil && len(allPlayList) > 0 && len(allPlayList[0]) > 0 {
 			playList = allPlayList[0]
 			data, _ := json.Marshal(playList)
 			_ = db.Rdb.Set(db.Cxt, cacheKey, string(data), config.FilmExpired).Err()

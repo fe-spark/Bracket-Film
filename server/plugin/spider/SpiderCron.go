@@ -3,15 +3,15 @@ package spider
 import (
 	"errors"
 	"fmt"
+	"github.com/robfig/cron/v3"
 	"log"
-
 	"server/config"
 	"server/model/system"
-
-	"github.com/robfig/cron/v3"
 )
 
-var CronCollect *cron.Cron = CreateCron()
+var (
+	CronCollect *cron.Cron = CreateCron()
+)
 
 // CreateCron 创建定时任务
 func CreateCron() *cron.Cron {
@@ -81,12 +81,18 @@ func RemoveCron(id cron.EntryID) {
 
 // GetEntryById 返回定时任务的相关时间信息
 func GetEntryById(id cron.EntryID) cron.Entry {
+	//log.Printf("CronInfo: %+v\n", CronCollect.Entries())
+	//log.Println("Corn Next Execute Time:", CronCollect.Entry(id).Next.Format(time.DateTime))
 	return CronCollect.Entry(id)
 }
 
-// ValidSpec 校验cron表达式是否有效
+// ValidSpec 校验cron表达式是否有效 不能精确到秒
 func ValidSpec(spec string) error {
+	// 自定义解释器
 	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	//if _, err := parser.Parse(spec); err != nil {
+	//	return err
+	//}
 	_, err := parser.Parse(spec)
 	return err
 }

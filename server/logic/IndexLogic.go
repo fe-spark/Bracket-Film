@@ -44,13 +44,13 @@ func (i *IndexLogic) IndexPage() map[string]interface{} {
 	// 返回分类信息
 	Info["category"] = tree
 	// 2. 提供用于首页展示的顶级分类影片信息, 每分类 14条数据
-	list := make([]map[string]interface{}, 0)
+	var list []map[string]interface{}
 	for _, c := range tree.Children {
 		// 生成分页参数
 		page := system.Page{PageSize: 14, Current: 1}
 		// 获取最近上映影片和本月热门影片
-		movies := make([]system.MovieBasicInfo, 0)
-		hotMovies := make([]system.SearchInfo, 0)
+		var movies []system.MovieBasicInfo
+		var hotMovies []system.SearchInfo
 		if c.Children != nil {
 			// 如果有子分类, 则通过Pid获取对应影片
 			// 获取当前分类的最新上映影片
@@ -65,24 +65,12 @@ func (i *IndexLogic) IndexPage() map[string]interface{} {
 			hotMovies = system.GetHotMovieByCid(c.Id, &page)
 		}
 
-		// 确保 movies 和 hotMovies 不为 nil
-		if movies == nil {
-			movies = make([]system.MovieBasicInfo, 0)
-		}
-		if hotMovies == nil {
-			hotMovies = make([]system.SearchInfo, 0)
-		}
-
 		item := map[string]interface{}{"nav": c, "movies": movies, "hot": hotMovies}
 		list = append(list, item)
 	}
 	Info["content"] = list
 	// 3. 获取首页轮播数据
-	banners := system.GetBanners()
-	if banners == nil {
-		banners = make(system.Banners, 0)
-	}
-	Info["banners"] = banners
+	Info["banners"] = system.GetBanners()
 	// 不存在首页数据缓存时将查询数据缓存到redis中
 	system.DataCache(config.IndexCacheKey, Info)
 	return Info
@@ -135,7 +123,7 @@ func (i *IndexLogic) GetNavCategory() []*system.Category {
 	// 1.获取所有分类信息
 	tree := system.GetCategoryTree()
 	// 遍历一级分类返回可展示的分类数据
-	cl := make([]*system.Category, 0)
+	var cl []*system.Category
 	for _, c := range tree.Children {
 		if c.Show {
 			cl = append(cl, c.Category)
@@ -218,9 +206,9 @@ func multipleSource(detail *system.MovieDetail) []system.PlayLinkVo {
 	master := system.GetCollectSourceListByGrade(system.MasterCollect)
 	if len(master) == 0 || len(detail.PlayList) == 0 {
 		// 主站源或播放列表为空时直接返回空列表
-		return make([]system.PlayLinkVo, 0)
+		return nil
 	}
-	playList := []system.PlayLinkVo{{Id: master[0].Id, Name: master[0].Name, LinkList: detail.PlayList[0]}}
+	playList := []system.PlayLinkVo{{master[0].Id, master[0].Name, detail.PlayList[0]}}
 
 	// 整合多播放源, 初始化存储key map
 	names := make(map[string]int)

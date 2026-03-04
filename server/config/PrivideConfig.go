@@ -8,7 +8,7 @@ import "time"
 
 const (
 	// ResourceExpired API所需要的资源有效期
-	ResourceExpired = time.Hour * 24
+	ResourceExpired = time.Hour * 24 * 90
 	// OriginalFilmDetailKey 采集时原始数据存储key
 	OriginalFilmDetailKey = "OriginalResource:FilmDetail:Id%d"
 	FilmClassKey          = "OriginalResource:FilmClass"

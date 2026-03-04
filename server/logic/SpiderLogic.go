@@ -48,11 +48,6 @@ func (sl *SpiderLogic) ClearFilms() {
 	go spider.ClearSpider()
 }
 
-// ClearRedisOnly 仅清空 Redis 缓存
-func (sl *SpiderLogic) ClearRedisOnly() {
-	go spider.ClearRedisOnly()
-}
-
 // ZeroCollect 数据清除从零开始采集
 func (sl *SpiderLogic) ZeroCollect(time int) {
 	go spider.StarZero(time)

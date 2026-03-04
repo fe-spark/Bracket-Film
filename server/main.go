@@ -64,9 +64,6 @@ func start() {
 }
 
 func DefaultDataInit() {
-	// 0. 清理 Redis 缓存 (确保启动时处于干净状态，数据将按需从 MySQL 加载)
-	system.RedisOnlyFlush()
-
 	// 1. 数据库表结构初始化 (仅在用户表不存在时执行)
 	if !system.ExistUserTable() {
 		SystemInit.TableInIt()

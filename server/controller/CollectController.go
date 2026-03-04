@@ -2,12 +2,11 @@ package controller
 
 import (
 	"fmt"
-	"strconv"
-	"time"
-
 	"server/logic"
 	"server/model/system"
 	"server/plugin/spider"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -36,7 +35,7 @@ func FindFilmSource(c *gin.Context) {
 
 // FilmSourceAdd 添加采集源
 func FilmSourceAdd(c *gin.Context) {
-	s := system.FilmSource{}
+	var s = system.FilmSource{}
 	// 获取请求参数
 	if err := c.ShouldBindJSON(&s); err != nil {
 		system.Failed("请求参数异常", c)
@@ -54,7 +53,7 @@ func FilmSourceAdd(c *gin.Context) {
 	}
 	// 执行 spider
 	if err := spider.CollectApiTest(s); err != nil {
-		system.Failed(fmt.Sprint("资源接口测试失败: ", err.Error()), c)
+		system.Failed("资源接口测试失败, 请确认接口有效再添加", c)
 		return
 	}
 	// 测试通过后将资源站信息添加到list
@@ -67,7 +66,7 @@ func FilmSourceAdd(c *gin.Context) {
 
 // FilmSourceUpdate 采集站点信息更新
 func FilmSourceUpdate(c *gin.Context) {
-	s := system.FilmSource{}
+	var s = system.FilmSource{}
 	// 获取请求参数
 	if err := c.ShouldBindJSON(&s); err != nil {
 		system.Failed("请求参数异常", c)
@@ -97,7 +96,7 @@ func FilmSourceUpdate(c *gin.Context) {
 	if fs.Uri != s.Uri {
 		// 执行 spider
 		if err := spider.CollectApiTest(s); err != nil {
-			system.Failed(fmt.Sprint("资源接口测试失败: ", err.Error()), c)
+			system.Failed("资源接口测试失败, 请确认更新的数据接口是否有效", c)
 			return
 		}
 	}
@@ -111,7 +110,7 @@ func FilmSourceUpdate(c *gin.Context) {
 
 // FilmSourceChange 采集站点状态变更
 func FilmSourceChange(c *gin.Context) {
-	s := system.FilmSource{}
+	var s = system.FilmSource{}
 	// 获取请求参数
 	if err := c.ShouldBindJSON(&s); err != nil {
 		system.Failed("请求参数异常", c)
@@ -134,17 +133,8 @@ func FilmSourceChange(c *gin.Context) {
 	}
 	if s.State != fs.State || s.SyncPictures != fs.SyncPictures {
 		// 执行更新操作
-		s := system.FilmSource{
-			Id:           fs.Id,
-			Name:         fs.Name,
-			Uri:          fs.Uri,
-			ResultModel:  fs.ResultModel,
-			Grade:        fs.Grade,
-			SyncPictures: s.SyncPictures,
-			CollectType:  fs.CollectType,
-			State:        s.State,
-			Interval:     fs.Interval, // 保持原有的间隔时长
-		}
+		s := system.FilmSource{Id: fs.Id, Name: fs.Name, Uri: fs.Uri, ResultModel: fs.ResultModel,
+			Grade: fs.Grade, SyncPictures: s.SyncPictures, CollectType: fs.CollectType, State: s.State}
 		// 更新资源站信息
 		if err := logic.CollectL.UpdateFilmSource(s); err != nil {
 			system.Failed(fmt.Sprint("资源站更新失败: ", err.Error()), c)
@@ -176,7 +166,7 @@ func FilmSourceDel(c *gin.Context) {
 
 // FilmSourceTest 测试影视站点数据是否可用
 func FilmSourceTest(c *gin.Context) {
-	s := system.FilmSource{}
+	var s = system.FilmSource{}
 	// 获取请求参数
 	if err := c.ShouldBindJSON(&s); err != nil {
 		system.Failed("请求参数异常", c)
@@ -229,11 +219,11 @@ func GetNormalFilmSource(c *gin.Context) {
 // FailureRecordList 失效采集记录分页数据
 func FailureRecordList(c *gin.Context) {
 	// 数据返回对象
-	params := system.RecordRequestVo{Paging: &system.Page{}}
+	var params = system.RecordRequestVo{Paging: &system.Page{}}
 	var err error
 	// 获取筛选条件
 	params.OriginId = c.DefaultQuery("originId", "")
-	// params.CollectType, err = strconv.Atoi(c.DefaultQuery("collectType", "-1"))
+	//params.CollectType, err = strconv.Atoi(c.DefaultQuery("collectType", "-1"))
 	params.Hour, err = strconv.Atoi(c.DefaultQuery("hour", "0"))
 	params.Status, err = strconv.Atoi(c.DefaultQuery("status", "-1"))
 

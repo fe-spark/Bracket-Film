@@ -1,12 +1,12 @@
 package conver
 
 import (
-	"fmt"
-	"strings"
-
+	"encoding/xml"
+	"log"
 	"server/config"
 	"server/model/collect"
 	"server/model/system"
+	"strings"
 )
 
 /*
@@ -46,7 +46,7 @@ func GenCategoryTree(list []collect.FilmClass) *system.CategoryTree {
 
 // ConvertCategoryList 将分类树形数据转化为list类型
 func ConvertCategoryList(tree system.CategoryTree) []system.Category {
-	cl := []system.Category{{Id: tree.Id, Pid: tree.Pid, Name: tree.Name, Show: tree.Show}}
+	var cl = []system.Category{system.Category{Id: tree.Id, Pid: tree.Pid, Name: tree.Name, Show: tree.Show}}
 	for _, c := range tree.Children {
 		cl = append(cl, system.Category{Id: c.Id, Pid: c.Pid, Name: c.Name, Show: c.Show})
 		if c.Children != nil && len(c.Children) > 0 {
@@ -65,6 +65,7 @@ func ConvertFilmDetails(details []collect.FilmDetail) []system.MovieDetail {
 		dl = append(dl, ConvertFilmDetail(d))
 	}
 	return dl
+
 }
 
 // ConvertFilmDetail 将影片详情数据处理转化为 system.MovieDetail
@@ -119,6 +120,7 @@ func GenFilmPlayList(playUrl, separator string) [][]system.MovieUrlInfo {
 			if strings.Contains(l, ".m3u8") || strings.Contains(l, ".mp4") {
 				// 2. 将每组播放源对应的播放列表信息存储到列表中
 				res = append(res, ConvertPlayUrl(l))
+
 			}
 		}
 	} else {
@@ -148,25 +150,22 @@ func GenAllFilmPlayList(playUrl, separator string) [][]system.MovieUrlInfo {
 }
 
 // ConvertPlayUrl 将单个playFrom的播放地址字符串处理成列表形式
-// 格式：Episode$Link#Episode$Link#...
 func ConvertPlayUrl(playUrl string) []system.MovieUrlInfo {
+	// 对每个片源的集数和播放地址进行分割 Episode$Link#Episode$Link
 	var l []system.MovieUrlInfo
 	for _, p := range strings.Split(playUrl, "#") {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
+		// 处理 Episode$Link 形式的播放信息
+		if strings.Contains(p, "$") {
+			l = append(l, system.MovieUrlInfo{
+				Episode: strings.Split(p, "$")[0],
+				Link:    strings.Split(p, "$")[1],
+			})
+		} else {
+			l = append(l, system.MovieUrlInfo{
+				Episode: "(｀・ω・´)",
+				Link:    p,
+			})
 		}
-		episode, link, found := strings.Cut(p, "$")
-		episode = strings.TrimSpace(episode)
-		link = strings.TrimSpace(link)
-		if !found {
-			// 整条即为 link，无集数名，按序号自动补全
-			episode, link = fmt.Sprintf("第%d集", len(l)+1), episode
-		}
-		if link == "" {
-			continue
-		}
-		l = append(l, system.MovieUrlInfo{Episode: episode, Link: link})
 	}
 	return l
 }
@@ -221,7 +220,7 @@ func DetailCovertXml(details []collect.FilmDetail) []collect.VideoDetail {
 			Note:     collect.CDATA{Text: d.VodRemarks},
 			Actor:    collect.CDATA{Text: d.VodActor},
 			Director: collect.CDATA{Text: d.VodDirector},
-			DL:       collect.DL{DD: []collect.DD{{Flag: d.VodPlayFrom, Value: d.VodPlayURL}}},
+			DL:       collect.DL{DD: []collect.DD{collect.DD{Flag: d.VodPlayFrom, Value: d.VodPlayURL}}},
 			Des:      collect.CDATA{Text: d.VodContent},
 		})
 	}
@@ -242,6 +241,8 @@ func DetailCovertListXml(details []collect.FilmDetail) []collect.VideoList {
 			Note: collect.CDATA{Text: d.VodRemarks},
 		})
 	}
+	s, _ := xml.Marshal(vl[0])
+	log.Println(string(s))
 	return vl
 }
 

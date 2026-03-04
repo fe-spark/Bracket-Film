@@ -1,7 +1,10 @@
 package system
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 	"log"
 	"path/filepath"
 	"regexp"
@@ -9,9 +12,6 @@ import (
 	"server/plugin/common/util"
 	"server/plugin/db"
 	"strings"
-
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // FileInfo 图片信息对象
@@ -30,20 +30,6 @@ type FileInfo struct {
 type VirtualPicture struct {
 	Id   int64  `json:"id"`
 	Link string `json:"link"`
-}
-
-// VirtualPictureQueue 待同步图片队列 (MySQL)
-type VirtualPictureQueue struct {
-	gorm.Model
-	Mid  int64  `gorm:"uniqueIndex"`
-	Link string `gorm:"type:text"`
-}
-
-// CreateVirtualPictureTable 创建待同步图片表
-func CreateVirtualPictureTable() {
-	if !db.Mdb.Migrator().HasTable(&VirtualPictureQueue{}) {
-		_ = db.Mdb.AutoMigrate(&VirtualPictureQueue{})
-	}
 }
 
 //------------------------------------------------本地图库------------------------------------------------
@@ -127,56 +113,59 @@ func DelFileInfo(id uint) {
 
 //------------------------------------------------图片同步------------------------------------------------
 
-// SaveVirtualPic 保存待同步的图片信息 (MySQL 持久化)
+// SaveVirtualPic 保存待同步的图片信息
 func SaveVirtualPic(pl []VirtualPicture) error {
-	var queue []VirtualPictureQueue
+	// 保存对应的待同步图片信息
+	var zl []redis.Z
 	for _, p := range pl {
-		queue = append(queue, VirtualPictureQueue{
-			Mid:  p.Id,
-			Link: p.Link,
-		})
+		// 首先查询 Gallery 表中是否存在当前ID对应的图片信息, 如果不存在则保存
+		//if !ExistPictureByRid(p.Id) {
+		//	m, _ := json.Marshal(p)
+		//	zl = append(zl, redis.Z{Score: float64(p.Id), Member: m})
+		//}
+
+		// 只要开启图片同步则将图片信息存入待同步图片信息集合中, 是否同步图片交由真正同步到本地时进行决断
+		m, _ := json.Marshal(p)
+		zl = append(zl, redis.Z{Score: float64(p.Id), Member: m})
 	}
-	if len(queue) > 0 {
-		return db.Mdb.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "mid"}},
-			DoUpdates: clause.AssignmentColumns([]string{"link", "updated_at"}),
-		}).Create(&queue).Error
-	}
-	return nil
+	return db.Rdb.ZAdd(db.Cxt, config.VirtualPictureKey, zl...).Err()
 }
 
-// SyncFilmPicture 同步新采集入栈还未同步的图片 (从 MySQL 获取)
+// SyncFilmPicture 同步新采集入栈还未同步的图片
 func SyncFilmPicture() {
-	var queue []VirtualPictureQueue
-	// 每次扫描 MaxScanCount 条
-	if err := db.Mdb.Limit(config.MaxScanCount).Find(&queue).Error; err != nil || len(queue) == 0 {
+	// 获取集合中的元素数量, 如果集合中没有元素则直接返回
+	count := db.Rdb.ZCard(db.Cxt, config.VirtualPictureKey).Val()
+	if count <= 0 {
 		return
 	}
-
-	for _, item := range queue {
-		// 判断当前影片是否已经同步过图片
-		if ExistFileInfoByRid(item.Mid) {
-			db.Mdb.Unscoped().Delete(&item)
+	// 扫描待同步图片的信息, 每次扫描count条
+	sl := db.Rdb.ZPopMax(db.Cxt, config.VirtualPictureKey, config.MaxScanCount).Val()
+	if len(sl) <= 0 {
+		return
+	}
+	// 获取 VirtualPicture
+	for _, s := range sl {
+		// 获取图片信息
+		vp := VirtualPicture{}
+		_ = json.Unmarshal([]byte(s.Member.(string)), &vp)
+		// 判断当前影片是否已经同步过图片, 如果已经同步则直接跳过后续逻辑
+		if ExistFileInfoByRid(vp.Id) {
 			continue
 		}
 		// 将图片同步到服务器中
-		fileName, err := util.SaveOnlineFile(item.Link, config.FilmPictureUploadDir)
+		fileName, err := util.SaveOnlineFile(vp.Link, config.FilmPictureUploadDir)
 		if err != nil {
-			// 如果下载失败，逻辑上可以保留重试或者删除看业务需求，这里先删除防止死循环
-			db.Mdb.Unscoped().Delete(&item)
 			continue
 		}
 		// 完成同步后将图片信息保存到 Gallery 中
 		SaveGallery(FileInfo{
 			Link:        fmt.Sprint(config.FilmPictureAccess, fileName),
 			Uid:         config.UserIdInitialVal,
-			RelevanceId: item.Mid,
+			RelevanceId: vp.Id,
 			Type:        0,
 			Fid:         regexp.MustCompile(`\.[^.]+$`).ReplaceAllString(fileName, ""),
 			FileType:    strings.TrimPrefix(filepath.Ext(fileName), "."),
 		})
-		// 同步成功后从队列删除
-		db.Mdb.Unscoped().Delete(&item)
 	}
 	// 递归执行直到图片暂存信息为空
 	SyncFilmPicture()

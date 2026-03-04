@@ -8,14 +8,13 @@ import (
 	"fmt"
 	"log"
 	"net/url"
-	"sync"
-	"time"
-
 	"server/config"
 	"server/model/collect"
 	"server/model/system"
 	"server/plugin/common/conver"
 	"server/plugin/common/util"
+	"sync"
+	"time"
 )
 
 /*
@@ -25,11 +24,8 @@ import (
 
 var spiderCore = &JsonCollect{}
 
-// activeTasks 存储当前活跃采集任务的信息
+// 存储当前活跃采集任务的信息
 var activeTasks sync.Map
-
-// taskMu 保护同一站点 cancel+Store 的原子性，防止并发截停竞态
-var taskMu sync.Mutex
 
 type collectTask struct {
 	cancel context.CancelFunc
@@ -40,16 +36,16 @@ type collectTask struct {
 
 // HandleCollect 影视采集  id-采集站ID h-时长/h
 func HandleCollect(id string, h int) error {
-	// 同站截停：原子地中断旧任务并注册新任务，防止两个并发请求同时通过 Load 后各自 Store
-	reqId := util.GenerateSalt()
-	ctx, cancel := context.WithCancel(context.Background())
-	taskMu.Lock()
+	// 1. 同站抢断：中断之前正在进行的该源采集任务
 	if val, ok := activeTasks.Load(id); ok {
 		log.Printf("[Spider] 站点 %s 已有任务运行，正在抢断旧任务...\n", id)
 		val.(collectTask).cancel()
 	}
+
+	// 创建新的 context 和唯一请求 ID
+	reqId := util.GenerateSalt()
+	ctx, cancel := context.WithCancel(context.Background())
 	activeTasks.Store(id, collectTask{cancel: cancel, reqId: reqId})
-	taskMu.Unlock()
 
 	// 任务完成后清理（仅当当前任务仍是自己时）
 	defer func() {
@@ -66,9 +62,11 @@ func HandleCollect(id string, h int) error {
 	// 1. 首先通过ID获取对应采集站信息
 	s := system.FindCollectSourceById(id)
 	if s == nil {
-		return errors.New("采集站点不存在")
+		log.Println("Cannot Find Collect Source Site")
+		return errors.New(" Cannot Find Collect Source Site ")
 	} else if !s.State {
-		return errors.New("采集站点已停用")
+		log.Println(" The acquisition site was disabled ")
+		return errors.New(" The acquisition site was disabled ")
 	}
 
 	// 如果是主站点且状态为启用则先获取分类tree信息
@@ -83,7 +81,8 @@ func HandleCollect(id string, h int) error {
 	r := util.RequestInfo{Uri: s.Uri, Params: url.Values{}}
 	// 如果 h == 0 则直接返回错误信息
 	if h == 0 {
-		return errors.New("采集时长不能为 0")
+		log.Println(" Collect time cannot be zero ")
+		return errors.New(" Collect time cannot be zer ")
 	}
 	// 如果 h = -1 则进行全量采集
 	if h > 0 {
@@ -109,8 +108,18 @@ func HandleCollect(id string, h int) error {
 	switch s.CollectType {
 	case system.CollectVideo:
 		// 采集视频资源
-		// 如果页数较少, 使用简单的循环串行采集; 否则进入并发模式
-		if pageCount <= config.MAXGoroutine*2 {
+		if s.Interval > 500 {
+			for i := 1; i <= pageCount; i++ {
+				select {
+				case <-ctx.Done():
+					log.Printf("[Spider] 站点 %s 采集任务被中断(单线程模式)\n", s.Name)
+					return nil
+				default:
+					collectFilm(ctx, s, h, i)
+					time.Sleep(time.Duration(s.Interval) * time.Millisecond)
+				}
+			}
+		} else if pageCount <= config.MAXGoroutine*2 {
 			for i := 1; i <= pageCount; i++ {
 				select {
 				case <-ctx.Done():
@@ -118,18 +127,22 @@ func HandleCollect(id string, h int) error {
 					return nil
 				default:
 					collectFilm(ctx, s, h, i)
-					// 如果设置了采集间隔，每采集完一页后等待
-					if s.Interval > 0 {
-						time.Sleep(time.Duration(s.Interval) * time.Millisecond)
-					}
 				}
 			}
 		} else {
-			// 并发模式 (并发 Worker 内部已包含 Sleep 逻辑)
+			// 并发模式
 			ConcurrentPageSpider(ctx, pageCount, s, h, collectFilm)
 		}
 		// 视频数据采集完成后同步相关信息到mysql
 		if s.Grade == system.MasterCollect {
+			// 执行影片信息更新操作
+			if h > 0 {
+				// 执行数据更新操作
+				system.SyncSearchInfo(1)
+			} else {
+				// 清空searchInfo中的数据并重新添加, 否则执行
+				system.SyncSearchInfo(0)
+			}
 			// 开启图片同步
 			if s.SyncPictures {
 				system.SyncFilmPicture()
@@ -142,6 +155,7 @@ func HandleCollect(id string, h int) error {
 		log.Println("暂未开放此采集功能!!!")
 		return errors.New("暂未开放此采集功能")
 	}
+	log.Println("Spider Task Exercise Success")
 	return nil
 }
 
@@ -153,86 +167,109 @@ func CollectCategory(s *system.FilmSource) {
 		log.Println("GetCategoryTree Error: ", err)
 		return
 	}
-	// 保存 tree 到 MySQL (及可选缓存)
+	// 保存 tree 到redis
 	err = system.SaveCategoryTree(categoryTree)
 	if err != nil {
 		log.Println("SaveCategoryTree Error: ", err)
 	}
 }
 
-// saveCollectedFilm 将已采集的 list 按站点类型写入存储，消除 collectFilm/collectFilmById 中的重复 switch 块。
-// saveMaster 由调用方注入，区分批量(SaveDetails)与单条(SaveDetail)两种写入策略。
-func saveCollectedFilm(s *system.FilmSource, list []system.MovieDetail, saveMaster func([]system.MovieDetail) error) {
-	var err error
+// collectFilm 影视详情采集 (单一源分页全采集)
+func collectFilm(ctx context.Context, s *system.FilmSource, h, pg int) {
+	// 检查取消信号
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+
+	// 生成请求参数
+	r := util.RequestInfo{Uri: s.Uri, Params: url.Values{}}
+	// 设置分页页数
+	r.Params.Set("pg", fmt.Sprint(pg))
+	// 如果 h = -1 则进行全量采集
+	if h > 0 {
+		r.Params.Set("h", fmt.Sprint(h))
+	}
+	// 执行采集方法 获取影片详情list
+	list, err := spiderCore.GetFilmDetail(r)
+	if err != nil || len(list) <= 0 {
+		// 添加采集失败记录
+		fr := system.FailureRecord{OriginId: s.Id, OriginName: s.Name, Uri: s.Uri, CollectType: system.CollectVideo, PageNumber: pg, Hour: h, Cause: fmt.Sprintln(err), Status: 1}
+		system.SaveFailureRecord(fr)
+		log.Println("GetMovieDetail Error: ", err)
+		return
+	}
+	// 通过采集站 Grade 类型, 执行不同的存储逻辑
 	switch s.Grade {
 	case system.MasterCollect:
-		if err = saveMaster(list); err != nil {
+		// 主站点 	保存完整影片详情信息到 redis
+		if err = system.SaveDetails(list); err != nil {
 			log.Println("SaveDetails Error: ", err)
 		}
+		// 如果主站点开启了图片同步, 则将图片url以及对应的mid存入ZSet集合中
 		if s.SyncPictures {
 			if err = system.SaveVirtualPic(conver.ConvertVirtualPicture(list)); err != nil {
 				log.Println("SaveVirtualPic Error: ", err)
 			}
 		}
 	case system.SlaveCollect:
+		// 附属站点	仅保存影片播放信息到redis
 		if err = system.SaveSitePlayList(s.Id, list); err != nil {
-			log.Println("SaveSitePlayList Error: ", err)
+			log.Println("SaveDetails Error: ", err)
 		}
 	}
 }
 
-// collectFilm 影视详情采集 (单一源分页全采集)
-func collectFilm(ctx context.Context, s *system.FilmSource, h, pg int) {
-	select {
-	case <-ctx.Done():
-		return
-	default:
-	}
-	r := util.RequestInfo{Uri: s.Uri, Params: url.Values{}}
-	r.Params.Set("pg", fmt.Sprint(pg))
-	if h > 0 {
-		r.Params.Set("h", fmt.Sprint(h))
-	}
-	list, err := spiderCore.GetFilmDetail(r)
-	if err != nil || len(list) <= 0 {
-		fr := system.FailureRecord{OriginId: s.Id, OriginName: s.Name, Uri: s.Uri, CollectType: system.CollectVideo, PageNumber: pg, Hour: h, Cause: fmt.Sprintln(err), Status: 1}
-		system.SaveFailureRecord(fr)
-		log.Println("GetMovieDetail Error: ", err)
-		return
-	}
-	saveCollectedFilm(s, list, system.SaveDetails)
-}
-
 // collectFilmById 采集指定ID的影片信息
 func collectFilmById(ids string, s *system.FilmSource) {
+	// 生成请求参数
 	r := util.RequestInfo{Uri: s.Uri, Params: url.Values{}}
+	// 设置分页页数
 	r.Params.Set("pg", "1")
+	// 设置影片IDS参数信息
 	r.Params.Set("ids", ids)
+	// 执行采集方法 获取影片详情list
 	list, err := spiderCore.GetFilmDetail(r)
 	if err != nil || len(list) <= 0 {
 		log.Println("GetMovieDetail Error: ", err)
 		return
 	}
-	saveCollectedFilm(s, list, func(l []system.MovieDetail) error {
-		return system.SaveDetail(l[0])
-	})
+	// 通过采集站 Grade 类型, 执行不同的存储逻辑
+	switch s.Grade {
+	case system.MasterCollect:
+		// 主站点 	保存完整影片详情信息到 redis 和 mysql 中
+		if err = system.SaveDetail(list[0]); err != nil {
+			log.Println("SaveDetails Error: ", err)
+		}
+		// 如果主站点开启了图片同步, 则将图片url以及对应的mid存入ZSet集合中
+		if s.SyncPictures {
+			if err = system.SaveVirtualPic(conver.ConvertVirtualPicture(list)); err != nil {
+				log.Println("SaveVirtualPic Error: ", err)
+			}
+		}
+	case system.SlaveCollect:
+		// 附属站点	仅保存影片播放信息到redis
+		if err = system.SaveSitePlayList(s.Id, list); err != nil {
+			log.Println("SaveDetails Error: ", err)
+		}
+	}
 }
 
 // ConcurrentPageSpider 并发分页采集, 不限类型
 func ConcurrentPageSpider(ctx context.Context, capacity int, s *system.FilmSource, h int, collectFunc func(ctx context.Context, s *system.FilmSource, hour, pageNumber int)) {
 	// 开启协程并发执行
 	ch := make(chan int, capacity)
+	waitCh := make(chan int)
 	for i := 1; i <= capacity; i++ {
 		ch <- i
 	}
 	close(ch)
-	GoroutineNum := config.MAXGoroutine
+	// 开启 MAXGoroutine 数量的协程, 如果分页页数小于协程数则将协程数限制为分页页数
+	var GoroutineNum = config.MAXGoroutine
 	if capacity < GoroutineNum {
 		GoroutineNum = capacity
 	}
-	// waitCh 必须带缓冲(容量=GoroutineNum)：ctx 取消时等待循环提前退出，
-	// worker 仍会执行 waitCh<-0，无缓冲则永久阻塞导致 goroutine 泄漏
-	waitCh := make(chan int, GoroutineNum)
 	for i := 0; i < GoroutineNum; i++ {
 		go func() {
 			defer func() { waitCh <- 0 }()
@@ -246,10 +283,6 @@ func ConcurrentPageSpider(ctx context.Context, capacity int, s *system.FilmSourc
 					}
 					// 执行对应的采集方法
 					collectFunc(ctx, s, h, pg)
-					// 如果设置了采集间隔，每个 worker 采集完一页后都要等待
-					if s.Interval > 0 {
-						time.Sleep(time.Duration(s.Interval) * time.Millisecond)
-					}
 				}
 			}
 		}()
@@ -300,11 +333,6 @@ func ClearSpider() {
 	system.FilmZero()
 }
 
-// ClearRedisOnly 仅清空 Redis 缓存
-func ClearRedisOnly() {
-	system.RedisOnlyFlush()
-}
-
 // StarZero 清空站点内所有影片信息并从零开始采集
 func StarZero(h int) {
 	// 1. 清除影视信息
@@ -343,49 +371,43 @@ func SingleRecoverSpider(fr *system.FailureRecord) {
 	collectFilm(context.Background(), s, fr.Hour, fr.PageNumber)
 }
 
-// FullRecoverSpider 扫描记录表中的失败记录, 并发重试各失败页
+// FullRecoverSpider 扫描记录表中的失败记录, 逐条重试对应的失败页
 func FullRecoverSpider() {
 	list := system.PendingRecord()
-	var wg sync.WaitGroup
-	for i := range list {
-		fr := list[i]
+	for _, fr := range list {
+		// 将记录状态修改为已处理
 		system.ChangeRecord(&fr, 0)
+		// 仅对当前失败记录所属站点+失败页进行重试
 		s := system.FindCollectSourceById(fr.OriginId)
 		if s == nil {
 			log.Printf("[Spider] 重试失败: 站点 %s 不存在\n", fr.OriginId)
 			continue
 		}
-		wg.Add(1)
-		go func(src *system.FilmSource, record system.FailureRecord) {
-			defer wg.Done()
-			collectFilm(context.Background(), src, record.Hour, record.PageNumber)
-		}(s, fr)
+		collectFilm(context.Background(), s, fr.Hour, fr.PageNumber)
 	}
-	wg.Wait()
 }
 
 // ======================================================= 公共方法  =======================================================
 
 // CollectApiTest 测试采集接口是否可用
 func CollectApiTest(s system.FilmSource) error {
-	// 使用 ac=list 测试：获取分类列表，所有标准 Mac CMS 站均支持，
-	// 且不需要额外过滤参数（ac=detail 在无 h/t 参数时部分站点会返回 400）
+	// 使用当前采集站接口采集一页数据
 	r := util.RequestInfo{Uri: s.Uri, Params: url.Values{}}
-	r.Params.Set("ac", "list")
-	r.Params.Set("pg", "1")
+	r.Params.Set("ac", s.CollectType.GetActionType())
+	r.Params.Set("pg", "3")
 	err := util.ApiTest(&r)
 	// 首先核对接口返回值类型
 	if err == nil {
 		// 如果返回值类型为Json则执行Json序列化
 		if s.ResultModel == system.JsonResult {
-			lp := collect.FilmListPage{}
-			if err = json.Unmarshal(r.Resp, &lp); err != nil {
+			var dp = collect.FilmDetailLPage{}
+			if err = json.Unmarshal(r.Resp, &dp); err != nil {
 				return errors.New(fmt.Sprint("测试失败, 返回数据异常, JSON序列化失败: ", err))
 			}
 			return nil
 		} else if s.ResultModel == system.XmlResult {
 			// 如果返回值类型为XML则执行XML序列化
-			rd := collect.RssD{}
+			var rd = collect.RssD{}
 			if err = xml.Unmarshal(r.Resp, &rd); err != nil {
 				return errors.New(fmt.Sprint("测试失败, 返回数据异常, XML序列化失败", err))
 			}
@@ -403,6 +425,7 @@ func GetActiveTasks() []string {
 		ids = append(ids, key.(string))
 		return true
 	})
+	log.Printf("[Spider] GetActiveTasks 当前活跃任务: %v\n", ids)
 	return ids
 }
 
@@ -418,7 +441,7 @@ func StopAllTasks() {
 		return true
 	})
 	if count > 0 {
-		log.Printf("[Spider] 已强制停止 %d 个活跃采集任务\n", count)
+		log.Printf("[Spider] 检测到新任务启动，已强制中断当前系统中所有运行的 %d 个活跃采集任务\n", count)
 	}
 }
 
