@@ -26,6 +26,11 @@ import (
 
 var spiderCore = &JsonCollect{}
 
+const (
+	pageCountRetryTimes  = 2
+	filmDetailRetryTimes = 2
+)
+
 // activeTasks 存储当前活跃采集任务的信息
 var activeTasks sync.Map
 
@@ -35,6 +40,71 @@ var taskMu sync.Mutex
 type collectTask struct {
 	cancel context.CancelFunc
 	reqId  string
+}
+
+func getPageCountWithRetry(ctx context.Context, r utils.RequestInfo) (int, error) {
+	var lastErr error
+	for attempt := 1; attempt <= pageCountRetryTimes; attempt++ {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		default:
+		}
+
+		pageCount, err := spiderCore.GetPageCount(r)
+		if err == nil {
+			return pageCount, nil
+		}
+		lastErr = err
+	}
+	return 0, lastErr
+}
+
+func getFilmDetailWithRetry(ctx context.Context, r utils.RequestInfo) ([]model.MovieDetail, error) {
+	var lastErr error
+	for attempt := 1; attempt <= filmDetailRetryTimes; attempt++ {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		list, err := spiderCore.GetFilmDetail(r)
+		if err == nil && len(list) > 0 {
+			return list, nil
+		}
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = errors.New("response list is empty")
+		}
+	}
+	return nil, lastErr
+}
+
+func runSourcesWithLimit(sources []model.FilmSource, h int, tag string) {
+	if len(sources) == 0 {
+		return
+	}
+	limit := config.MAXGoroutine
+	if limit <= 0 {
+		limit = 1
+	}
+	sem := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+
+	for _, src := range sources {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(fs model.FilmSource) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if err := HandleCollect(fs.Id, h); err != nil {
+				log.Printf("[%s] 采集站点 %s 失败: %v", tag, fs.Name, err)
+			}
+		}(src)
+	}
+	wg.Wait()
 }
 
 // ======================================================= 通用采集方法  =======================================================
@@ -91,13 +161,9 @@ func HandleCollect(id string, h int) error {
 		r.Params.Set("h", fmt.Sprint(h))
 	}
 	// 2. 首先获取分页采集的页数
-	pageCount, err := spiderCore.GetPageCount(r)
+	pageCount, err := getPageCountWithRetry(ctx, r)
 	if err != nil {
-		// 分页页数失败 则再进行一次尝试
-		pageCount, err = spiderCore.GetPageCount(r)
-		if err != nil {
-			return err
-		}
+		return err
 	}
 	// pageCount = 0 说明该站点在当前时间段内无新数据，任务无需执行
 	if pageCount <= 0 {
@@ -186,6 +252,19 @@ func saveCollectedFilm(s *model.FilmSource, list []model.MovieDetail, saveMaster
 	}
 }
 
+func saveFilmPageFailure(s *model.FilmSource, h, pg int, err error) {
+	repository.SaveFailureRecord(model.FailureRecord{
+		OriginId:    s.Id,
+		OriginName:  s.Name,
+		Uri:         s.Uri,
+		CollectType: model.CollectVideo,
+		PageNumber:  pg,
+		Hour:        h,
+		Cause:       fmt.Sprintln(err),
+		Status:      1,
+	})
+}
+
 // collectFilm 影视详情采集 (单一源分页全采集)
 func collectFilm(ctx context.Context, s *model.FilmSource, h, pg int) {
 	select {
@@ -198,10 +277,9 @@ func collectFilm(ctx context.Context, s *model.FilmSource, h, pg int) {
 	if h > 0 {
 		r.Params.Set("h", fmt.Sprint(h))
 	}
-	list, err := spiderCore.GetFilmDetail(r)
+	list, err := getFilmDetailWithRetry(ctx, r)
 	if err != nil || len(list) <= 0 {
-		fr := model.FailureRecord{OriginId: s.Id, OriginName: s.Name, Uri: s.Uri, CollectType: model.CollectVideo, PageNumber: pg, Hour: h, Cause: fmt.Sprintln(err), Status: 1}
-		repository.SaveFailureRecord(fr)
+		saveFilmPageFailure(s, h, pg, err)
 		log.Println("GetMovieDetail Error: ", err)
 		return
 	}
@@ -271,33 +349,27 @@ func ConcurrentPageSpider(ctx context.Context, capacity int, s *model.FilmSource
 
 // BatchCollect 批量采集, 采集指定的所有站点最近x小时内更新的数据
 func BatchCollect(h int, ids ...string) {
+	enabledSources := make([]model.FilmSource, 0)
 	for _, id := range ids {
 		// 如果查询到对应Id的资源站信息, 且资源站处于启用状态
 		if fs := repository.FindCollectSourceById(id); fs != nil && fs.State {
-			// 采用协程并发执行, 每个站点单独开启一个协程执行
-			go func(sourceId string, hour int, sourceName string) {
-				if err := HandleCollect(sourceId, hour); err != nil {
-					log.Printf("[Spider] 批量采集站点 %s 失败: %v\n", sourceName, err)
-				}
-			}(fs.Id, h, fs.Name)
+			enabledSources = append(enabledSources, *fs)
 		}
 	}
+	runSourcesWithLimit(enabledSources, h, "Spider")
 }
 
 // AutoCollect 自动进行对所有已启用站点的采集任务
 func AutoCollect(h int) {
+	enabledSources := make([]model.FilmSource, 0)
 	// 获取采集站中所有站点, 进行遍历
 	for _, s := range repository.GetCollectSourceList() {
 		// 如果当前站点为启用状态 则执行 HandleCollect 进行数据采集
 		if s.State {
-			// 为每个站点开启独立的协程执行，实现并发全量采集
-			go func(fs model.FilmSource) {
-				if err := HandleCollect(fs.Id, h); err != nil {
-					log.Printf("[Spider] 自动采集站点 %s 失败: %v\n", fs.Name, err)
-				}
-			}(s)
+			enabledSources = append(enabledSources, s)
 		}
 	}
+	runSourcesWithLimit(enabledSources, h, "Spider")
 }
 
 // ClearSpider  删除所有已采集的影片信息
@@ -324,14 +396,7 @@ func MasterOnlyCollect(h int) {
 		log.Println("[StarZero] 未找到已启用的主站，跳过采集")
 		return
 	}
-	for _, s := range enabled {
-		go func(fs model.FilmSource) {
-			log.Printf("[StarZero] 开始主站全量采集: %s", fs.Name)
-			if err := HandleCollect(fs.Id, h); err != nil {
-				log.Printf("[StarZero] 主站采集失败 %s: %v", fs.Name, err)
-			}
-		}(s)
-	}
+	runSourcesWithLimit(enabled, h, "StarZero")
 }
 
 // StarZero 清空所有影视数据后仅重采主站
@@ -355,19 +420,44 @@ func CollectSingleFilm(ids string) {
 	}
 }
 
+// recoverFilmPage 重试单条失败页：成功后标记原记录已处理，失败则更新待处理记录
+func recoverFilmPage(ctx context.Context, s *model.FilmSource, fr *model.FailureRecord) {
+	if s == nil || fr == nil {
+		return
+	}
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+	r := utils.RequestInfo{Uri: s.Uri, Params: url.Values{}}
+	r.Params.Set("pg", fmt.Sprint(fr.PageNumber))
+	if fr.Hour > 0 {
+		r.Params.Set("h", fmt.Sprint(fr.Hour))
+	}
+
+	list, err := getFilmDetailWithRetry(ctx, r)
+	if err != nil || len(list) <= 0 {
+		saveFilmPageFailure(s, fr.Hour, fr.PageNumber, err)
+		log.Println("Recover GetMovieDetail Error: ", err)
+		return
+	}
+
+	saveCollectedFilm(s, list, repository.SaveDetails)
+	repository.ChangeRecord(fr, 0)
+}
+
 // ======================================================= 采集拓展内容  =======================================================
 
 // SingleRecoverSpider 二次采集
 func SingleRecoverSpider(fr *model.FailureRecord) {
-	// 将记录状态修改为已处理
-	repository.ChangeRecord(fr, 0)
 	// 仅对当前失败记录所属站点+失败页进行重试，不干扰正在运行的采集任务
 	s := repository.FindCollectSourceById(fr.OriginId)
 	if s == nil {
 		log.Printf("[Spider] 重试失败: 站点 %s 不存在\n", fr.OriginId)
 		return
 	}
-	collectFilm(context.Background(), s, fr.Hour, fr.PageNumber)
+	recoverFilmPage(context.Background(), s, fr)
 }
 
 // FullRecoverSpider 扫描记录表中的失败记录, 并发重试各失败页
@@ -376,7 +466,6 @@ func FullRecoverSpider() {
 	var wg sync.WaitGroup
 	for i := range list {
 		fr := list[i]
-		repository.ChangeRecord(&fr, 0)
 		s := repository.FindCollectSourceById(fr.OriginId)
 		if s == nil {
 			log.Printf("[Spider] 重试失败: 站点 %s 不存在\n", fr.OriginId)
@@ -385,7 +474,7 @@ func FullRecoverSpider() {
 		wg.Add(1)
 		go func(src *model.FilmSource, record model.FailureRecord) {
 			defer wg.Done()
-			collectFilm(context.Background(), src, record.Hour, record.PageNumber)
+			recoverFilmPage(context.Background(), src, &record)
 		}(s, fr)
 	}
 	wg.Wait()

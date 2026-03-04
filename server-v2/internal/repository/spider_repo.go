@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+
 	"server-v2/internal/model"
 	"server-v2/pkg/db"
 	"server-v2/pkg/response"
@@ -192,9 +193,24 @@ func CreateFilmSourceTable() {
 
 // --------- Failure Record -----------
 
+func pendingFailureScope(tx *gorm.DB, fl model.FailureRecord) *gorm.DB {
+	return tx.Where("origin_id = ? AND collect_type = ? AND page_number = ? AND hour = ? AND status = 1",
+		fl.OriginId, fl.CollectType, fl.PageNumber, fl.Hour,
+	)
+}
+
+func findPendingFailure(tx *gorm.DB, fl model.FailureRecord) (*model.FailureRecord, error) {
+	var current model.FailureRecord
+	err := pendingFailureScope(tx, fl).First(&current).Error
+	if err != nil {
+		return nil, err
+	}
+	return &current, nil
+}
+
 // CreateFailureRecordTable 创建失效记录表
 func CreateFailureRecordTable() {
-	var fl = &model.FailureRecord{}
+	fl := &model.FailureRecord{}
 	// 不存在则创建FailureRecord表
 	if !db.Mdb.Migrator().HasTable(fl) {
 		if err := db.Mdb.AutoMigrate(fl); err != nil {
@@ -205,10 +221,30 @@ func CreateFailureRecordTable() {
 
 // SaveFailureRecord 添加采集失效记录
 func SaveFailureRecord(fl model.FailureRecord) {
+	if fl.RetryCount <= 0 {
+		fl.RetryCount = 1
+	}
 	// 数据量不多但存在并发问题, 开启事务
 	err := db.Mdb.Transaction(func(tx *gorm.DB) error {
-		// 将采集失败信息存储到record表中
-		if err := tx.Create(&fl).Error; err != nil {
+		current, err := findPendingFailure(tx, fl)
+		if err == nil {
+			if err = tx.Model(&model.FailureRecord{}).Where("id = ?", current.ID).Updates(map[string]any{
+				"origin_name": fl.OriginName,
+				"uri":         fl.Uri,
+				"cause":       fl.Cause,
+				"retry_count": gorm.Expr("retry_count + ?", 1),
+			}).Error; err != nil {
+				log.Println("Update failure record failed:", err)
+				return err
+			}
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Println("Query failure record failed:", err)
+			return err
+		}
+
+		if err = tx.Create(&fl).Error; err != nil {
 			log.Println("Add failure record failed:", err)
 			return err
 		}
@@ -248,9 +284,10 @@ func FailureRecordList(vo model.RecordRequestVo) []model.FailureRecord {
 // FindRecordById 获取id对应的失效记录
 func FindRecordById(id uint) *model.FailureRecord {
 	var fr model.FailureRecord
-	fr.ID = id
 	// 通过ID查询对应的数据
-	db.Mdb.First(&fr)
+	if err := db.Mdb.First(&fr, id).Error; err != nil {
+		return nil
+	}
 	return &fr
 }
 
@@ -261,31 +298,30 @@ func PendingRecord() []model.FailureRecord {
 	db.Mdb.Where("(hour > 4320 OR hour < 0) AND status = 1").Find(&list)
 	// 2. 获取 hour > 0 && hour < 4320 && status = 1 的影片信息(只获取最早的一条记录)
 	var fr model.FailureRecord
-	db.Mdb.Where("hour > 0 AND hour < 4320 AND status = 1").Order("hour DESC, created_at ASC").First(&fr)
-	// 3. 将 fr 添加到 list中
-	list = append(list, fr)
+	if err := db.Mdb.Where("hour > 0 AND hour < 4320 AND status = 1").Order("hour DESC, created_at ASC").First(&fr).Error; err == nil {
+		// 3. 将 fr 添加到 list中
+		list = append(list, fr)
+	}
 	return list
 }
 
 // ChangeRecord 修改已完成二次采集的记录状态
 func ChangeRecord(fr *model.FailureRecord, status int) {
-	switch {
-	case fr.Hour > 168 && fr.Hour < 360:
-		db.Mdb.Model(&model.FailureRecord{}).Where("hour > 168 AND hour < 360 AND created_at >= ?", fr.CreatedAt).Update("status", status)
-	case fr.Hour < 0, fr.Hour > 4320:
-		db.Mdb.Model(&model.FailureRecord{}).Where("id = ?", fr.ID).Update("status", status)
-	default:
-		// 其余范围,暂不处理
-		break
+	if fr == nil || fr.ID == 0 {
+		return
 	}
+	db.Mdb.Model(&model.FailureRecord{}).Where("id = ?", fr.ID).Update("status", status)
 }
 
 // RetryRecord 修改重试采集成功的记录
 func RetryRecord(id uint, status int) error {
 	// 查询id对应的失败记录
 	fr := FindRecordById(id)
+	if fr == nil {
+		return errors.New("failure record not found")
+	}
 	// 将本次更新成功的记录数据状态修改为成功 0
-	return db.Mdb.Model(&model.FailureRecord{}).Where("updated_at > ?", fr.UpdatedAt).Update("status", 0).Error
+	return db.Mdb.Model(&model.FailureRecord{}).Where("updated_at > ?", fr.UpdatedAt).Update("status", status).Error
 }
 
 // DelDoneRecord 删除已处理的记录信息 -- 逻辑删除

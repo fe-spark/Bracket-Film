@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -22,6 +23,7 @@ func (h *ProvideHandler) HandleProvide(c *gin.Context) {
 	wd := c.Query("wd")
 	h_param, _ := strconv.Atoi(c.DefaultQuery("h", "0"))
 	ids := c.Query("ids")
+	sourceId := c.Query("source")
 
 	tid, err := strconv.Atoi(c.Query("tid"))
 	if err == nil && tid > 0 {
@@ -33,6 +35,17 @@ func (h *ProvideHandler) HandleProvide(c *gin.Context) {
 	lang := c.Query("language")
 	plot := c.Query("plot")
 	sort := c.Query("sort")
+
+	// 选中采集站时，优先直连该采集站返回原始数据
+	if sourceId != "" {
+		raw, err := service.ProvideSvc.GetVodDirectBySource(sourceId, ac, t, pg, wd, h_param, ids, year, area, lang, plot, sort)
+		if err != nil {
+			c.JSON(200, gin.H{"code": 0, "msg": "采集站直连失败: " + err.Error()})
+			return
+		}
+		c.Data(200, "application/json; charset=utf-8", raw)
+		return
+	}
 
 	classList, filters := service.ProvideSvc.GetClassList()
 	if classList == nil {
@@ -126,21 +139,38 @@ func (h *ProvideHandler) HandleProvideConfig(c *gin.Context) {
 	host := c.Request.Host
 	apiPath := scheme + "://" + host + "/api/provide/vod"
 
+	sites := []gin.H{
+		{
+			"key":         "Bracket",
+			"name":        "🌟 Bracket 私人影视库全量",
+			"type":        1,
+			"api":         apiPath,
+			"searchable":  1,
+			"quickSearch": 1,
+			"filterable":  1,
+		},
+	}
+
+	for _, source := range service.CollectSvc.GetFilmSourceList() {
+		if !source.State {
+			continue
+		}
+		sites = append(sites, gin.H{
+			"key":         "source_" + source.Id,
+			"name":        "📡 " + source.Name,
+			"type":        1,
+			"api":         apiPath + "?source=" + url.QueryEscape(source.Id),
+			"searchable":  1,
+			"quickSearch": 1,
+			"filterable":  1,
+		})
+	}
+
 	configJson := gin.H{
 		"spider":    "",
 		"wallpaper": "",
 		"logo":      "",
-		"sites": []gin.H{
-			{
-				"key":         "Bracket",
-				"name":        "🌟 Bracket 私人影视库全量",
-				"type":        1,
-				"api":         apiPath,
-				"searchable":  1,
-				"quickSearch": 1,
-				"filterable":  1,
-			},
-		},
+		"sites":     sites,
 	}
 
 	c.JSON(200, configJson)

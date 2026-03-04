@@ -104,6 +104,7 @@ type FailureRecord struct {
 	Hour        int          `json:"hour"`        // 采集参数 h 时长
 	Cause       string       `json:"cause"`       // 失败原因
 	Status      int          `json:"status"`      // 重试状态
+	RetryCount  int          `json:"retryCount"`  // 重试累计次数
 }
 
 func (fr FailureRecord) TableName() string {
