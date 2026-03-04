@@ -160,11 +160,24 @@ func ConvertPlayUrl(playUrl string) []model.MovieUrlInfo {
 		episode = strings.TrimSpace(episode)
 		link = strings.TrimSpace(link)
 		if !found {
-			// 整条即为 link，无集数名，按序号自动补全
+			// 整条即为 link，无集数名（如 "http://..." 无 $）
 			episode, link = fmt.Sprintf("第%d集", len(l)+1), episode
+		} else if link == "" {
+			// "$http://..." 形式：Cut 取到 episode="", link="http://..."
+			// 或 "$" 末尾无内容，均跳过
+			if strings.HasPrefix(episode, "http") {
+				// episode 实际是有效 URL（原始数据以 $ 开头）
+				link, episode = episode, ""
+			} else {
+				continue
+			}
 		}
 		if link == "" {
 			continue
+		}
+		// 保证 episode 非空，防止空字符串入库
+		if episode == "" {
+			episode = fmt.Sprintf("第%d集", len(l)+1)
 		}
 		l = append(l, model.MovieUrlInfo{Episode: episode, Link: link})
 	}
