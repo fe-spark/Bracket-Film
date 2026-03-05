@@ -197,41 +197,50 @@ export default function FilmListPage() {
 
   const columns = useMemo<ColumnsType<FilmItem>>(() => [
     {
+      title: "ID",
+      dataIndex: "mid",
+      key: "mid",
+      width: 80,
+      align: "center",
+      render: (v) => (
+        <Tag color="#8b40ff" style={{ borderRadius: 4 }}>#{v}</Tag>
+      ),
+    },
+    {
       title: "影片信息",
       key: "info",
-      width: 300,
       render: (_, record) => (
-        <Space direction="vertical" size={2}>
-          <Text className={styles.filmName} onClick={() => window.open(`/filmDetail?link=${record.mid}`, "_blank")}>
+        <Space size={6} wrap={false}>
+          <Text className={styles.filmName} style={{ whiteSpace: "nowrap" }} onClick={() => window.open(`/filmDetail?link=${record.mid}`, "_blank")}>
             {record.name}
           </Text>
-          <Space>
-            <Tag color="#8b40ff" style={{ borderRadius: 4 }}>ID: {record.mid}</Tag>
-            <Tag color="orange" style={{ borderRadius: 4 }}>{record.cName}</Tag>
-          </Space>
+          <Tag color="orange" style={{ borderRadius: 4, flexShrink: 0 }}>{record.cName}</Tag>
         </Space>
       ),
     },
     {
-      title: "详情指标",
-      key: "metrics",
-      width: 200,
-      render: (_, record) => (
-        <Space size={16}>
-          <div style={{ textAlign: 'center' }}>
-            <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>评分</Text>
-            <Text strong style={{ color: "var(--ant-color-primary)" }}>{record.score}</Text>
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>年份</Text>
-            <Text>{record.year}</Text>
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>热度</Text>
-            <Text type="danger"><FireOutlined /> {record.hits}</Text>
-          </div>
-        </Space>
-      ),
+      title: "评分",
+      dataIndex: "score",
+      key: "score",
+      width: 70,
+      align: "center",
+      render: (v) => <Text strong style={{ color: "var(--ant-color-primary)" }}>{v}</Text>,
+    },
+    {
+      title: "年份",
+      dataIndex: "year",
+      key: "year",
+      width: 70,
+      align: "center",
+      render: (v) => <Text>{v}</Text>,
+    },
+    {
+      title: "热度",
+      dataIndex: "hits",
+      key: "hits",
+      width: 80,
+      align: "center",
+      render: (v) => <Text type="danger"><FireOutlined /> {v}</Text>,
     },
     {
       title: "更新状态",
@@ -263,23 +272,25 @@ export default function FilmListPage() {
       width: 200,
       fixed: "right",
       render: (_, record) => (
-        <Space size="middle">
+        <Space size={8}>
           <Tooltip title="详情预览">
             <Button
-              className={styles.actionButton}
-              type="text"
-              icon={<AimOutlined style={{ fontSize: 18, color: "var(--ant-color-primary)" }} />}
+              type="primary"
+              shape="circle"
+              size="small"
+              icon={<AimOutlined />}
               onClick={() => window.open(`/filmDetail?link=${record.mid}`, "_blank")}
             />
           </Tooltip>
-          <Tooltip title="同步更新 (全站并行)">
+          <Tooltip title="同步更新">
             <Button
-              className={styles.actionButton}
-              type="text"
+              type="primary"
+              shape="circle"
+              size="small"
+              style={{ background: "#52c41a", borderColor: "#52c41a" }}
               icon={
                 <ReloadOutlined 
                   className={`${styles.syncIcon} ${syncingIds.includes(record.mid) ? styles.syncing : ""}`}
-                  style={{ fontSize: 18, color: "#52c41a" }} 
                 />
               }
               onClick={() => handleUpdateSingle(record.mid)}
@@ -287,19 +298,24 @@ export default function FilmListPage() {
           </Tooltip>
           <Tooltip title="修改影视">
             <Button
-              className={styles.actionButton}
-              type="text"
-              icon={<EditOutlined style={{ fontSize: 18, color: "#1890ff" }} />}
+              type="primary"
+              shape="circle"
+              size="small"
+              style={{ background: "#1890ff", borderColor: "#1890ff" }}
+              icon={<EditOutlined />}
               onClick={() => router.push(`/manage/film/add?id=${record.mid}`)}
             />
           </Tooltip>
           <Popconfirm title="确认删除此影片？" onConfirm={() => handleDelFilm(record.ID)}>
-            <Button
-              className={styles.actionButton}
-              type="text"
-              danger
-              icon={<DeleteOutlined style={{ fontSize: 18 }} />}
-            />
+            <Tooltip title="删除">
+              <Button
+                type="primary"
+                danger
+                shape="circle"
+                size="small"
+                icon={<DeleteOutlined />}
+              />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
@@ -384,7 +400,7 @@ export default function FilmListPage() {
           rowKey="mid"
           loading={loading}
           pagination={false}
-          scroll={{ x: 1200 }}
+          scroll={{ x: "max-content" }}
           size="middle"
           bordered
         />

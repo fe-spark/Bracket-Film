@@ -5,8 +5,8 @@ import (
 
 	"server-v2/internal/config"
 	"server-v2/internal/model"
-	"server-v2/internal/service"
 	"server-v2/internal/model/dto"
+	"server-v2/internal/service"
 	"server-v2/internal/utils"
 
 	"github.com/gin-gonic/gin"
@@ -109,6 +109,19 @@ func (h *UserHandler) UserUpdate(c *gin.Context) {
 	if u.ID == 0 {
 		dto.Failed("用户ID缺失!!!", c)
 		return
+	}
+	// 非超级管理员不可修改超级管理员信息
+	if u.ID == config.UserIdInitialVal {
+		v, ok := c.Get(config.AuthUserClaims)
+		if !ok {
+			dto.Failed("鉴权失败，请重新登录", c)
+			return
+		}
+		uc, _ := v.(*utils.UserClaims)
+		if uc.UserID != config.UserIdInitialVal {
+			dto.Failed("权限不足，仅超级管理员可修改超级管理员信息", c)
+			return
+		}
 	}
 	if err := service.UserSvc.UpdateUser(u); err != nil {
 		dto.Failed(err.Error(), c)

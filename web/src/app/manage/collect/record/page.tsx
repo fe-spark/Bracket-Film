@@ -193,13 +193,10 @@ export default function FailureRecordPage() {
         <Tooltip title="采集重试">
           <Button
             type="primary"
-            icon={<ReloadOutlined />}
             shape="circle"
             size="small"
-            style={{
-              background: "var(--ant-color-success)",
-              borderColor: "var(--ant-color-success)",
-            }}
+            style={{ background: "#52c41a", borderColor: "#52c41a" }}
+            icon={<ReloadOutlined />}
             onClick={() => handleRetry(record.ID)}
           />
         </Tooltip>

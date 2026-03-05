@@ -226,7 +226,7 @@ export default function HomePage() {
                   <FireOutlined style={{ color: "#ff4d4f" }} />
                   热播{section.nav.name}
                 </div>
-                {section.hot.slice(0, 14).map((m, mIdx) => (
+                {section.hot.slice(0, 12).map((m, mIdx) => (
                   <div
                     key={mIdx}
                     className={styles.hotItem}

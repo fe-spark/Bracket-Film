@@ -5,6 +5,7 @@ import {
   Table,
   Button,
   Space,
+  Tooltip,
   Modal,
   Form,
   Input,
@@ -170,15 +171,17 @@ export default function UsersPage() {
       title: "操作",
       key: "action",
       render: (_: any, record: any) => (
-        <Space size="middle">
-          <Button 
-            type="link" 
-            icon={<EditOutlined />} 
-            onClick={() => handleEdit(record)}
-          >
-            编辑
-          </Button>
-          {/* 权限控制：仅超级管理员本人登录时，显示删除非管理员用户的按钮 */}
+        <Space size={8}>
+          <Tooltip title={record.isAdmin && !currentUser?.isAdmin ? "权限不足，仅超级管理员可修改超级管理员信息" : "编辑用户"}>
+            <Button
+              type="primary"
+              shape="circle"
+              size="small"
+              icon={<EditOutlined />}
+              disabled={record.isAdmin && !currentUser?.isAdmin}
+              onClick={() => handleEdit(record)}
+            />
+          </Tooltip>
           {currentUser?.isAdmin && !record.isAdmin && (
             <Popconfirm
               title="确定要删除这个用户吗？"
@@ -186,9 +189,15 @@ export default function UsersPage() {
               okText="确定"
               cancelText="取消"
             >
-              <Button type="link" danger icon={<DeleteOutlined />}>
-                删除
-              </Button>
+              <Tooltip title="删除用户">
+                <Button
+                  type="primary"
+                  danger
+                  shape="circle"
+                  size="small"
+                  icon={<DeleteOutlined />}
+                />
+              </Tooltip>
             </Popconfirm>
           )}
         </Space>
