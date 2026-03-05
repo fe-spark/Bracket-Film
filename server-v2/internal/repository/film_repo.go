@@ -691,14 +691,14 @@ func FilmZero() {
 	RedisOnlyFlush()
 
 	// 2. 清理 MySQL (详情表与检索表)
-	db.Mdb.Exec("TRUNCATE table movie_detail_infos")
+	db.Mdb.Exec("TRUNCATE table movie_detail_info")
 	var s model.SearchInfo
 	db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", s.TableName()))
 	// 3. 清理新引入的持久化表
-	db.Mdb.Exec("TRUNCATE table movie_playlists")
-	db.Mdb.Exec("TRUNCATE table category_persistents")
-	db.Mdb.Exec("TRUNCATE table virtual_picture_queues")
-	db.Mdb.Exec("TRUNCATE table search_tag_items")
+	db.Mdb.Exec("TRUNCATE table movie_playlist")
+	db.Mdb.Exec("TRUNCATE table category_persistent")
+	db.Mdb.Exec("TRUNCATE table virtual_picture_queue")
+	db.Mdb.Exec("TRUNCATE table search_tag_item")
 
 	// 4. 同步清理采集失败记录，确保彻底清空
 	TruncateRecordTable()
@@ -709,10 +709,10 @@ func FilmZero() {
 func MasterFilmZero() {
 	var s model.SearchInfo
 	db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", s.TableName()))
-	db.Mdb.Exec("TRUNCATE table movie_detail_infos")
-	db.Mdb.Exec("TRUNCATE table category_persistents")
-	db.Mdb.Exec("TRUNCATE table virtual_picture_queues")
-	db.Mdb.Exec("TRUNCATE table search_tag_items")
+	db.Mdb.Exec("TRUNCATE table movie_detail_info")
+	db.Mdb.Exec("TRUNCATE table category_persistent")
+	db.Mdb.Exec("TRUNCATE table virtual_picture_queue")
+	db.Mdb.Exec("TRUNCATE table search_tag_item")
 }
 
 // CleanOrphanPlaylists 清理 movie_playlists 中与 search_infos 不匹配的孤儿记录
