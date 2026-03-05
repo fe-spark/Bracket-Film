@@ -140,7 +140,13 @@
   grid-template-columns: minmax(0, 1fr) 360px;
   /* Let player shrink properly, wider sidebar */
   gap: 32px;
-  align-items: start;
+  align-items: stretch;
+}
+
+.sidebarWrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
 }
 
 .leftColumn {
@@ -160,6 +166,8 @@
 }
 
 .sidebar {
+  position: absolute;
+  inset: 0;
   background: var(--public-surface-1);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -170,7 +178,6 @@
   flex-direction: column;
   overflow: hidden;
   box-shadow: var(--public-shadow-md);
-  /* max-height 由 JS 动态设置为左列高度 */
 }
 
 .sideHeader {
@@ -375,14 +382,25 @@
   width: 100%;
 }
 
-// Responsive Logic
 @media (max-width: 1440px) {
-  /* 已经在 FilmList/index.module.less 中同步处理列数 */
+  .container {
+    padding: 24px 30px;
+  }
 }
 
 @media (max-width: 1200px) {
+  .mainContent {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 24px;
+  }
 
-  /* 提前折叠断点：解决中屏下左右布局过窄的问题 */
+  .sidebar {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 1024px) {
+
   .topInfoCard {
     grid-template-columns: 1fr;
     gap: 20px;
@@ -398,6 +416,10 @@
         text-align: left;
       }
     }
+
+    .filmTitle {
+      font-size: 22px;
+    }
   }
 
   .mainContent {
@@ -405,8 +427,13 @@
     gap: 24px;
   }
 
-  .sidebar {
+  .sidebarWrapper {
     height: 500px;
+  }
+
+  .sidebar {
+    position: relative;
+    height: 100%;
     /* 固定高或自适应 */
     min-height: auto;
     max-height: none;
@@ -443,13 +470,18 @@
     gap: 0;
   }
 
+  .sidebarWrapper {
+    height: 400px;
+  }
+
   .sidebar {
+    position: relative;
     border-radius: 0;
     border: none;
     background: transparent;
     backdrop-filter: none;
     box-shadow: none;
-    height: 400px;
+    height: 100%;
     padding: 16px;
     border-bottom: 1px solid var(--public-border-1);
   }

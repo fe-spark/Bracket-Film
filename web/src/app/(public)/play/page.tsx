@@ -42,8 +42,6 @@ function PlayerContent() {
   const activeTabRef = useRef<HTMLDivElement>(null);
   const sourceTabsRef = useRef<HTMLDivElement>(null);
   const episodeListRef = useRef<HTMLDivElement>(null);
-  const leftColumnRef = useRef<HTMLDivElement>(null);
-  const sidebarRef = useRef<HTMLDivElement>(null);
 
   // 1. 数据加载与状态同步
   useEffect(() => {
@@ -79,21 +77,6 @@ function PlayerContent() {
   const currentSource = detail?.list?.find((s: any) => s.id === currentTabId);
   const hasNext = currentSource && current && current.index < (currentSource?.linkList?.length ?? 0) - 1;
 
-  // 侧边栏高度同步
-  useEffect(() => {
-    const leftEl = leftColumnRef.current;
-    const sideEl = sidebarRef.current;
-    if (!leftEl || !sideEl) return;
-
-    const syncHeight = () => {
-      sideEl.style.height = `${leftEl.offsetHeight}px`;
-    };
-
-    syncHeight();
-    const ro = new ResizeObserver(syncHeight);
-    ro.observe(leftEl);
-    return () => ro.disconnect();
-  }, [data]);
 
   // 自动滚动定位：当前集数和播放源
   useEffect(() => {
@@ -159,7 +142,7 @@ function PlayerContent() {
       </div>
 
       <div className={styles.mainContent}>
-        <div className={styles.leftColumn} ref={leftColumnRef}>
+        <div className={styles.leftColumn}>
           <div className={styles.topInfoCard}>
             <div className={styles.leftSection}>
               <h1 className={styles.filmTitle}>
@@ -207,77 +190,79 @@ function PlayerContent() {
           </div>
         </div>
 
-        <div className={styles.sidebar} ref={sidebarRef}>
-          <div className={styles.sideHeader}>
-            <div className={styles.title}>正在播放</div>
-            <div className={styles.subtitle}>{detail.name} - {current?.episode}</div>
-          </div>
-
-          <div className={styles.sourceTabs} ref={sourceTabsRef}>
-            {detail?.list?.map((item: any) => {
-              const isActive = currentTabId === item.id;
-              return (
-                <div
-                  key={item.id}
-                  ref={isActive ? activeTabRef : null}
-                  className={`${styles.tab} ${isActive ? styles.active : ""}`}
-                  onClick={() => setCurrentTabId(item.id)}
-                >
-                  {item.name}
-                </div>
-              );
-            })}
-          </div>
-
-          <div className={styles.episodeList} ref={episodeListRef}>
-            {currentSource?.linkList?.map((v: any, i: number) => {
-              const isActive = current.link === v.link;
-              return (
-                <div
-                  key={i}
-                  ref={isActive ? activeEpRef : undefined}
-                  className={`${styles.epItem} ${isActive ? styles.active : ""}`}
-                  title={v.episode}
-                  onClick={() => router.replace(`/play?id=${id}&source=${currentTabId}&episode=${i}`)}
-                  onMouseEnter={(e) => {
-                    const span = e.currentTarget.querySelector<HTMLSpanElement>(`.${styles.epText}`);
-                    if (span && span.scrollWidth > span.clientWidth) {
-                      const overflow = span.scrollWidth - span.clientWidth;
-                      const duration = overflow / 50 / 0.6;
-                      span.style.setProperty("--scroll-distance", `-${overflow}px`);
-                      span.style.setProperty("--scroll-duration", `${duration.toFixed(2)}s`);
-                      span.classList.add(styles.marquee);
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    const span = e.currentTarget.querySelector<HTMLSpanElement>(`.${styles.epText}`);
-                    if (span) {
-                      span.classList.remove(styles.marquee);
-                      span.style.removeProperty("--scroll-distance");
-                      span.style.removeProperty("--scroll-duration");
-                    }
-                  }}
-                >
-                  <span className={styles.epText}>{v.episode}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className={styles.sideFooter}>
-            <div
-              className={`${styles.footerBtn} ${autoplay ? styles.active : ""}`}
-              onClick={() => setAutoplay(!autoplay)}
-            >
-              <PlayCircleOutlined />
-              <span>{autoplay ? "自动播放 开" : "自动播放 关"}</span>
+        <div className={styles.sidebarWrapper}>
+          <div className={styles.sidebar}>
+            <div className={styles.sideHeader}>
+              <div className={styles.title}>正在播放</div>
+              <div className={styles.subtitle}>{detail.name} - {current?.episode}</div>
             </div>
-            {hasNext && (
-              <div className={styles.footerBtn} onClick={handlePlayNext}>
-                <StepForwardOutlined />
-                <span>下一集</span>
+
+            <div className={styles.sourceTabs} ref={sourceTabsRef}>
+              {detail?.list?.map((item: any) => {
+                const isActive = currentTabId === item.id;
+                return (
+                  <div
+                    key={item.id}
+                    ref={isActive ? activeTabRef : null}
+                    className={`${styles.tab} ${isActive ? styles.active : ""}`}
+                    onClick={() => setCurrentTabId(item.id)}
+                  >
+                    {item.name}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className={styles.episodeList} ref={episodeListRef}>
+              {currentSource?.linkList?.map((v: any, i: number) => {
+                const isActive = current.link === v.link;
+                return (
+                  <div
+                    key={i}
+                    ref={isActive ? activeEpRef : undefined}
+                    className={`${styles.epItem} ${isActive ? styles.active : ""}`}
+                    title={v.episode}
+                    onClick={() => router.replace(`/play?id=${id}&source=${currentTabId}&episode=${i}`)}
+                    onMouseEnter={(e) => {
+                      const span = e.currentTarget.querySelector<HTMLSpanElement>(`.${styles.epText}`);
+                      if (span && span.scrollWidth > span.clientWidth) {
+                        const overflow = span.scrollWidth - span.clientWidth;
+                        const duration = overflow / 50 / 0.6;
+                        span.style.setProperty("--scroll-distance", `-${overflow}px`);
+                        span.style.setProperty("--scroll-duration", `${duration.toFixed(2)}s`);
+                        span.classList.add(styles.marquee);
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      const span = e.currentTarget.querySelector<HTMLSpanElement>(`.${styles.epText}`);
+                      if (span) {
+                        span.classList.remove(styles.marquee);
+                        span.style.removeProperty("--scroll-distance");
+                        span.style.removeProperty("--scroll-duration");
+                      }
+                    }}
+                  >
+                    <span className={styles.epText}>{v.episode}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className={styles.sideFooter}>
+              <div
+                className={`${styles.footerBtn} ${autoplay ? styles.active : ""}`}
+                onClick={() => setAutoplay(!autoplay)}
+              >
+                <PlayCircleOutlined />
+                <span>{autoplay ? "自动播放 开" : "自动播放 关"}</span>
               </div>
-            )}
+              {hasNext && (
+                <div className={styles.footerBtn} onClick={handlePlayNext}>
+                  <StepForwardOutlined />
+                  <span>下一集</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
