@@ -63,8 +63,19 @@ func PasswordEncrypt(password, salt string) string {
 func ParsePriKeyBytes(buf []byte) (*rsa.PrivateKey, error) {
 	p, _ := pem.Decode(buf)
 	if p == nil {
-		return nil, errors.New("private key parse  error")
+		return nil, errors.New("private key parse error")
 	}
+
+	// 尝试解析 PKCS8
+	key, err := x509.ParsePKCS8PrivateKey(p.Bytes)
+	if err == nil {
+		if rsaKey, ok := key.(*rsa.PrivateKey); ok {
+			return rsaKey, nil
+		}
+		return nil, errors.New("not an RSA private key")
+	}
+
+	// 回退到解析 PKCS1
 	return x509.ParsePKCS1PrivateKey(p.Bytes)
 }
 
@@ -74,9 +85,20 @@ func ParsePubKeyBytes(buf []byte) (*rsa.PublicKey, error) {
 	if p == nil {
 		return nil, errors.New("parse publicKey content nil")
 	}
+
+	// 尝试解析 PKIX
+	pub, err := x509.ParsePKIXPublicKey(p.Bytes)
+	if err == nil {
+		if rsaPub, ok := pub.(*rsa.PublicKey); ok {
+			return rsaPub, nil
+		}
+		return nil, errors.New("not an RSA public key")
+	}
+
+	// 回退到解析 PKCS1
 	pubKey, err := x509.ParsePKCS1PublicKey(p.Bytes)
 	if err != nil {
-		return nil, errors.New("x509.ParsePKCS1PublicKey error")
+		return nil, errors.New("x509 ParsePublicKey error")
 	}
 	return pubKey, nil
 }
