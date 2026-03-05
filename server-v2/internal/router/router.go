@@ -12,7 +12,7 @@ func SetupRouter() *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.Cors())
 
-	r.Static(config.FilmPictureUrlPath, config.FilmPictureUploadDir)
+	r.Static(config.FilmPictureAccess, config.FilmPictureUploadDir)
 
 	api := r.Group("/api")
 
