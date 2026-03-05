@@ -21,7 +21,6 @@ import {
 import {
   PlusOutlined,
   SendOutlined,
-  ReloadOutlined,
   DeleteOutlined,
   EditOutlined,
   PoweroffOutlined,
@@ -65,9 +64,6 @@ export default function CollectManagePage() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const { message } = useAppMessage();
 
-  // 主站是否已有采集数据（从服务端获取）
-  const [hasMasterData, setHasMasterData] = useState(false);
-
   // 批量采集弹窗
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchIds, setBatchIds] = useState<string[]>([]);
@@ -82,29 +78,17 @@ export default function CollectManagePage() {
 
   // 清空/重采弹窗
   const [clearOpen, setClearOpen] = useState(false);
-  const [reCollectOpen, setReCollectOpen] = useState(false);
   const [password, setPassword] = useState("");
 
-  // batchOptions 追加 grade 信息（与 siteList 合并），并过滤掉主站
+  // batchOptions 追加 grade 信息（与 siteList 合并）
   const enrichedBatchOptions = useMemo(
     () =>
-      batchOptions
-        .map((o) => ({
-          ...o,
-          grade: siteList.find((s) => s.id === o.id)?.grade ?? 1,
-        }))
-        .filter((o) => o.grade !== 0),
+      batchOptions.map((o) => ({
+        ...o,
+        grade: siteList.find((s) => s.id === o.id)?.grade ?? 1,
+      })),
     [batchOptions, siteList]
   );
-
-  // 主站是否正在采集中
-  const masterIsCollecting = useMemo(
-    () => siteList.filter((s) => s.grade === 0).some((s) => activeCollectIds.includes(s.id)),
-    [siteList, activeCollectIds]
-  );
-
-  // 从站可采集条件：主站已有数据 且 主站当前未在采集
-  const slaveCanCollect = hasMasterData && !masterIsCollecting;
 
   const getCollectList = useCallback(async () => {
     setLoading(true);
@@ -147,23 +131,16 @@ export default function CollectManagePage() {
     }
   }, []);
 
-  const getMasterDataStatus = useCallback(async () => {
-    const resp = await ApiGet("/manage/spider/master/status");
-    if (resp.code === 0) setHasMasterData(resp.data === true);
-  }, []);
-
   useEffect(() => {
     getCollectList();
     getCollectingState();
-    getMasterDataStatus();
     timerRef.current = setInterval(() => {
       getCollectingState();
-      getMasterDataStatus();
     }, 4000);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [getCollectList, getCollectingState, getMasterDataStatus]);
+  }, [getCollectList, getCollectingState]);
 
   const changeSourceState = async (record: FilmSource) => {
     const resp = await ApiPost("/manage/collect/change", {
@@ -301,18 +278,6 @@ export default function CollectManagePage() {
     setPassword("");
   };
 
-  const reCollect = async () => {
-    if (!password) {
-      message.error("请输入密钥");
-      return;
-    }
-    const resp = await ApiGet("/manage/spider/zero", { password });
-    if (resp.code === 0) message.success(resp.msg);
-    else message.error(resp.msg);
-    setReCollectOpen(false);
-    setPassword("");
-  };
-
   const columns: ColumnsType<FilmSource> = [
     {
       title: "资源名称",
@@ -429,26 +394,9 @@ export default function CollectManagePage() {
       fixed: "right",
       render: (_, record) => {
         const isRunning = activeCollectIds.includes(record.id);
-        const isSlave = record.grade === 1;
 
-        // 从站采集按钮（开始/截断）的渲染逻辑
+        // 采集按钮（开始/截断）的渲染逻辑：不再区分主从顺序
         const renderStartBtn = () => {
-          // 从站：主站无数据时完全不渲染采集按钮
-          if (isSlave && !hasMasterData) return null;
-          // 从站：主站采集中时渲染禁用按钮并提示原因
-          if (isSlave && masterIsCollecting) {
-            return (
-              <Tooltip title="主站正在采集中，请等待主站采集完成后再采集从站">
-                <Button
-                  type="primary"
-                  icon={<PoweroffOutlined />}
-                  shape="circle"
-                  size="small"
-                  disabled
-                />
-              </Tooltip>
-            );
-          }
           // 正常情况：正在运行时显示截断重采，否则显示开始采集
           return isRunning ? (
             <Tooltip title="截断并重新开始">
@@ -587,24 +535,16 @@ export default function CollectManagePage() {
         <Button type="primary" icon={<PlusOutlined />} onClick={openAddDialog}>
           添加采集站
         </Button>
-        <Tooltip title={!hasMasterData ? "主站暂无数据，请先采集主站后再进行一键采集" : ""}>
+        <Tooltip title="支持全站点选择；执行时所有站点将并行采集">
           <Button
             type="primary"
             icon={<SendOutlined />}
             style={{ background: "var(--ant-color-success)", borderColor: "var(--ant-color-success)" }}
             onClick={openBatchCollect}
-            disabled={!hasMasterData}
           >
             一键采集
           </Button>
         </Tooltip>
-        <Button
-          icon={<ReloadOutlined />}
-          style={{ color: "var(--ant-color-warning)", borderColor: "var(--ant-color-warning)" }}
-          onClick={() => setReCollectOpen(true)}
-        >
-          清空重采
-        </Button>
         <Button
           danger
           icon={<DeleteOutlined />}
@@ -680,7 +620,7 @@ export default function CollectManagePage() {
             />
           ) : null;
         })()}
-        {/* 执行站点列表（仅显示附属站） */}
+        {/* 执行站点列表（显示所有已启用站点） */}
         <Form layout="vertical">
           <Form.Item label="执行站点">
             <Checkbox.Group
@@ -695,7 +635,7 @@ export default function CollectManagePage() {
                         color={o.grade === 0 ? "green" : "default"}
                         style={{ marginRight: 0 }}
                       >
-                        {o.grade === 0 ? "主站" : "从站"}
+                        {o.grade === 0 ? "主站" : "附属站"}
                       </Tag>
                       {o.name}
                       {activeCollectIds.includes(o.id) && (
@@ -744,23 +684,6 @@ export default function CollectManagePage() {
         />
       </Modal>
 
-      <Modal
-        title="清空数据并重新全量采集"
-        open={reCollectOpen}
-        onCancel={() => setReCollectOpen(false)}
-        onOk={reCollect}
-        okText="确认执行"
-        okButtonProps={{ danger: true }}
-      >
-        <p style={{ color: "var(--ant-color-warning)", marginBottom: 16 }}>
-          此操作将<strong>先清空所有影视数据</strong>，再从零开始执行<strong>主站全量采集</strong>任务，操作不可逆。
-        </p>
-        <Input.Password
-          placeholder="请输入管理密码"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-      </Modal>
     </div>
   );
 }

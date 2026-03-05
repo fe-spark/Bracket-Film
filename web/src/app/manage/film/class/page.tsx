@@ -139,24 +139,29 @@ export default function FilmClassPage() {
       width: 120,
       fixed: "right",
       render: (_, record) => (
-        <Space>
-          <Button
-            type="primary"
-            icon={<EditOutlined />}
-            shape="circle"
-            size="small"
-            onClick={() => openEditDialog(record.id)}
-          />
+        <Space size={8}>
+          <Tooltip title="编辑分类">
+            <Button
+              type="primary"
+              shape="circle"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => openEditDialog(record.id)}
+            />
+          </Tooltip>
           <Popconfirm
             title="确认删除此分类？"
             onConfirm={() => delClass(record.id)}
           >
-            <Button
-              danger
-              icon={<DeleteOutlined />}
-              shape="circle"
-              size="small"
-            />
+            <Tooltip title="删除分类">
+              <Button
+                type="primary"
+                danger
+                shape="circle"
+                size="small"
+                icon={<DeleteOutlined />}
+              />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),

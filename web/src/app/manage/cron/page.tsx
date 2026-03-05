@@ -195,27 +195,32 @@ export default function CronManagePage() {
       title: "操作",
       key: "action",
       align: "center",
-      width: 120,
+      width: 100,
       fixed: "right",
       render: (_, record) => (
-        <Space>
-          <Button
-            type="primary"
-            icon={<EditOutlined />}
-            shape="circle"
-            size="small"
-            onClick={() => openEditDialog(record.id)}
-          />
+        <Space size={8}>
+          <Tooltip title="编辑任务">
+            <Button
+              type="primary"
+              shape="circle"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => openEditDialog(record.id)}
+            />
+          </Tooltip>
           <Popconfirm
             title="确认删除该定时任务？"
             onConfirm={() => delTask(record.id)}
           >
-            <Button
-              danger
-              icon={<DeleteOutlined />}
-              shape="circle"
-              size="small"
-            />
+            <Tooltip title="删除任务">
+              <Button
+                type="primary"
+                danger
+                shape="circle"
+                size="small"
+                icon={<DeleteOutlined />}
+              />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
@@ -267,7 +272,7 @@ export default function CronManagePage() {
           <Tooltip title="失败采集重试处理">
             <Radio value={2}>采集重试</Radio>
           </Tooltip>
-          <Tooltip title="清理从站中已无法匹配主站影片的孤儿播放记录">
+          <Tooltip title="清理附属站中已无法匹配主站影片的孤儿播放记录">
             <Radio value={3}>孤儿清理</Radio>
           </Tooltip>
         </Radio.Group>

@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine
+FROM golang:1.24-alpine
 
 LABEL maintainer="spark"
 
@@ -19,7 +19,7 @@ RUN go mod download
 # 再复制源码并编译
 ADD ./server-v2 .
 
-RUN go build -o main main.go
+RUN go build -o main ./cmd/server/...
 
 EXPOSE 3601
 

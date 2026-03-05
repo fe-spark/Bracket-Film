@@ -7,6 +7,7 @@ import {
   Tag,
   Space,
   Tooltip,
+  Popconfirm,
   Modal,
   Form,
   Input,
@@ -239,11 +240,12 @@ export default function BannersPage() {
       width: 140,
       fixed: "right" as const,
       render: (_: any, record: any) => (
-        <Space>
+        <Space size={8}>
           <Tooltip title="绑定影片">
             <Button
               type="primary"
               shape="circle"
+              size="small"
               icon={<LinkOutlined />}
               onClick={() => {
                 setCurrentRow(record);
@@ -255,8 +257,10 @@ export default function BannersPage() {
           </Tooltip>
           <Tooltip title="修改内容">
             <Button
-              type="dashed"
+              type="primary"
               shape="circle"
+              size="small"
+              style={{ background: "#1890ff", borderColor: "#1890ff" }}
               icon={<EditOutlined />}
               onClick={() => {
                 setCurrentRow(record);
@@ -265,15 +269,17 @@ export default function BannersPage() {
               }}
             />
           </Tooltip>
-          <Tooltip title="删除该项">
-            <Button
-              type="primary"
-              danger
-              shape="circle"
-              icon={<DeleteOutlined />}
-              onClick={() => handleDelete(record.id)}
-            />
-          </Tooltip>
+          <Popconfirm title="确认删除该轮播图？" onConfirm={() => handleDelete(record.id)}>
+            <Tooltip title="删除">
+              <Button
+                type="primary"
+                danger
+                shape="circle"
+                size="small"
+                icon={<DeleteOutlined />}
+              />
+            </Tooltip>
+          </Popconfirm>
         </Space>
       ),
     },

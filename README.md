@@ -121,6 +121,12 @@ Bracket-Film 对第三方播放器提供了深度支持：
 
 ---
 
+## 📚 常见问题
+
+- 常见问题与排障指南见 [README-FAQ.md](./README-FAQ.md)
+
+---
+
 ## 开源协议
 
 本项目基于 **MIT License** 开源。
