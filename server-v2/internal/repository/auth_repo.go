@@ -3,8 +3,8 @@ package repository
 import (
 	"fmt"
 	"log"
-	"server-v2/config"
-	"server-v2/pkg/db"
+	"server-v2/internal/config"
+	"server-v2/internal/infra/db"
 	"time"
 )
 

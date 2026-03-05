@@ -11,12 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"server-v2/config"
+	"server-v2/internal/config"
+	"server-v2/internal/infra/db"
 	"server-v2/internal/model"
-	"server-v2/pkg/db"
-	"server-v2/pkg/param"
-	"server-v2/pkg/response"
-	"server-v2/pkg/utils"
+	"server-v2/internal/model/dto"
+	"server-v2/internal/utils"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -24,42 +23,17 @@ import (
 
 // ========= Table Initialization =========
 
-func CreateSearchTagTable() {
-	if !db.Mdb.Migrator().HasTable(&model.SearchTagItem{}) {
-		_ = db.Mdb.AutoMigrate(&model.SearchTagItem{})
-	}
-}
-
-func CreateSearchTable() {
+func CleanDuplicateSearchInfo() {
 	if ExistSearchTable() {
-		var s model.SearchInfo
-		dedup := fmt.Sprintf(
-			`DELETE FROM %s WHERE id NOT IN (SELECT max_id FROM (SELECT MAX(id) AS max_id FROM %[1]s GROUP BY mid) AS t)`,
-			s.TableName(),
-		)
+		dedup := fmt.Sprintf(`DELETE FROM %s WHERE id NOT IN (SELECT max_id FROM (SELECT MAX(id) AS max_id FROM %[1]s GROUP BY mid) AS t)`, model.TableSearchInfo)
 		if err := db.Mdb.Exec(dedup).Error; err != nil {
 			log.Println("Dedup search_infos Failed: ", err)
 		}
-	}
-	if err := db.Mdb.AutoMigrate(&model.SearchInfo{}); err != nil {
-		log.Println("AutoMigrate SearchInfo Failed: ", err)
 	}
 }
 
 func ExistSearchTable() bool {
 	return db.Mdb.Migrator().HasTable(&model.SearchInfo{})
-}
-
-func CreateMovieDetailTable() {
-	if !db.Mdb.Migrator().HasTable(&model.MovieDetailInfo{}) {
-		_ = db.Mdb.AutoMigrate(&model.MovieDetailInfo{})
-	}
-}
-
-func CreateMoviePlaylistTable() {
-	if !db.Mdb.Migrator().HasTable(&model.MoviePlaylist{}) {
-		_ = db.Mdb.AutoMigrate(&model.MoviePlaylist{})
-	}
 }
 
 // ========= Upsert Logic =========
@@ -295,7 +269,7 @@ func ConvertSearchInfo(detail model.MovieDetail) model.SearchInfo {
 }
 
 // GetMovieListByPid 获取指定父类 ID 的影片基本信息
-func GetMovieListByPid(pid int64, page *response.Page) []model.MovieBasicInfo {
+func GetMovieListByPid(pid int64, page *dto.Page) []model.MovieBasicInfo {
 	var count int64
 	db.Mdb.Model(&model.SearchInfo{}).Where("pid = ?", pid).Count(&count)
 	page.Total = int(count)
@@ -320,7 +294,7 @@ func GetMovieListByPid(pid int64, page *response.Page) []model.MovieBasicInfo {
 }
 
 // GetMovieListByCid 获取指定子类 ID 的影片基本信息
-func GetMovieListByCid(cid int64, page *response.Page) []model.MovieBasicInfo {
+func GetMovieListByCid(cid int64, page *dto.Page) []model.MovieBasicInfo {
 	var count int64
 	db.Mdb.Model(&model.SearchInfo{}).Where("cid = ?", cid).Count(&count)
 	page.Total = int(count)
@@ -344,7 +318,7 @@ func GetMovieListByCid(cid int64, page *response.Page) []model.MovieBasicInfo {
 	return list
 }
 
-func SearchFilmKeyword(keyword string, page *response.Page) []model.SearchInfo {
+func SearchFilmKeyword(keyword string, page *dto.Page) []model.SearchInfo {
 	var searchList []model.SearchInfo
 	var count int64
 	db.Mdb.Model(&model.SearchInfo{}).Where("name LIKE ?", fmt.Sprint(`%`, keyword, `%`)).Or("sub_title LIKE ?", fmt.Sprint(`%`, keyword, `%`)).Count(&count)
@@ -357,15 +331,15 @@ func SearchFilmKeyword(keyword string, page *response.Page) []model.SearchInfo {
 	return searchList
 }
 
-func GetRelateMovieBasicInfo(search model.SearchInfo, page *response.Page) []model.MovieBasicInfo {
+func GetRelateMovieBasicInfo(search model.SearchInfo, page *dto.Page) []model.MovieBasicInfo {
 	sql := ""
 	name := regexp.MustCompile(`(第.{1,3}季.*)|([0-9]{1,3})|(剧场版)|(\s\S*$)|(之.*)|([\p{P}\p{S}].*)`).ReplaceAllString(search.Name, "")
 	if len(name) == len(search.Name) && len(name) > 10 {
 		name = name[:int(math.Ceil(float64(len(name))/5)*3)]
 	}
-	sql = fmt.Sprintf(`select * from %s where (name LIKE "%%%s%%" or sub_title LIKE "%%%[2]s%%") AND cid=%d AND search.deleted_at IS NULL union`, search.TableName(), name, search.Cid)
+	sql = fmt.Sprintf(`select * from %s where (name LIKE "%%%s%%" or sub_title LIKE "%%%[2]s%%") AND cid=%d AND deleted_at IS NULL union`, model.TableSearchInfo, name, search.Cid)
 
-	sql = fmt.Sprintf(`%s (select * from %s where cid=%d AND `, sql, search.TableName(), search.Cid)
+	sql = fmt.Sprintf(`%s (select * from %s where cid=%d AND `, sql, model.TableSearchInfo, search.Cid)
 	search.ClassTag = strings.ReplaceAll(search.ClassTag, " ", "")
 
 	if strings.Contains(search.ClassTag, ",") {
@@ -388,7 +362,9 @@ func GetRelateMovieBasicInfo(search model.SearchInfo, page *response.Page) []mod
 	sql = fmt.Sprintf("(%s)  limit %d,%d", sql, page.Current, page.PageSize)
 
 	var list []model.SearchInfo
-	db.Mdb.Raw(sql).Scan(&list)
+	if err := db.Mdb.Raw(sql).Scan(&list).Error; err != nil {
+		log.Println("Raw SQL Scan Error:", err)
+	}
 
 	var basicList []model.MovieBasicInfo
 	for _, s := range list {
@@ -584,7 +560,7 @@ func GetSearchPage(s model.SearchVo) []model.SearchInfo {
 		query = query.Where("update_stamp <= ? ", s.EndTime)
 	}
 
-	response.GetPage(query, s.Paging)
+	dto.GetPage(query, s.Paging)
 	var sl []model.SearchInfo
 	if err := query.Limit(s.Paging.PageSize).Offset((s.Paging.Current - 1) * s.Paging.PageSize).Find(&sl).Error; err != nil {
 		log.Printf("GetSearchPage Error: %v", err)
@@ -593,13 +569,13 @@ func GetSearchPage(s model.SearchVo) []model.SearchInfo {
 	return sl
 }
 
-func GetSearchInfosByTags(st model.SearchTagsVO, page *response.Page) []model.SearchInfo {
+func GetSearchInfosByTags(st model.SearchTagsVO, page *dto.Page) []model.SearchInfo {
 	qw := db.Mdb.Model(&model.SearchInfo{})
 	t := reflect.TypeOf(st)
 	v := reflect.ValueOf(st)
 	for i := 0; i < t.NumField(); i++ {
 		value := v.Field(i).Interface()
-		if !param.IsEmpty(value) {
+		if !dto.IsEmpty(value) {
 			var ts []string
 			if v, flag := value.(string); flag && strings.EqualFold(v, "其它") {
 				for _, s := range GetTagsByTitle(st.Pid, t.Field(i).Name) {
@@ -636,7 +612,7 @@ func GetSearchInfosByTags(st model.SearchTagsVO, page *response.Page) []model.Se
 		}
 	}
 
-	response.GetPage(qw, page)
+	dto.GetPage(qw, page)
 	var sl []model.SearchInfo
 	if err := qw.Limit(page.PageSize).Offset((page.Current - 1) * page.PageSize).Find(&sl).Error; err != nil {
 		log.Printf("GetSearchInfosByTags Error: %v", err)
@@ -690,29 +666,40 @@ func FilmZero() {
 	// 1. 清理 Redis (基础缓存)
 	RedisOnlyFlush()
 
-	// 2. 清理 MySQL (详情表与检索表)
-	db.Mdb.Exec("TRUNCATE table movie_detail_info")
-	var s model.SearchInfo
-	db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", s.TableName()))
-	// 3. 清理新引入的持久化表
-	db.Mdb.Exec("TRUNCATE table movie_playlist")
-	db.Mdb.Exec("TRUNCATE table category_persistent")
-	db.Mdb.Exec("TRUNCATE table virtual_picture_queue")
-	db.Mdb.Exec("TRUNCATE table search_tag_item")
+	// 2. 清理 MySQL
+	tables := []string{
+		model.TableMovieDetail,
+		model.TableSearchInfo,
+		model.TableMoviePlaylist,
+		model.TableCategory,
+		model.TableVirtualPicture,
+		model.TableSearchTag,
+	}
+	for _, t := range tables {
+		if err := db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", t)).Error; err != nil {
+			log.Printf("TRUNCATE TABLE %s Error: %v\n", t, err)
+		}
+	}
 
-	// 4. 同步清理采集失败记录，确保彻底清空
+	// 3. 同步清理采集失败记录，确保彻底清空
 	TruncateRecordTable()
 }
 
 // MasterFilmZero 仅清理主站相关数据 (search_infos / movie_detail_infos / category)
 // 保留附属站 movie_playlists 数据，用于主站切换时防止附属站数据丢失
 func MasterFilmZero() {
-	var s model.SearchInfo
-	db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", s.TableName()))
-	db.Mdb.Exec("TRUNCATE table movie_detail_info")
-	db.Mdb.Exec("TRUNCATE table category_persistent")
-	db.Mdb.Exec("TRUNCATE table virtual_picture_queue")
-	db.Mdb.Exec("TRUNCATE table search_tag_item")
+	tables := []string{
+		model.TableSearchInfo,
+		model.TableMovieDetail,
+		model.TableCategory,
+		model.TableVirtualPicture,
+		model.TableSearchTag,
+	}
+	for _, t := range tables {
+		if err := db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", t)).Error; err != nil {
+			log.Printf("TRUNCATE TABLE %s Error: %v\n", t, err)
+		}
+	}
 }
 
 // CleanOrphanPlaylists 清理 movie_playlists 中与 search_infos 不匹配的孤儿记录
@@ -760,7 +747,7 @@ func CleanOrphanPlaylists() int64 {
 }
 
 // GetHotMovieByPid 获取当前级分类下的热门影片
-func GetHotMovieByPid(pid int64, page *response.Page) []model.SearchInfo {
+func GetHotMovieByPid(pid int64, page *dto.Page) []model.SearchInfo {
 	var s []model.SearchInfo
 	t := time.Now().AddDate(0, -1, 0).Unix()
 	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("pid=? AND update_stamp > ?", pid, t).Order(" year DESC, hits DESC").Find(&s).Error; err != nil {
@@ -771,7 +758,7 @@ func GetHotMovieByPid(pid int64, page *response.Page) []model.SearchInfo {
 }
 
 // GetHotMovieByCid 获取当前分类下的热门影片
-func GetHotMovieByCid(cid int64, page *response.Page) []model.SearchInfo {
+func GetHotMovieByCid(cid int64, page *dto.Page) []model.SearchInfo {
 	var s []model.SearchInfo
 	t := time.Now().AddDate(0, -1, 0).Unix()
 	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("cid=? AND update_stamp > ?", cid, t).Order(" year DESC, hits DESC").Find(&s).Error; err != nil {
@@ -819,7 +806,7 @@ func GetBasicInfoBySearchInfos(infos ...model.SearchInfo) []model.MovieBasicInfo
 }
 
 // GetMovieListBySort 通过排序类型返回对应的影片基本信息
-func GetMovieListBySort(t int, pid int64, page *response.Page) []model.MovieBasicInfo {
+func GetMovieListBySort(t int, pid int64, page *dto.Page) []model.MovieBasicInfo {
 	var sl []model.SearchInfo
 	qw := db.Mdb.Model(&model.SearchInfo{}).Where("pid", pid).Limit(page.PageSize).Offset((page.Current - 1) * page.PageSize)
 	switch t {

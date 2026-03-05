@@ -8,7 +8,7 @@ import (
 	"server-v2/internal/model"
 	"server-v2/internal/repository"
 	"server-v2/internal/spider"
-	"server-v2/pkg/utils"
+	"server-v2/internal/utils"
 
 	"github.com/robfig/cron/v3"
 )

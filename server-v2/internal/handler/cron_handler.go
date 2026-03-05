@@ -8,7 +8,7 @@ import (
 	"server-v2/internal/model"
 	"server-v2/internal/service"
 	"server-v2/internal/spider"
-	"server-v2/pkg/response"
+	"server-v2/internal/model/dto"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,57 +20,57 @@ var CronHd = new(CronHandler)
 // FilmCronTaskList 获取所有的定时任务信息
 func (h *CronHandler) FilmCronTaskList(c *gin.Context) {
 	tl := service.CronSvc.GetFilmCrontab()
-	response.Success(tl, "定时任务列表获取成功", c)
+	dto.Success(tl, "定时任务列表获取成功", c)
 }
 
 // GetFilmCronTask 通过Id获取对应的定时任务信息
 func (h *CronHandler) GetFilmCronTask(c *gin.Context) {
 	id := c.DefaultQuery("id", "")
 	if id == "" {
-		response.Failed("定时任务信息获取失败,任务Id不能为空", c)
+		dto.Failed("定时任务信息获取失败,任务Id不能为空", c)
 		return
 	}
 	task, err := service.CronSvc.GetFilmCrontabById(id)
 	if err != nil {
-		response.Failed(fmt.Sprint("定时任务信息获取失败", err.Error()), c)
+		dto.Failed(fmt.Sprint("定时任务信息获取失败", err.Error()), c)
 		return
 	}
-	response.Success(task, "定时任务详情获取成功!!!", c)
+	dto.Success(task, "定时任务详情获取成功!!!", c)
 }
 
 // FilmCronAdd 添加定时任务
 func (h *CronHandler) FilmCronAdd(c *gin.Context) {
 	vo := model.FilmCronVo{}
 	if err := c.ShouldBindJSON(&vo); err != nil {
-		response.Failed("请求参数异常!!!", c)
+		dto.Failed("请求参数异常!!!", c)
 		return
 	}
 	if err := validTaskAddVo(vo); err != nil {
-		response.Failed(err.Error(), c)
+		dto.Failed(err.Error(), c)
 		return
 	}
 	vo.Spec = strings.TrimSpace(vo.Spec)
 	if err := service.CronSvc.AddFilmCrontab(vo); err != nil {
-		response.Failed(fmt.Sprint("定时任务添加失败: ", err.Error()), c)
+		dto.Failed(fmt.Sprint("定时任务添加失败: ", err.Error()), c)
 		return
 	}
-	response.SuccessOnlyMsg("定时任务添加成功", c)
+	dto.SuccessOnlyMsg("定时任务添加成功", c)
 }
 
 // FilmCronUpdate 更新定时任务信息
 func (h *CronHandler) FilmCronUpdate(c *gin.Context) {
 	t := model.FilmCollectTask{}
 	if err := c.ShouldBindJSON(&t); err != nil {
-		response.Failed("请求参数异常!!!", c)
+		dto.Failed("请求参数异常!!!", c)
 		return
 	}
 	if err := validTaskInfo(t); err != nil {
-		response.Failed(err.Error(), c)
+		dto.Failed(err.Error(), c)
 		return
 	}
 	task, err := service.CronSvc.GetFilmCrontabById(t.Id)
 	if err != nil {
-		response.Failed(fmt.Sprint("更新失败: ", err.Error()), c)
+		dto.Failed(fmt.Sprint("更新失败: ", err.Error()), c)
 		return
 	}
 	task.Ids = t.Ids
@@ -78,38 +78,38 @@ func (h *CronHandler) FilmCronUpdate(c *gin.Context) {
 	task.State = t.State
 	task.Remark = t.Remark
 	service.CronSvc.UpdateFilmCron(task)
-	response.SuccessOnlyMsg(fmt.Sprintf("定时任务[%s]更新成功", task.Id), c)
+	dto.SuccessOnlyMsg(fmt.Sprintf("定时任务[%s]更新成功", task.Id), c)
 }
 
 // ChangeTaskState 开启 | 关闭Id 对应的定时任务
 func (h *CronHandler) ChangeTaskState(c *gin.Context) {
 	t := model.FilmCollectTask{}
 	if err := c.ShouldBindJSON(&t); err != nil {
-		response.Failed("请求参数异常!!!", c)
+		dto.Failed("请求参数异常!!!", c)
 		return
 	}
 	task, err := service.CronSvc.GetFilmCrontabById(t.Id)
 	if err != nil {
-		response.Failed(fmt.Sprint("更新失败: ", err.Error()), c)
+		dto.Failed(fmt.Sprint("更新失败: ", err.Error()), c)
 		return
 	}
 	task.State = t.State
 	service.CronSvc.UpdateFilmCron(task)
-	response.SuccessOnlyMsg(fmt.Sprintf("定时任务[%s]更新成功", task.Id), c)
+	dto.SuccessOnlyMsg(fmt.Sprintf("定时任务[%s]更新成功", task.Id), c)
 }
 
 // DelFilmCron 删除定时任务
 func (h *CronHandler) DelFilmCron(c *gin.Context) {
 	id := c.DefaultQuery("id", "")
 	if id == "" {
-		response.Failed("定时任务清除失败, 任务ID不能为空", c)
+		dto.Failed("定时任务清除失败, 任务ID不能为空", c)
 		return
 	}
 	if err := service.CronSvc.DelFilmCrontab(id); err != nil {
-		response.Failed(err.Error(), c)
+		dto.Failed(err.Error(), c)
 		return
 	}
-	response.SuccessOnlyMsg(fmt.Sprintf("定时任务[%s]已删除", id), c)
+	dto.SuccessOnlyMsg(fmt.Sprintf("定时任务[%s]已删除", id), c)
 }
 
 func validTaskInfo(t model.FilmCollectTask) error {

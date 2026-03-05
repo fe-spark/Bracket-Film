@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"server-v2/config"
+	"server-v2/internal/config"
 	"server-v2/internal/model"
-	"server-v2/internal/model/collect"
 )
 
 /*
@@ -15,7 +14,7 @@ import (
 */
 
 // GenCategoryTree 解析处理 filmListPage数据 生成分类树形数据
-func GenCategoryTree(list []collect.FilmClass) *model.CategoryTree {
+func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 	// 遍历所有分类进行树形结构组装
 	tree := &model.CategoryTree{Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true}}
 	temp := make(map[int64]*model.CategoryTree)
@@ -59,7 +58,7 @@ func ConvertCategoryList(tree model.CategoryTree) []model.Category {
 }
 
 // ConvertFilmDetails 批量处理影片详情信息
-func ConvertFilmDetails(details []collect.FilmDetail) []model.MovieDetail {
+func ConvertFilmDetails(details []model.FilmDetail) []model.MovieDetail {
 	var dl []model.MovieDetail
 	for _, d := range details {
 		dl = append(dl, ConvertFilmDetail(d))
@@ -68,7 +67,7 @@ func ConvertFilmDetails(details []collect.FilmDetail) []model.MovieDetail {
 }
 
 // ConvertFilmDetail 将影片详情数据处理转化为 model.MovieDetail
-func ConvertFilmDetail(detail collect.FilmDetail) model.MovieDetail {
+func ConvertFilmDetail(detail model.FilmDetail) model.MovieDetail {
 	md := model.MovieDetail{
 		Id:       detail.VodID,
 		Cid:      detail.TypeID,
@@ -207,10 +206,10 @@ func ConvertVirtualPicture(details []model.MovieDetail) []model.VirtualPicture {
 // ----------------------------------Provide API---------------------------------------------------
 
 // DetailCovertList 将影视详情信息转化为列表信息
-func DetailCovertList(details []collect.FilmDetail) []collect.FilmList {
-	var l []collect.FilmList
+func DetailCovertList(details []model.FilmDetail) []model.FilmList {
+	var l []model.FilmList
 	for _, d := range details {
-		fl := collect.FilmList{
+		fl := model.FilmList{
 			VodID:       d.VodID,
 			VodName:     d.VodName,
 			TypeID:      d.TypeID,
@@ -226,58 +225,58 @@ func DetailCovertList(details []collect.FilmDetail) []collect.FilmList {
 }
 
 // DetailCovertXml 将影片详情信息转化为Xml格式的对象
-func DetailCovertXml(details []collect.FilmDetail) []collect.VideoDetail {
-	var vl []collect.VideoDetail
+func DetailCovertXml(details []model.FilmDetail) []model.VideoDetail {
+	var vl []model.VideoDetail
 	for _, d := range details {
-		vl = append(vl, collect.VideoDetail{
+		vl = append(vl, model.VideoDetail{
 			Last:     d.VodTime,
 			ID:       d.VodID,
 			Tid:      d.TypeID,
-			Name:     collect.CDATA{Text: d.VodName},
+			Name:     model.CDATA{Text: d.VodName},
 			Type:     d.TypeName,
 			Pic:      d.VodPic,
 			Lang:     d.VodLang,
 			Area:     d.VodArea,
 			Year:     d.VodYear,
 			State:    d.VodState,
-			Note:     collect.CDATA{Text: d.VodRemarks},
-			Actor:    collect.CDATA{Text: d.VodActor},
-			Director: collect.CDATA{Text: d.VodDirector},
-			DL:       collect.DL{DD: []collect.DD{{Flag: d.VodPlayFrom, Value: d.VodPlayURL}}},
-			Des:      collect.CDATA{Text: d.VodContent},
+			Note:     model.CDATA{Text: d.VodRemarks},
+			Actor:    model.CDATA{Text: d.VodActor},
+			Director: model.CDATA{Text: d.VodDirector},
+			DL:       model.DL{DD: []model.DD{{Flag: d.VodPlayFrom, Value: d.VodPlayURL}}},
+			Des:      model.CDATA{Text: d.VodContent},
 		})
 	}
 	return vl
 }
 
 // DetailCovertListXml 将影片详情信息转化为Xml格式FilmList的对象
-func DetailCovertListXml(details []collect.FilmDetail) []collect.VideoList {
-	var vl []collect.VideoList
+func DetailCovertListXml(details []model.FilmDetail) []model.VideoList {
+	var vl []model.VideoList
 	for _, d := range details {
-		vl = append(vl, collect.VideoList{
+		vl = append(vl, model.VideoList{
 			Last: d.VodTime,
 			ID:   d.VodID,
 			Tid:  d.TypeID,
-			Name: collect.CDATA{Text: d.VodName},
+			Name: model.CDATA{Text: d.VodName},
 			Type: d.TypeName,
 			Dt:   d.VodPlayFrom,
-			Note: collect.CDATA{Text: d.VodRemarks},
+			Note: model.CDATA{Text: d.VodRemarks},
 		})
 	}
 	return vl
 }
 
 // ClassListCovertXml 将影片分类列表转化为XML格式
-func ClassListCovertXml(cl []collect.FilmClass) collect.ClassXL {
-	var l collect.ClassXL
+func ClassListCovertXml(cl []model.FilmClass) model.ClassXL {
+	var l model.ClassXL
 	for _, c := range cl {
-		l.ClassX = append(l.ClassX, collect.ClassX{ID: c.TypeID, Value: c.TypeName})
+		l.ClassX = append(l.ClassX, model.ClassX{ID: c.TypeID, Value: c.TypeName})
 	}
 	return l
 }
 
 // FilterFilmDetail 对影片详情数据进行处理, t 修饰类型 0-返回m3u8,mp4 | 1 返回 云播链接 | 2 返回全部
-func FilterFilmDetail(fd collect.FilmDetail, t int64) collect.FilmDetail {
+func FilterFilmDetail(fd model.FilmDetail, t int64) model.FilmDetail {
 	// 只保留 mu38 | mp4 格式的播放源, 如果包含多种格式的播放数据
 	if strings.Contains(fd.VodPlayURL, fd.VodPlayNote) {
 		switch t {

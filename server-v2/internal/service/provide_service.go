@@ -8,12 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"server-v2/internal/infra/db"
 	"server-v2/internal/model"
-	"server-v2/internal/model/collect"
+	"server-v2/internal/model/dto"
 	"server-v2/internal/repository"
-	"server-v2/pkg/db"
-	"server-v2/pkg/response"
-	"server-v2/pkg/utils"
+	"server-v2/internal/utils"
 
 	"gorm.io/gorm"
 )
@@ -83,14 +82,14 @@ func (p *ProvideService) GetVodDirectBySource(sourceId, ac string, t int, pg int
 }
 
 // GetClassList 获取格式化的分类列表和筛选条件
-func (p *ProvideService) GetClassList() ([]collect.FilmClass, map[string][]map[string]interface{}) {
-	var classList []collect.FilmClass
+func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[string]interface{}) {
+	var classList []model.FilmClass
 	filters := make(map[string][]map[string]interface{})
 
 	tree := repository.GetCategoryTree()
 	for _, c := range tree.Children {
 		if c.Show {
-			classList = append(classList, collect.FilmClass{
+			classList = append(classList, model.FilmClass{
 				TypeID:   c.Id,
 				TypeName: c.Name,
 			})
@@ -206,8 +205,8 @@ func (p *ProvideService) GetClassList() ([]collect.FilmClass, map[string][]map[s
 }
 
 // GetVodList 获取视频列表 (支持多维度筛选)
-func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, area, lang, plot, sort string) (int, int, int, []collect.FilmList) {
-	page := response.Page{PageSize: 20, Current: pg}
+func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, area, lang, plot, sort string) (int, int, int, []model.FilmList) {
+	page := dto.Page{PageSize: 20, Current: pg}
 	if page.Current <= 0 {
 		page.Current = 1
 	}
@@ -287,9 +286,9 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 	var sl []model.SearchInfo
 	query.Limit(page.PageSize).Offset((page.Current - 1) * page.PageSize).Order(orderBy).Find(&sl)
 
-	var vodList []collect.FilmList
+	var vodList []model.FilmList
 	for _, s := range sl {
-		vodList = append(vodList, collect.FilmList{
+		vodList = append(vodList, model.FilmList{
 			VodID:       s.Mid,
 			VodName:     s.Name,
 			TypeID:      s.Cid,
@@ -306,8 +305,8 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 }
 
 // GetVodDetail 获取视频详情（带播放列表）
-func (p *ProvideService) GetVodDetail(ids []string) []collect.FilmDetail {
-	var detailList []collect.FilmDetail
+func (p *ProvideService) GetVodDetail(ids []string) []model.FilmDetail {
+	var detailList []model.FilmDetail
 
 	for _, idStr := range ids {
 		idInt, err := strconv.Atoi(idStr)
@@ -338,7 +337,7 @@ func (p *ProvideService) GetVodDetail(ids []string) []collect.FilmDetail {
 			playUrlList = append(playUrlList, strings.Join(linkStrs, "#"))
 		}
 
-		detail := collect.FilmDetail{
+		detail := model.FilmDetail{
 			VodID:       s.Mid,
 			TypeID:      s.Cid,
 			TypeID1:     s.Pid,

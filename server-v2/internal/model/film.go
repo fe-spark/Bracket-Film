@@ -1,8 +1,7 @@
 package model
 
 import (
-	"server-v2/config"
-	"server-v2/pkg/response"
+	"server-v2/internal/model/dto"
 
 	"gorm.io/gorm"
 )
@@ -130,10 +129,6 @@ type SearchInfo struct {
 	Blurb        string  `json:"blurb"`                          // 简介, 不完整
 }
 
-func (s *SearchInfo) TableName() string {
-	return config.SearchTableName
-}
-
 // SearchTagItem 影片检索标签持久化模型 (MySQL)
 type SearchTagItem struct {
 	gorm.Model
@@ -163,17 +158,17 @@ type SearchTagsVO struct {
 
 // SearchVo 影片信息搜索参数
 type SearchVo struct {
-	Name      string         `json:"name"`      // 影片名
-	Pid       int64          `json:"pid"`       // 一级分类ID
-	Cid       int64          `json:"cid"`       // 二级分类ID
-	Plot      string         `json:"plot"`      // 剧情
-	Area      string         `json:"area"`      // 地区
-	Language  string         `json:"language"`  // 语言
-	Year      int64          `json:"year"`      // 年份
-	Remarks   string         `json:"remarks"`   // 完结 | 未完结
-	BeginTime int64          `json:"beginTime"` // 更新时间戳起始值
-	EndTime   int64          `json:"endTime"`   // 更新时间戳结束值
-	Paging    *response.Page `json:"paging"`    // 分页参数
+	Name      string    `json:"name"`      // 影片名
+	Pid       int64     `json:"pid"`       // 一级分类ID
+	Cid       int64     `json:"cid"`       // 二级分类ID
+	Plot      string    `json:"plot"`      // 剧情
+	Area      string    `json:"area"`      // 地区
+	Language  string    `json:"language"`  // 语言
+	Year      int64     `json:"year"`      // 年份
+	Remarks   string    `json:"remarks"`   // 完结 | 未完结
+	BeginTime int64     `json:"beginTime"` // 更新时间戳起始值
+	EndTime   int64     `json:"endTime"`   // 更新时间戳结束值
+	Paging    *dto.Page `json:"paging"`    // 分页参数
 }
 
 // FilmDetailVo 添加影片对象

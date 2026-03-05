@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"server-v2/internal/model/collect"
+	"server-v2/internal/model"
 	"server-v2/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -49,14 +49,14 @@ func (h *ProvideHandler) HandleProvide(c *gin.Context) {
 
 	classList, filters := service.ProvideSvc.GetClassList()
 	if classList == nil {
-		classList = []collect.FilmClass{}
+		classList = []model.FilmClass{}
 	}
 
 	switch ac {
 	case "list":
 		page, pagecount, total, vodList := service.ProvideSvc.GetVodList(t, pg, wd, h_param, year, area, lang, plot, sort)
 		if vodList == nil {
-			vodList = []collect.FilmList{}
+			vodList = []model.FilmList{}
 		}
 		c.JSON(200, gin.H{
 			"code":      1,
@@ -75,7 +75,7 @@ func (h *ProvideHandler) HandleProvide(c *gin.Context) {
 			idsArr = strings.Split(ids, ",")
 			vodList := service.ProvideSvc.GetVodDetail(idsArr)
 			if vodList == nil {
-				vodList = []collect.FilmDetail{}
+				vodList = []model.FilmDetail{}
 			}
 			c.JSON(200, gin.H{
 				"code":      1,
@@ -96,7 +96,7 @@ func (h *ProvideHandler) HandleProvide(c *gin.Context) {
 			}
 			detailList := service.ProvideSvc.GetVodDetail(_idsArr)
 			if detailList == nil {
-				detailList = []collect.FilmDetail{}
+				detailList = []model.FilmDetail{}
 			}
 			c.JSON(200, gin.H{
 				"code":      1,
@@ -114,7 +114,7 @@ func (h *ProvideHandler) HandleProvide(c *gin.Context) {
 	default:
 		page, pagecount, total, vodList := service.ProvideSvc.GetVodList(t, pg, wd, h_param, year, area, lang, plot, sort)
 		if vodList == nil {
-			vodList = []collect.FilmList{}
+			vodList = []model.FilmList{}
 		}
 		c.JSON(200, gin.H{
 			"code":      1,

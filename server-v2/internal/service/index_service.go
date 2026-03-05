@@ -6,8 +6,8 @@ import (
 
 	"server-v2/internal/model"
 	"server-v2/internal/repository"
-	"server-v2/pkg/response"
-	"server-v2/pkg/utils"
+	"server-v2/internal/model/dto"
+	"server-v2/internal/utils"
 )
 
 type IndexService struct{}
@@ -27,7 +27,7 @@ func (i *IndexService) IndexPage() map[string]interface{} {
 	Info["category"] = tree
 	list := make([]map[string]interface{}, 0)
 	for _, c := range tree.Children {
-		page := response.Page{PageSize: 14, Current: 1}
+		page := dto.Page{PageSize: 14, Current: 1}
 		var movies []model.MovieBasicInfo
 		var hotMovies []model.SearchInfo
 		if c.Children != nil {
@@ -102,7 +102,7 @@ func (i *IndexService) GetNavCategory() []*model.Category {
 }
 
 // SearchFilmInfo 获取关键字匹配的影片信息
-func (i *IndexService) SearchFilmInfo(key string, page *response.Page) []model.MovieBasicInfo {
+func (i *IndexService) SearchFilmInfo(key string, page *dto.Page) []model.MovieBasicInfo {
 	sl := repository.SearchFilmKeyword(key, page)
 	var bl []model.MovieBasicInfo
 	for _, s := range sl {
@@ -112,7 +112,7 @@ func (i *IndexService) SearchFilmInfo(key string, page *response.Page) []model.M
 }
 
 // GetFilmCategory 根据Pid或Cid获取指定的分页数据
-func (i *IndexService) GetFilmCategory(id int64, idType string, page *response.Page) []model.MovieBasicInfo {
+func (i *IndexService) GetFilmCategory(id int64, idType string, page *dto.Page) []model.MovieBasicInfo {
 	var basicList []model.MovieBasicInfo
 	switch idType {
 	case "pid":
@@ -135,7 +135,7 @@ func (i *IndexService) GetPidCategory(pid int64) *model.CategoryTree {
 }
 
 // RelateMovie 根据当前影片信息匹配相关的影片
-func (i *IndexService) RelateMovie(detail model.MovieDetail, page *response.Page) []model.MovieBasicInfo {
+func (i *IndexService) RelateMovie(detail model.MovieDetail, page *dto.Page) []model.MovieBasicInfo {
 	search := model.SearchInfo{
 		Cid:      detail.Cid,
 		Name:     detail.Name,
@@ -194,13 +194,13 @@ func multipleSource(detail *model.MovieDetail) []model.PlayLinkVo {
 }
 
 // GetFilmsByTags 通过searchTag 返回满足条件的分页影片信息
-func (i *IndexService) GetFilmsByTags(st model.SearchTagsVO, page *response.Page) []model.MovieBasicInfo {
+func (i *IndexService) GetFilmsByTags(st model.SearchTagsVO, page *dto.Page) []model.MovieBasicInfo {
 	sl := repository.GetSearchInfosByTags(st, page)
 	return repository.GetBasicInfoBySearchInfos(sl...)
 }
 
 // GetFilmClassify 通过Pid返回当前所属分类下的首页展示数据
-func (i *IndexService) GetFilmClassify(pid int64, page *response.Page) map[string]interface{} {
+func (i *IndexService) GetFilmClassify(pid int64, page *dto.Page) map[string]interface{} {
 	res := make(map[string]interface{})
 	res["news"] = repository.GetMovieListBySort(0, pid, page)
 	res["top"] = repository.GetMovieListBySort(1, pid, page)

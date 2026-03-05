@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"server-v2/pkg/response"
+	"server-v2/internal/model/dto"
 
 	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
@@ -112,13 +112,13 @@ func (fr FailureRecord) TableName() string {
 }
 
 type RecordRequestVo struct {
-	OriginId    string         `json:"originId"`    // 源站点ID
-	CollectType int            `json:"collectType"` // 采集类型
-	Hour        int            `json:"hour"`        // 采集时长
-	Status      int            `json:"status"`      // 状态
-	BeginTime   time.Time      `json:"beginTime"`   // 起始时间
-	EndTime     time.Time      `json:"endTime"`     // 结束时间
-	Paging      *response.Page `json:"paging"`      // 分页参数
+	OriginId    string    `json:"originId"`    // 源站点ID
+	CollectType int       `json:"collectType"` // 采集类型
+	Hour        int       `json:"hour"`        // 采集时长
+	Status      int       `json:"status"`      // 状态
+	BeginTime   time.Time `json:"beginTime"`   // 起始时间
+	EndTime     time.Time `json:"endTime"`     // 结束时间
+	Paging      *dto.Page `json:"paging"`      // 分页参数
 }
 
 // FilmCronVo 影视更新任务请求参数

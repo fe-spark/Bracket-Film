@@ -11,12 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"server-v2/config"
+	"server-v2/internal/config"
 	"server-v2/internal/model"
-	"server-v2/internal/model/collect"
 	"server-v2/internal/repository"
-	"server-v2/pkg/conver"
-	"server-v2/pkg/utils"
+	"server-v2/internal/spider/conver"
+	"server-v2/internal/utils"
 
 	"golang.org/x/time/rate"
 )
@@ -546,14 +545,14 @@ func CollectApiTest(s model.FilmSource) error {
 	if err == nil {
 		// 如果返回值类型为Json则执行Json序列化
 		if s.ResultModel == model.JsonResult {
-			lp := collect.FilmListPage{}
+			lp := model.FilmListPage{}
 			if err = json.Unmarshal(r.Resp, &lp); err != nil {
 				return errors.New(fmt.Sprint("测试失败, 返回数据异常, JSON序列化失败: ", err))
 			}
 			return nil
 		} else if s.ResultModel == model.XmlResult {
 			// 如果返回值类型为XML则执行XML序列化
-			rd := collect.RssD{}
+			rd := model.RssD{}
 			if err = xml.Unmarshal(r.Resp, &rd); err != nil {
 				return errors.New(fmt.Sprint("测试失败, 返回数据异常, XML序列化失败", err))
 			}

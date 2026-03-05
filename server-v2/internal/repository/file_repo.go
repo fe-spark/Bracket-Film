@@ -5,11 +5,11 @@ import (
 	"log"
 	"path/filepath"
 	"regexp"
-	"server-v2/config"
+	"server-v2/internal/config"
 	"server-v2/internal/model"
-	"server-v2/pkg/db"
-	"server-v2/pkg/response"
-	"server-v2/pkg/utils"
+	"server-v2/internal/infra/db"
+	"server-v2/internal/model/dto"
+	"server-v2/internal/utils"
 	"strings"
 
 	"gorm.io/gorm/clause"
@@ -24,23 +24,6 @@ func StoragePath(f *model.FileInfo) string {
 	default:
 	}
 	return storage
-}
-
-// CreateVirtualPictureTable 创建待同步图片表
-func CreateVirtualPictureTable() {
-	if !db.Mdb.Migrator().HasTable(&model.VirtualPictureQueue{}) {
-		_ = db.Mdb.AutoMigrate(&model.VirtualPictureQueue{})
-	}
-}
-
-// CreateFileTable 创建图片关联信息存储表
-func CreateFileTable() {
-	if !ExistFileTable() {
-		err := db.Mdb.AutoMigrate(&model.FileInfo{})
-		if err != nil {
-			log.Println("Create Table FileInfo Failed: ", err)
-		}
-	}
 }
 
 // ExistFileTable 是否存在Picture表
@@ -75,10 +58,10 @@ func GetFileInfoById(id uint) model.FileInfo {
 }
 
 // GetFileInfoPage 获取文件关联信息分页数据
-func GetFileInfoPage(tl []string, page *response.Page) []model.FileInfo {
+func GetFileInfoPage(tl []string, page *dto.Page) []model.FileInfo {
 	var fl []model.FileInfo
 	query := db.Mdb.Model(&model.FileInfo{}).Where("file_type IN ?", tl).Order("id DESC")
-	response.GetPage(query, page)
+	dto.GetPage(query, page)
 	if err := query.Limit(page.PageSize).Offset((page.Current - 1) * page.PageSize).Find(&fl).Error; err != nil {
 		log.Println(err)
 		return nil

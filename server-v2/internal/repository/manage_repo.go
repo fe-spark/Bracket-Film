@@ -5,26 +5,12 @@ import (
 	"log"
 	"sort"
 
-	"server-v2/config"
+	"server-v2/internal/config"
 	"server-v2/internal/model"
-	"server-v2/pkg/db"
+	"server-v2/internal/infra/db"
 
 	"gorm.io/gorm/clause"
 )
-
-// CreateSiteConfigTable 创建网站配置表
-func CreateSiteConfigTable() {
-	if !db.Mdb.Migrator().HasTable(&model.SiteConfigRecord{}) {
-		_ = db.Mdb.AutoMigrate(&model.SiteConfigRecord{})
-	}
-}
-
-// CreateBannersTable 创建轮播配置表
-func CreateBannersTable() {
-	if !db.Mdb.Migrator().HasTable(&model.BannersRecord{}) {
-		_ = db.Mdb.AutoMigrate(&model.BannersRecord{})
-	}
-}
 
 // ExistSiteConfig 判断 MySQL 中是否已有网站配置
 func ExistSiteConfig() bool {

@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"server-v2/config"
+	"server-v2/internal/config"
 	"server-v2/internal/repository"
-	"server-v2/pkg/response"
-	"server-v2/pkg/utils"
+	"server-v2/internal/model/dto"
+	"server-v2/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -23,19 +23,19 @@ func AuthToken() gin.HandlerFunc {
 		authToken := c.Request.Header.Get("auth-token")
 		// 如果没有登录信息则直接清退
 		if authToken == "" {
-			response.CustomResult(http.StatusUnauthorized, response.SUCCESS, nil, "用户未授权,请先登录", c)
+			dto.CustomResult(http.StatusUnauthorized, dto.SUCCESS, nil, "用户未授权,请先登录", c)
 			c.Abort()
 			return
 		}
 		// 解析token中的信息
 		uc, err := utils.ParseToken(authToken)
 		if err != nil && !errors.Is(err, jwt.ErrTokenExpired) {
-			response.CustomResult(http.StatusUnauthorized, response.SUCCESS, nil, "无效的口令,请重新登录!!!", c)
+			dto.CustomResult(http.StatusUnauthorized, dto.SUCCESS, nil, "无效的口令,请重新登录!!!", c)
 			c.Abort()
 			return
 		}
 		if uc == nil {
-			response.CustomResult(http.StatusUnauthorized, response.SUCCESS, nil, "无效的口令,请重新登录!!!", c)
+			dto.CustomResult(http.StatusUnauthorized, dto.SUCCESS, nil, "无效的口令,请重新登录!!!", c)
 			c.Abort()
 			return
 		}
@@ -57,7 +57,7 @@ func AuthToken() gin.HandlerFunc {
 			})
 
 			if val == nil {
-				response.CustomResult(http.StatusUnauthorized, response.SUCCESS, nil, "身份验证信息已失效,请重新登录!!!", c)
+				dto.CustomResult(http.StatusUnauthorized, dto.SUCCESS, nil, "身份验证信息已失效,请重新登录!!!", c)
 				c.Abort()
 				return
 			}
@@ -69,12 +69,12 @@ func AuthToken() gin.HandlerFunc {
 			// 未过期的情况，仅校验 Redis 一致性
 			t := repository.GetUserTokenById(uc.UserID)
 			if len(t) <= 0 {
-				response.CustomResult(http.StatusUnauthorized, response.SUCCESS, nil, "身份验证信息已失效,请重新登录!!!", c)
+				dto.CustomResult(http.StatusUnauthorized, dto.SUCCESS, nil, "身份验证信息已失效,请重新登录!!!", c)
 				c.Abort()
 				return
 			}
 			if t != authToken {
-				response.CustomResult(http.StatusUnauthorized, response.SUCCESS, nil, "账号在其它设备登录,身份验证信息失效,请重新登录!!!", c)
+				dto.CustomResult(http.StatusUnauthorized, dto.SUCCESS, nil, "账号在其它设备登录,身份验证信息失效,请重新登录!!!", c)
 				c.Abort()
 				return
 			}

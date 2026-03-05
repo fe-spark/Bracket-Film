@@ -6,7 +6,7 @@ import (
 
 	"server-v2/internal/model"
 	"server-v2/internal/service"
-	"server-v2/pkg/response"
+	"server-v2/internal/model/dto"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,30 +18,30 @@ var IndexHd = new(IndexHandler)
 // Index 首页数据
 func (h *IndexHandler) Index(c *gin.Context) {
 	data := service.IndexSvc.IndexPage()
-	response.Success(data, "首页数据获取成功", c)
+	dto.Success(data, "首页数据获取成功", c)
 }
 
 // CategoriesInfo 分类信息获取
 func (h *IndexHandler) CategoriesInfo(c *gin.Context) {
 	data := service.IndexSvc.GetNavCategory()
 	if len(data) <= 0 {
-		response.Failed("暂无分类信息", c)
+		dto.Failed("暂无分类信息", c)
 		return
 	}
-	response.Success(data, "分类信息获取成功", c)
+	dto.Success(data, "分类信息获取成功", c)
 }
 
 // FilmDetail 影片详情信息查询
 func (h *IndexHandler) FilmDetail(c *gin.Context) {
 	id, err := strconv.Atoi(c.Query("id"))
 	if err != nil {
-		response.Failed("请求异常,影片请求参数异常!!!", c)
+		dto.Failed("请求异常,影片请求参数异常!!!", c)
 		return
 	}
 	detail := service.IndexSvc.GetFilmDetail(id)
-	page := response.Page{Current: 0, PageSize: 14}
+	page := dto.Page{Current: 0, PageSize: 14}
 	relateMovie := service.IndexSvc.RelateMovie(detail.MovieDetail, &page)
-	response.Success(gin.H{
+	dto.Success(gin.H{
 		"detail": detail,
 		"relate": relateMovie,
 	}, "影片详情信息获取成功", c)
@@ -51,13 +51,13 @@ func (h *IndexHandler) FilmDetail(c *gin.Context) {
 func (h *IndexHandler) FilmPlayInfo(c *gin.Context) {
 	id, err := strconv.Atoi(c.DefaultQuery("id", "0"))
 	if err != nil {
-		response.Failed("请求异常,暂无影片信息!!!", c)
+		dto.Failed("请求异常,暂无影片信息!!!", c)
 		return
 	}
 	playFrom := c.DefaultQuery("playFrom", "")
 	episode, err := strconv.Atoi(c.DefaultQuery("episode", "0"))
 	if err != nil {
-		response.Failed("请求异常,暂无影片信息!!!", c)
+		dto.Failed("请求异常,暂无影片信息!!!", c)
 		return
 	}
 	detail := service.IndexSvc.GetFilmDetail(id)
@@ -97,9 +97,9 @@ func (h *IndexHandler) FilmPlayInfo(c *gin.Context) {
 		}
 	}
 
-	page := response.Page{Current: 0, PageSize: 14}
+	page := dto.Page{Current: 0, PageSize: 14}
 	relateMovie := service.IndexSvc.RelateMovie(detail.MovieDetail, &page)
-	response.Success(gin.H{
+	dto.Success(gin.H{
 		"detail":          detail,
 		"current":         currentPlay,
 		"currentPlayFrom": playFrom,
@@ -113,14 +113,14 @@ func (h *IndexHandler) SearchFilm(c *gin.Context) {
 	keyword := c.DefaultQuery("keyword", "")
 	currStr := c.DefaultQuery("current", "1")
 	current, _ := strconv.Atoi(currStr)
-	page := response.Page{PageSize: 10, Current: current}
+	page := dto.Page{PageSize: 10, Current: current}
 	bl := service.IndexSvc.SearchFilmInfo(strings.TrimSpace(keyword), &page)
 	if page.Total <= 0 {
-		response.Failed("暂无相关影片信息", c)
+		dto.Failed("暂无相关影片信息", c)
 		return
 	}
 
-	response.Success(gin.H{"list": bl, "page": page}, "影片搜索成功", c)
+	dto.Success(gin.H{"list": bl, "page": page}, "影片搜索成功", c)
 }
 
 // FilmTagSearch 通过tag获取满足条件的对应影片
@@ -130,7 +130,7 @@ func (h *IndexHandler) FilmTagSearch(c *gin.Context) {
 	cidStr := c.DefaultQuery("Category", "")
 	yStr := c.DefaultQuery("Year", "")
 	if pidStr == "" {
-		response.Failed("缺少分类信息", c)
+		dto.Failed("缺少分类信息", c)
 		return
 	}
 	params.Pid, _ = strconv.ParseInt(pidStr, 10, 64)
@@ -143,9 +143,9 @@ func (h *IndexHandler) FilmTagSearch(c *gin.Context) {
 
 	currentStr := c.DefaultQuery("current", "1")
 	current, _ := strconv.Atoi(currentStr)
-	page := response.Page{PageSize: 49, Current: current}
+	page := dto.Page{PageSize: 49, Current: current}
 	service.IndexSvc.GetFilmsByTags(params, &page)
-	response.Success(gin.H{
+	dto.Success(gin.H{
 		"title":  service.IndexSvc.GetPidCategory(params.Pid).Category,
 		"list":   service.IndexSvc.GetFilmsByTags(params, &page),
 		"search": service.IndexSvc.SearchTags(params.Pid),
@@ -166,13 +166,13 @@ func (h *IndexHandler) FilmTagSearch(c *gin.Context) {
 func (h *IndexHandler) FilmClassify(c *gin.Context) {
 	pidStr := c.DefaultQuery("Pid", "")
 	if pidStr == "" {
-		response.Failed("主分类信息获取异常", c)
+		dto.Failed("主分类信息获取异常", c)
 		return
 	}
 	pid, _ := strconv.ParseInt(pidStr, 10, 64)
 	title := service.IndexSvc.GetPidCategory(pid)
-	page := response.Page{PageSize: 21, Current: 1}
-	response.Success(gin.H{
+	page := dto.Page{PageSize: 21, Current: 1}
+	dto.Success(gin.H{
 		"title":   title,
 		"content": service.IndexSvc.GetFilmClassify(pid, &page),
 	}, "分类影片信息获取成功", c)

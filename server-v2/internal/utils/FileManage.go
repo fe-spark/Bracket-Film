@@ -5,7 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"server-v2/config"
+	"server-v2/internal/config"
 )
 
 /*

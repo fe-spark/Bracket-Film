@@ -2,10 +2,10 @@ package service
 
 import (
 	"errors"
-	"server-v2/config"
+	"server-v2/internal/config"
 	"server-v2/internal/model"
 	"server-v2/internal/repository"
-	"server-v2/pkg/utils"
+	"server-v2/internal/utils"
 )
 
 type UserService struct{}

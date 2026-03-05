@@ -1,12 +1,10 @@
 package repository
 
 import (
-	"fmt"
 	"log"
-	"server-v2/config"
 	"server-v2/internal/model"
-	"server-v2/pkg/db"
-	"server-v2/pkg/utils"
+	"server-v2/internal/infra/db"
+	"server-v2/internal/utils"
 
 	"gorm.io/gorm"
 )
@@ -14,19 +12,6 @@ import (
 // ExistUserTable 判断表中是否存在User表
 func ExistUserTable() bool {
 	return db.Mdb.Migrator().HasTable(&model.User{})
-}
-
-// CreateUserTable 创建存储检索信息的数据表
-func CreateUserTable() {
-	var u = &model.User{}
-	// 如果不存在则创建表 并设置自增ID初始值为10000
-	if !ExistUserTable() {
-		err := db.Mdb.AutoMigrate(u)
-		db.Mdb.Exec(fmt.Sprintf("alter table %s auto_Increment = %d", u.TableName(), config.UserIdInitialVal))
-		if err != nil {
-			log.Println("Create Table User Failed: ", err)
-		}
-	}
 }
 
 // InitAdminAccount 初始化admin用户密码

@@ -1,8 +1,6 @@
 package model
 
 import (
-	"server-v2/config"
-
 	"gorm.io/gorm"
 )
 
@@ -19,11 +17,6 @@ type User struct {
 	Reserve1 string `json:"reserve1"` // 预留字段 3
 	Reserve2 string `json:"reserve2"` // 预留字段 2
 	Reserve3 string `json:"reserve3"` // 预留字段 1
-}
-
-// TableName 设置user表的表名
-func (u *User) TableName() string {
-	return config.UserTableName
 }
 
 // UserInfoVo 用户信息返回对象

@@ -6,9 +6,8 @@ import (
 	"log"
 
 	"server-v2/internal/model"
-	"server-v2/internal/model/collect"
-	"server-v2/pkg/conver"
-	"server-v2/pkg/utils"
+	"server-v2/internal/spider/conver"
+	"server-v2/internal/utils"
 )
 
 /*
@@ -37,7 +36,7 @@ func (jc *JsonCollect) GetCategoryTree(r utils.RequestInfo) (*model.CategoryTree
 	// 执行请求, 获取一次list数据
 	utils.ApiGet(&r)
 	// 解析resp数据
-	filmListPage := collect.FilmListPage{}
+	filmListPage := model.FilmListPage{}
 	if len(r.Resp) <= 0 {
 		log.Println("filmListPage 数据获取异常 : Resp Is Empty")
 		return nil, errors.New("filmListPage 数据获取异常 : Resp Is Empty")
@@ -65,7 +64,7 @@ func (jc *JsonCollect) GetPageCount(r utils.RequestInfo) (count int, err error) 
 		return
 	}
 	// 获取pageCount
-	res := collect.CommonPage{}
+	res := model.CommonPage{}
 	err = json.Unmarshal(r.Resp, &res)
 	if err != nil {
 		return
@@ -86,7 +85,7 @@ func (jc *JsonCollect) GetFilmDetail(r utils.RequestInfo) (list []model.MovieDet
 	r.Params.Set(`ac`, `detail`)
 	utils.ApiGet(&r)
 	// 影视详情信息
-	detailPage := collect.FilmDetailLPage{}
+	detailPage := model.FilmDetailLPage{}
 	// details := repository.DetailListInfo{}
 	// 如果返回数据为空则直接结束本次循环
 	if len(r.Resp) <= 0 {

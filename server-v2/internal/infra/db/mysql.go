@@ -1,7 +1,7 @@
 package db
 
 import (
-	"server-v2/config"
+	"server-v2/internal/config"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"

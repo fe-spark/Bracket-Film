@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"log"
 
-	"server-v2/config"
+	"server-v2/internal/config"
 	"server-v2/internal/model"
 	"server-v2/internal/repository"
 	"server-v2/internal/spider"
-	"server-v2/pkg/utils"
+	"server-v2/internal/infra/db"
+	"server-v2/internal/utils"
 )
 
 type InitService struct{}
@@ -28,20 +29,34 @@ func (s *InitService) DefaultDataInit() {
 }
 
 func (s *InitService) TableInit() {
-	repository.CreateUserTable()
+	err := db.Mdb.AutoMigrate(
+		&model.User{},
+		&model.SearchInfo{},
+		&model.FileInfo{},
+		&model.FailureRecord{},
+		&model.MovieDetailInfo{},
+		&model.CategoryPersistent{},
+		&model.MoviePlaylist{},
+		&model.VirtualPictureQueue{},
+		&model.FilmSource{},
+		&model.SearchTagItem{},
+		&model.CrontabRecord{},
+		&model.SiteConfigRecord{},
+		&model.BannersRecord{},
+	)
+	if err != nil {
+		log.Println("Database AutoMigrate Failed:", err)
+		return
+	}
+
+	// 专门处理表的默认或初始状态定义
+	db.Mdb.Exec(fmt.Sprintf("alter table %s auto_Increment = %d", model.TableUser, config.UserIdInitialVal))
+
+	// 清理初始化时可能的脏数据
+	repository.CleanDuplicateSearchInfo()
+
+	// 初始化默认超管账号
 	repository.InitAdminAccount()
-	repository.CreateSearchTable()
-	repository.CreateFileTable()
-	repository.CreateFailureRecordTable()
-	repository.CreateMovieDetailTable()
-	repository.CreateCategoryTable()
-	repository.CreateMoviePlaylistTable()
-	repository.CreateVirtualPictureTable()
-	repository.CreateFilmSourceTable()
-	repository.CreateSearchTagTable()
-	repository.CreateCrontabTable()
-	repository.CreateSiteConfigTable()
-	repository.CreateBannersTable()
 }
 
 func (s *InitService) BasicConfigInit() {

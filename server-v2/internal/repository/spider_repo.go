@@ -7,22 +7,15 @@ import (
 	"log"
 
 	"server-v2/internal/model"
-	"server-v2/pkg/db"
-	"server-v2/pkg/response"
-	"server-v2/pkg/utils"
+	"server-v2/internal/infra/db"
+	"server-v2/internal/model/dto"
+	"server-v2/internal/utils"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 // --------- Crontab Tasks -----------
-
-// CreateCrontabTable 创建定时任务持久化表
-func CreateCrontabTable() {
-	if !db.Mdb.Migrator().HasTable(&model.CrontabRecord{}) {
-		_ = db.Mdb.AutoMigrate(&model.CrontabRecord{})
-	}
-}
 
 func toCrontabRecord(t model.FilmCollectTask) model.CrontabRecord {
 	idsJson, _ := json.Marshal(t.Ids)
@@ -171,7 +164,9 @@ func UpdateCollectSource(s model.FilmSource) error {
 
 // ClearAllCollectSource 删除所有采集站信息
 func ClearAllCollectSource() {
-	db.Mdb.Exec("TRUNCATE table film_sources")
+	if err := db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", model.TableFilmSource)).Error; err != nil {
+		log.Println("TRUNCATE table film_sources Error:", err)
+	}
 }
 
 // ExistCollectSourceList 查询是否已经存在站点list相关数据
@@ -179,16 +174,6 @@ func ExistCollectSourceList() bool {
 	var count int64
 	db.Mdb.Model(&model.FilmSource{}).Count(&count)
 	return count > 0
-}
-
-// CreateFilmSourceTable 创建采集源信息表
-func CreateFilmSourceTable() {
-	if !db.Mdb.Migrator().HasTable(&model.FilmSource{}) {
-		err := db.Mdb.AutoMigrate(&model.FilmSource{})
-		if err != nil {
-			log.Println("Create Table FilmSource Failed: ", err)
-		}
-	}
 }
 
 // --------- Failure Record -----------
@@ -206,17 +191,6 @@ func findPendingFailure(tx *gorm.DB, fl model.FailureRecord) (*model.FailureReco
 		return nil, err
 	}
 	return &current, nil
-}
-
-// CreateFailureRecordTable 创建失效记录表
-func CreateFailureRecordTable() {
-	fl := &model.FailureRecord{}
-	// 不存在则创建FailureRecord表
-	if !db.Mdb.Migrator().HasTable(fl) {
-		if err := db.Mdb.AutoMigrate(fl); err != nil {
-			log.Println("Create Table failure_record failed:", err)
-		}
-	}
 }
 
 // SaveFailureRecord 添加采集失效记录
@@ -271,7 +245,7 @@ func FailureRecordList(vo model.RecordRequestVo) []model.FailureRecord {
 	}
 
 	// 获取分页数据
-	response.GetPage(qw, vo.Paging)
+	dto.GetPage(qw, vo.Paging)
 	// 获取分页查询的数据
 	var list []model.FailureRecord
 	if err := qw.Limit(vo.Paging.PageSize).Offset((vo.Paging.Current - 1) * vo.Paging.PageSize).Order("updated_at DESC").Find(&list).Error; err != nil {
@@ -333,8 +307,7 @@ func DelDoneRecord() {
 
 // TruncateRecordTable  截断 record table
 func TruncateRecordTable() {
-	var s model.FailureRecord
-	err := db.Mdb.Exec(fmt.Sprintf("TRUNCATE Table %s", s.TableName())).Error
+	err := db.Mdb.Exec(fmt.Sprintf("TRUNCATE Table %s", model.TableFailureRecord)).Error
 	if err != nil {
 		log.Println("TRUNCATE TABLE Error: ", err)
 	}

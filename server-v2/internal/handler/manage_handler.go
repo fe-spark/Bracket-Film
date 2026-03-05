@@ -6,8 +6,8 @@ import (
 
 	"server-v2/internal/model"
 	"server-v2/internal/service"
-	"server-v2/pkg/response"
-	"server-v2/pkg/utils"
+	"server-v2/internal/model/dto"
+	"server-v2/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,14 +17,14 @@ type ManageHandler struct{}
 var ManageHd = new(ManageHandler)
 
 func (h *ManageHandler) ManageIndex(c *gin.Context) {
-	response.SuccessOnlyMsg("后台管理中心", c)
+	dto.SuccessOnlyMsg("后台管理中心", c)
 }
 
 // ------------------------------------------------------ 站点基本配置 ------------------------------------------------------
 
 // SiteBasicConfig  网站基本配置
 func (h *ManageHandler) SiteBasicConfig(c *gin.Context) {
-	response.Success(service.ManageSvc.GetSiteBasicConfig(), "网站基本信息获取成功", c)
+	dto.Success(service.ManageSvc.GetSiteBasicConfig(), "网站基本信息获取成功", c)
 }
 
 // UpdateSiteBasic 更新网站配置信息
@@ -32,29 +32,29 @@ func (h *ManageHandler) UpdateSiteBasic(c *gin.Context) {
 	bc := model.BasicConfig{}
 	if err := c.ShouldBindJSON(&bc); err == nil {
 		if !utils.ValidDomain(bc.Domain) && !utils.ValidIPHost(bc.Domain) {
-			response.Failed("域名格式校验失败", c)
+			dto.Failed("域名格式校验失败", c)
 			return
 		}
 		if len(bc.SiteName) <= 0 {
-			response.Failed("网站名称不能为空", c)
+			dto.Failed("网站名称不能为空", c)
 			return
 		}
 	} else {
-		response.Failed(fmt.Sprint("请求参数异常:  ", err), c)
+		dto.Failed(fmt.Sprint("请求参数异常:  ", err), c)
 		return
 	}
 
 	if err := service.ManageSvc.UpdateSiteBasic(bc); err != nil {
-		response.Failed(fmt.Sprint("网站配置更新失败:  ", err), c)
+		dto.Failed(fmt.Sprint("网站配置更新失败:  ", err), c)
 		return
 	}
-	response.SuccessOnlyMsg("更新成功", c)
+	dto.SuccessOnlyMsg("更新成功", c)
 }
 
 // ResetSiteBasic 重置网站配置信息为初始化状态
 func (h *ManageHandler) ResetSiteBasic(c *gin.Context) {
 	// TODO: Config reset implementation. Need to port SystemInit.BasicConfigInit()
-	response.SuccessOnlyMsg("配置信息重置成功", c)
+	dto.SuccessOnlyMsg("配置信息重置成功", c)
 }
 
 // ------------------------------------------------------ 轮播数据配置 ------------------------------------------------------
@@ -62,52 +62,52 @@ func (h *ManageHandler) ResetSiteBasic(c *gin.Context) {
 // BannerList 获取轮播图数据
 func (h *ManageHandler) BannerList(c *gin.Context) {
 	bl := service.ManageSvc.GetBanners()
-	response.Success(bl, "配置信息获取成功", c)
+	dto.Success(bl, "配置信息获取成功", c)
 }
 
 // BannerFind 返回ID对应的横幅信息
 func (h *ManageHandler) BannerFind(c *gin.Context) {
 	id := c.Query("id")
 	if id == "" {
-		response.Failed("Banner信息获取失败, ID信息异常", c)
+		dto.Failed("Banner信息获取失败, ID信息异常", c)
 		return
 	}
 	bl := service.ManageSvc.GetBanners()
 	for _, b := range bl {
 		if b.Id == id {
-			response.Success(b, "Banner信息获取成功", c)
+			dto.Success(b, "Banner信息获取成功", c)
 			return
 		}
 	}
-	response.Failed("Banner信息获取失败", c)
+	dto.Failed("Banner信息获取失败", c)
 }
 
 // BannerAdd  添加海报数据
 func (h *ManageHandler) BannerAdd(c *gin.Context) {
 	var b model.Banner
 	if err := c.ShouldBindJSON(&b); err != nil {
-		response.Failed("Banner参数提交异常", c)
+		dto.Failed("Banner参数提交异常", c)
 		return
 	}
 	b.Id = utils.GenerateSalt()
 	bl := service.ManageSvc.GetBanners()
 	if len(bl) >= 6 {
-		response.Failed("Banners最大阈值为6, 无法添加新的banner信息", c)
+		dto.Failed("Banners最大阈值为6, 无法添加新的banner信息", c)
 		return
 	}
 	bl = append(bl, b)
 	if err := service.ManageSvc.SaveBanners(bl); err != nil {
-		response.Failed(fmt.Sprintln("Banners信息添加失败,", err), c)
+		dto.Failed(fmt.Sprintln("Banners信息添加失败,", err), c)
 		return
 	}
-	response.SuccessOnlyMsg("海报信息添加成功", c)
+	dto.SuccessOnlyMsg("海报信息添加成功", c)
 }
 
 // BannerUpdate  更新海报数据
 func (h *ManageHandler) BannerUpdate(c *gin.Context) {
 	var banner model.Banner
 	if err := c.ShouldBindJSON(&banner); err != nil {
-		response.Failed("Banner参数提交异常", c)
+		dto.Failed("Banner参数提交异常", c)
 		return
 	}
 	bl := service.ManageSvc.GetBanners()
@@ -115,21 +115,21 @@ func (h *ManageHandler) BannerUpdate(c *gin.Context) {
 		if b.Id == banner.Id {
 			bl[i] = banner
 			if err := service.ManageSvc.SaveBanners(bl); err != nil {
-				response.Failed("海报信息更新失败", c)
+				dto.Failed("海报信息更新失败", c)
 			} else {
-				response.SuccessOnlyMsg("海报信息更新成功", c)
+				dto.SuccessOnlyMsg("海报信息更新成功", c)
 				return
 			}
 		}
 	}
-	response.Failed("海报信息更新失败, 未匹配对应Banner信息", c)
+	dto.Failed("海报信息更新失败, 未匹配对应Banner信息", c)
 }
 
 // BannerDel 删除海报数据
 func (h *ManageHandler) BannerDel(c *gin.Context) {
 	id := c.Query("id")
 	if id == "" {
-		response.Failed("Banner信息获取失败, ID信息异常", c)
+		dto.Failed("Banner信息获取失败, ID信息异常", c)
 		return
 	}
 	bl := service.ManageSvc.GetBanners()
@@ -137,11 +137,11 @@ func (h *ManageHandler) BannerDel(c *gin.Context) {
 		if b.Id == id {
 			bl = append(bl[:i], bl[i+1:]...)
 			_ = service.ManageSvc.SaveBanners(bl)
-			response.SuccessOnlyMsg("海报信息删除成功", c)
+			dto.SuccessOnlyMsg("海报信息删除成功", c)
 			return
 		}
 	}
-	response.Failed("海报信息删除失败", c)
+	dto.Failed("海报信息删除失败", c)
 }
 
 // ------------------------------------------------------ 参数校验 ------------------------------------------------------

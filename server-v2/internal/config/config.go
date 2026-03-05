@@ -68,9 +68,6 @@ const (
 
 // -------------------------Database Connection Params-----------------------------------
 const (
-	// SearchTableName 存放检索信息的数据表名
-	SearchTableName  = "search"
-	UserTableName    = "users"
 	UserIdInitialVal = 10000
 )
 

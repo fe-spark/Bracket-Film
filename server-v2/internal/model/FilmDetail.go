@@ -1,4 +1,4 @@
-package collect
+package model
 
 import (
 	"encoding/xml"

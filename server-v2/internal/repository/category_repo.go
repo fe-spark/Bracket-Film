@@ -3,17 +3,10 @@ package repository
 import (
 	"encoding/json"
 
-	"server-v2/config"
+	"server-v2/internal/config"
 	"server-v2/internal/model"
-	"server-v2/pkg/db"
+	"server-v2/internal/infra/db"
 )
-
-// CreateCategoryTable 创建分类持久化表
-func CreateCategoryTable() {
-	if !db.Mdb.Migrator().HasTable(&model.CategoryPersistent{}) {
-		_ = db.Mdb.AutoMigrate(&model.CategoryPersistent{})
-	}
-}
 
 // SaveCategoryTree 保存影片分类信息 (MySQL 持久化 + Redis write-through)
 func SaveCategoryTree(tree *model.CategoryTree) error {
