@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Table,
   Tag,
@@ -12,6 +12,8 @@ import {
   Popconfirm,
   Tooltip,
   Pagination,
+  Card,
+  Typography,
 } from "antd";
 import { useRouter } from "next/navigation";
 import {
@@ -22,6 +24,7 @@ import {
   AimOutlined,
   FireOutlined,
   PlusOutlined,
+  FilterOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { ApiGet } from "@/lib/api";
@@ -30,6 +33,7 @@ import styles from "./page.module.less";
 import { useAppMessage } from "@/lib/useAppMessage";
 
 const { RangePicker } = DatePicker;
+const { Text, Title } = Typography;
 
 interface FilmItem {
   mid: number;
@@ -47,6 +51,7 @@ export default function FilmListPage() {
   const router = useRouter();
   const [list, setList] = useState<FilmItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [syncingIds, setSyncingIds] = useState<number[]>([]);
   const [page, setPage] = useState({ current: 1, pageSize: 10, total: 0 });
 
   // Filters
@@ -97,7 +102,6 @@ export default function FilmListPage() {
           setList(formattedList);
           setPage(resp.data.params.paging);
 
-          // Update options if provided
           if (resp.data.options) {
             setOptions((prev: any) => ({
               ...prev,
@@ -120,35 +124,27 @@ export default function FilmListPage() {
   const handleClassChange = (value: number) => {
     setClassId(value);
     const selectedClass = options.class?.find((c: any) => c.id === value);
-    if (!selectedClass) return;
-
+    
     const newParams = { ...params };
-    if (selectedClass.pid <= 0) {
-      newParams.pid = selectedClass.id;
+    if (!selectedClass) {
+      newParams.pid = 0;
       newParams.cid = 0;
+      setOptions((prev: any) => ({ ...prev, Plot: [], Area: [], Language: [] }));
     } else {
-      newParams.pid = selectedClass.pid;
-      newParams.cid = selectedClass.id;
-    }
+      if (selectedClass.pid <= 0) {
+        newParams.pid = selectedClass.id;
+        newParams.cid = 0;
+      } else {
+        newParams.pid = selectedClass.pid;
+        newParams.cid = selectedClass.id;
+      }
 
-    // Handle tags (Plot, Area, Language)
-    const t =
-      selectedClass.pid === 0
-        ? options.tags[selectedClass.id]
-        : options.tags[selectedClass.pid];
-    if (t) {
+      const t = selectedClass.pid === 0 ? options.tags[selectedClass.id] : options.tags[selectedClass.pid];
       setOptions((prev: any) => ({
         ...prev,
-        Plot: t.Plot || [],
-        Area: t.Area || [],
-        Language: t.Language || [],
-      }));
-    } else {
-      setOptions((prev: any) => ({
-        ...prev,
-        Plot: [],
-        Area: [],
-        Language: [],
+        Plot: t?.Plot || [],
+        Area: t?.Area || [],
+        Language: t?.Language || [],
       }));
     }
 
@@ -160,7 +156,7 @@ export default function FilmListPage() {
 
   const onSearch = () => {
     const p = { ...params };
-    if (dateRange && dateRange[0] && dateRange[1]) {
+    if (dateRange?.[0] && dateRange?.[1]) {
       p.beginTime = dateRange[0].format("YYYY-MM-DD HH:mm:ss");
       p.endTime = dateRange[1].format("YYYY-MM-DD HH:mm:ss");
     } else {
@@ -169,163 +165,161 @@ export default function FilmListPage() {
     }
     setParams(p);
     setPage({ ...page, current: 1 });
-    // Trigger fetch in effect or here manually
     getFilmPage({ ...page, current: 1 });
   };
 
-  const handleUpdateSingle = async (mid: number) => {
-    const resp = await ApiGet("/manage/spider/update/single", { ids: mid });
-    if (resp.code === 0) message.success(resp.msg);
-    else message.error(resp.msg);
-  };
+  const handleUpdateSingle = useCallback(async (mid: number) => {
+    setSyncingIds((prev) => [...prev, mid]);
+    try {
+      const resp = await ApiGet("/manage/spider/update/single", { ids: mid });
+      if (resp.code === 0) {
+        message.success(resp.msg);
+        getFilmPage();
+      } else {
+        message.error(resp.msg);
+      }
+    } finally {
+      setTimeout(() => {
+        setSyncingIds((prev) => prev.filter((id) => id !== mid));
+      }, 500);
+    }
+  }, [getFilmPage, message]);
 
-  const handleDelFilm = async (id: number) => {
+  const handleDelFilm = useCallback(async (id: number) => {
     const resp = await ApiGet("/manage/film/search/del", { id });
     if (resp.code === 0) {
       message.success(resp.msg);
       getFilmPage();
-    } else message.error(resp.msg);
-  };
+    } else {
+      message.error(resp.msg);
+    }
+  }, [getFilmPage, message]);
 
-  const columns: ColumnsType<FilmItem> = [
+  const columns = useMemo<ColumnsType<FilmItem>>(() => [
     {
-      title: "序号",
-      key: "index",
-      width: 60,
-      render: (_, __, index) => (
-        <span style={{ color: "#8b40ff" }}>
-          {(page.current - 1) * page.pageSize + index + 1}
-        </span>
+      title: "影片信息",
+      key: "info",
+      width: 300,
+      render: (_, record) => (
+        <Space direction="vertical" size={2}>
+          <Text className={styles.filmName} onClick={() => window.open(`/filmDetail?link=${record.mid}`, "_blank")}>
+            {record.name}
+          </Text>
+          <Space>
+            <Tag color="#8b40ff" style={{ borderRadius: 4 }}>ID: {record.mid}</Tag>
+            <Tag color="orange" style={{ borderRadius: 4 }}>{record.cName}</Tag>
+          </Space>
+        </Space>
       ),
     },
     {
-      title: "影片ID",
-      dataIndex: "mid",
-      align: "center",
-      render: (v) => <Tag color="success">{v}</Tag>,
-    },
-    {
-      title: "影片名称",
-      dataIndex: "name",
-      ellipsis: true,
-      className: styles.filmName,
-    },
-    {
-      title: "所属分类",
-      dataIndex: "cName",
-      align: "center",
-      render: (v) => <Tag color="orange">{v}</Tag>,
-    },
-    {
-      title: "年份",
-      dataIndex: "year",
-      align: "center",
-      render: (v) => <Tag color="orange">{v}</Tag>,
-    },
-    {
-      title: "评分",
-      dataIndex: "score",
-      align: "center",
-      sorter: (a, b) => Number(a.score) - Number(b.score),
-      render: (v) => <Tag color="processing">{v}</Tag>,
-    },
-    {
-      title: "热度",
-      dataIndex: "hits",
-      align: "center",
-      sorter: (a, b) => a.hits - b.hits,
-      render: (v) => (
-        <Tag color="error">
-          <FireOutlined /> {v}
-        </Tag>
+      title: "详情指标",
+      key: "metrics",
+      width: 200,
+      render: (_, record) => (
+        <Space size={16}>
+          <div style={{ textAlign: 'center' }}>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>评分</Text>
+            <Text strong style={{ color: "var(--ant-color-primary)" }}>{record.score}</Text>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>年份</Text>
+            <Text>{record.year}</Text>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>热度</Text>
+            <Text type="danger"><FireOutlined /> {record.hits}</Text>
+          </div>
+        </Space>
       ),
     },
     {
       title: "更新状态",
-      dataIndex: "remarks",
+      key: "status",
       align: "center",
-      render: (v) => (
-        <Tag color={v.includes("更新") ? "warning" : "success"}>{v}</Tag>
+      render: (_, record) => (
+        <Tag 
+          color={record.remarks.includes("更新") ? "warning" : "success"}
+          style={{ borderRadius: 6, padding: '2px 8px' }}
+        >
+          {record.remarks}
+        </Tag>
       ),
     },
     {
       title: "更新时间",
       dataIndex: "updateStamp",
       align: "center",
-      sorter: (a, b) => a.updateStamp - b.updateStamp,
       render: (v) => (
-        <Tag color="success">
-          {dayjs(v * 1000).format("YYYY-MM-DD HH:mm:ss")}
-        </Tag>
+        <Text type="secondary" style={{ fontSize: 13 }}>
+          {dayjs(v * 1000).format("YYYY-MM-DD HH:ss")}
+        </Text>
       ),
     },
     {
       title: "操作",
       key: "action",
       align: "center",
-      width: 150,
+      width: 200,
       fixed: "right",
       render: (_, record) => (
-        <Space>
+        <Space size="middle">
           <Tooltip title="详情预览">
             <Button
-              type="primary"
-              icon={<AimOutlined />}
-              shape="circle"
-              size="small"
-              ghost
-              onClick={() =>
-                window.open(`/filmDetail?link=${record.mid}`, "_blank")
-              }
+              className={styles.actionButton}
+              type="text"
+              icon={<AimOutlined style={{ fontSize: 18, color: "var(--ant-color-primary)" }} />}
+              onClick={() => window.open(`/filmDetail?link=${record.mid}`, "_blank")}
             />
           </Tooltip>
-          <Tooltip title="同步更新">
+          <Tooltip title="同步更新 (全站并行)">
             <Button
-              type="primary"
-              icon={<ReloadOutlined />}
-              shape="circle"
-              size="small"
-              style={{ background: "#52c41a", borderColor: "#52c41a" }}
+              className={styles.actionButton}
+              type="text"
+              icon={
+                <ReloadOutlined 
+                  className={`${styles.syncIcon} ${syncingIds.includes(record.mid) ? styles.syncing : ""}`}
+                  style={{ fontSize: 18, color: "#52c41a" }} 
+                />
+              }
               onClick={() => handleUpdateSingle(record.mid)}
             />
           </Tooltip>
           <Tooltip title="修改影视">
             <Button
-              type="primary"
-              icon={<EditOutlined />}
-              shape="circle"
-              size="small"
+              className={styles.actionButton}
+              type="text"
+              icon={<EditOutlined style={{ fontSize: 18, color: "#1890ff" }} />}
               onClick={() => router.push(`/manage/film/add?id=${record.mid}`)}
             />
           </Tooltip>
-          <Popconfirm
-            title="确认删除此影片？"
-            onConfirm={() => handleDelFilm(record.ID)}
-          >
+          <Popconfirm title="确认删除此影片？" onConfirm={() => handleDelFilm(record.ID)}>
             <Button
+              className={styles.actionButton}
+              type="text"
               danger
-              icon={<DeleteOutlined />}
-              shape="circle"
-              size="small"
+              icon={<DeleteOutlined style={{ fontSize: 18 }} />}
             />
           </Popconfirm>
         </Space>
       ),
     },
-  ];
+  ], [syncingIds, router, handleDelFilm, handleUpdateSingle]);
 
   return (
     <div className={styles.container}>
       <div className={styles.filterBar}>
-        <Input
-          placeholder="片名搜索"
-          prefix={<SearchOutlined />}
+        <Input.Search
+          placeholder="搜索片名..."
           value={params.name}
           onChange={(e) => setParams({ ...params, name: e.target.value })}
-          style={{ width: 180 }}
+          className={styles.searchInput}
+          allowClear
+          onSearch={onSearch}
+          enterButton
         />
         <Select
-          placeholder="影片分类"
+          placeholder="选择分类"
           className={styles.filterItem}
           value={classId || undefined}
           onChange={handleClassChange}
@@ -336,7 +330,7 @@ export default function FilmListPage() {
           allowClear
         />
         <Select
-          placeholder="剧情筛选"
+          placeholder="剧情标签"
           className={styles.filterItem}
           value={params.plot || undefined}
           onChange={(v) => setParams({ ...params, plot: v })}
@@ -347,44 +341,11 @@ export default function FilmListPage() {
           allowClear
         />
         <Select
-          placeholder="地区筛选"
+          placeholder="地区"
           className={styles.filterItem}
           value={params.area || undefined}
           onChange={(v) => setParams({ ...params, area: v })}
           options={options.Area?.map((i: any) => ({
-            label: i.Name,
-            value: i.Value,
-          }))}
-          allowClear
-        />
-        <Select
-          placeholder="语言筛选"
-          className={styles.filterItem}
-          value={params.language || undefined}
-          onChange={(v) => setParams({ ...params, language: v })}
-          options={options.Language?.map((i: any) => ({
-            label: i.Name,
-            value: i.Value,
-          }))}
-          allowClear
-        />
-        <Select
-          placeholder="上映年份"
-          className={styles.filterItem}
-          value={params.year || undefined}
-          onChange={(v) => setParams({ ...params, year: v })}
-          options={options.year?.map((i: any) => ({
-            label: i.Name,
-            value: i.Value,
-          }))}
-          allowClear
-        />
-        <Select
-          placeholder="更新状态"
-          className={styles.filterItem}
-          value={params.remarks || undefined}
-          onChange={(v) => setParams({ ...params, remarks: v })}
-          options={options.remarks?.map((i: any) => ({
             label: i.Name,
             value: i.Value,
           }))}
@@ -395,22 +356,26 @@ export default function FilmListPage() {
           value={dateRange}
           onChange={(v) => setDateRange(v)}
         />
-        <Button type="primary" icon={<SearchOutlined />} onClick={onSearch}>
-          查询
+        <Button
+          type="primary"
+          icon={<SearchOutlined />}
+          onClick={onSearch}
+        >
+          搜索
         </Button>
       </div>
 
       <div className={styles.tableContainer}>
         <Table
           title={() => (
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <div className={styles.tableTitleWarp}>
+              <Title level={5} style={{ margin: 0 }}>影视资源库</Title>
               <Button
                 type="primary"
                 icon={<PlusOutlined />}
                 onClick={() => router.push("/manage/film/add")}
-                className={styles.addFilmBtn}
               >
-                新增影片
+                发布新影片
               </Button>
             </div>
           )}
@@ -418,10 +383,10 @@ export default function FilmListPage() {
           dataSource={list}
           rowKey="mid"
           loading={loading}
-          bordered
-          size="middle"
           pagination={false}
-          scroll={{ x: "max-content" }}
+          scroll={{ x: 1200 }}
+          size="middle"
+          bordered
         />
         <div className={styles.paginationContainer}>
           <Pagination

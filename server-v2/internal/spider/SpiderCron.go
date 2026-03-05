@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 
-	"server-v2/config"
 	"server-v2/internal/model"
 	"server-v2/internal/repository"
 
@@ -128,17 +127,6 @@ func AddOrphanCleanCron(id, spec string) (cron.EntryID, error) {
 		}
 		executeTask(ft)
 	})
-}
-
-// ClearCache 清理API接口数据缓存
-func ClearCache() {
-	repository.RemoveCache(config.IndexCacheKey)
-	repository.RemoveCacheByPattern("MovieDetail:*")
-	repository.RemoveCacheByPattern("MovieBasicInfo:*")
-	repository.RemoveCacheByPattern("Cache:List:*")
-	repository.RemoveCacheByPattern("Cache:Hot:*")
-	repository.RemoveCacheByPattern("Cache:Search:*")
-	repository.RemoveCacheByPattern("Cache:Tag:*")
 }
 
 // ReloadCronTask 重新加载定时任务（当配置或状态发生变化时）

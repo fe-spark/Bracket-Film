@@ -18,7 +18,6 @@ func SetupRouter() *gin.Engine {
 
 	api.GET(`/index`, handler.IndexHd.Index)
 	api.GET(`/proxy/video`, handler.ProxyHd.ProxyVideo)
-	api.GET(`/cache/del`, handler.IndexHd.IndexCacheDel)
 	api.GET(`/config/basic`, handler.ManageHd.SiteBasicConfig)
 	api.GET(`/navCategory`, handler.IndexHd.CategoriesInfo)
 	api.GET(`/filmDetail`, handler.IndexHd.FilmDetail)
@@ -102,7 +101,6 @@ func SetupRouter() *gin.Engine {
 			spiderRoute.GET(`/clear`, handler.SpiderHd.ClearAllFilm)
 			spiderRoute.GET(`/update/single`, handler.SpiderHd.SingleUpdateSpider)
 			spiderRoute.GET(`/class/cover`, handler.SpiderHd.CoverFilmClass)
-			spiderRoute.GET(`/master/status`, handler.SpiderHd.MasterDataStatus)
 		}
 
 		// filmManage 影视管理

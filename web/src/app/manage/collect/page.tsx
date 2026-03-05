@@ -65,9 +65,6 @@ export default function CollectManagePage() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const { message } = useAppMessage();
 
-  // 主站是否已有采集数据（从服务端获取）
-  const [hasMasterData, setHasMasterData] = useState(false);
-
   // 批量采集弹窗
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchIds, setBatchIds] = useState<string[]>([]);
@@ -94,15 +91,6 @@ export default function CollectManagePage() {
       })),
     [batchOptions, siteList]
   );
-
-  // 主站是否正在采集中
-  const masterIsCollecting = useMemo(
-    () => siteList.filter((s) => s.grade === 0).some((s) => activeCollectIds.includes(s.id)),
-    [siteList, activeCollectIds]
-  );
-
-  // 附属站可采集条件：主站已有数据 且 主站当前未在采集
-  const slaveCanCollect = hasMasterData && !masterIsCollecting;
 
   const getCollectList = useCallback(async () => {
     setLoading(true);
@@ -145,23 +133,16 @@ export default function CollectManagePage() {
     }
   }, []);
 
-  const getMasterDataStatus = useCallback(async () => {
-    const resp = await ApiGet("/manage/spider/master/status");
-    if (resp.code === 0) setHasMasterData(resp.data === true);
-  }, []);
-
   useEffect(() => {
     getCollectList();
     getCollectingState();
-    getMasterDataStatus();
     timerRef.current = setInterval(() => {
       getCollectingState();
-      getMasterDataStatus();
     }, 4000);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [getCollectList, getCollectingState, getMasterDataStatus]);
+  }, [getCollectList, getCollectingState]);
 
   const changeSourceState = async (record: FilmSource) => {
     const resp = await ApiPost("/manage/collect/change", {
@@ -427,26 +408,9 @@ export default function CollectManagePage() {
       fixed: "right",
       render: (_, record) => {
         const isRunning = activeCollectIds.includes(record.id);
-        const isSlave = record.grade === 1;
 
-        // 附属站采集按钮（开始/截断）的渲染逻辑
+        // 采集按钮（开始/截断）的渲染逻辑：不再区分主从顺序
         const renderStartBtn = () => {
-          // 附属站：主站无数据时完全不渲染采集按钮
-          if (isSlave && !hasMasterData) return null;
-          // 附属站：主站采集中时渲染禁用按钮并提示原因
-          if (isSlave && masterIsCollecting) {
-            return (
-              <Tooltip title="主站正在采集中，请等待主站采集完成后再采集附属站">
-                <Button
-                  type="primary"
-                  icon={<PoweroffOutlined />}
-                  shape="circle"
-                  size="small"
-                  disabled
-                />
-              </Tooltip>
-            );
-          }
           // 正常情况：正在运行时显示截断重采，否则显示开始采集
           return isRunning ? (
             <Tooltip title="截断并重新开始">
@@ -585,7 +549,7 @@ export default function CollectManagePage() {
         <Button type="primary" icon={<PlusOutlined />} onClick={openAddDialog}>
           添加采集站
         </Button>
-        <Tooltip title="支持全站点选择；执行时将按主站→附属站顺序调度">
+        <Tooltip title="支持全站点选择；执行时所有站点将并行采集">
           <Button
             type="primary"
             icon={<SendOutlined />}
@@ -600,7 +564,7 @@ export default function CollectManagePage() {
           style={{ color: "var(--ant-color-warning)", borderColor: "var(--ant-color-warning)" }}
           onClick={() => setReCollectOpen(true)}
         >
-          清空重建
+          从零重采
         </Button>
         <Button
           danger
@@ -742,7 +706,7 @@ export default function CollectManagePage() {
       </Modal>
 
       <Modal
-        title="清空数据并重建主站"
+        title="清空并重采所有站点"
         open={reCollectOpen}
         onCancel={() => setReCollectOpen(false)}
         onOk={reCollect}
@@ -750,7 +714,7 @@ export default function CollectManagePage() {
         okButtonProps={{ danger: true }}
       >
         <p style={{ color: "var(--ant-color-warning)", marginBottom: 16 }}>
-          此操作将<strong>清空主站与附属站的全部影视数据</strong>，随后仅对<strong>已启用的主站</strong>执行全量采集重建，附属站数据由定时任务自动补充，操作不可逆。
+          此操作将<strong>清空所有影视数据</strong>，随后对<strong>所有已启用</strong>的资源站（主站与附属站）执行并行全量采集，操作不可逆。
         </p>
         <Input.Password
           placeholder="请输入管理密码"

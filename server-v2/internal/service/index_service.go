@@ -1,14 +1,11 @@
 package service
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 
-	"server-v2/config"
 	"server-v2/internal/model"
 	"server-v2/internal/repository"
-	"server-v2/internal/spider"
 	"server-v2/pkg/response"
 	"server-v2/pkg/utils"
 )
@@ -19,11 +16,7 @@ var IndexSvc = new(IndexService)
 
 // IndexPage 首页数据处理
 func (i *IndexService) IndexPage() map[string]interface{} {
-	Info := repository.GetCacheData(config.IndexCacheKey)
-	if Info != nil {
-		return Info
-	}
-	Info = make(map[string]interface{})
+	Info := make(map[string]interface{})
 	tree := model.CategoryTree{Category: &model.Category{Id: 0, Name: "分类信息"}}
 	sysTree := repository.GetCategoryTree()
 	for _, c := range sysTree.Children {
@@ -59,13 +52,7 @@ func (i *IndexService) IndexPage() map[string]interface{} {
 		banners = make(model.Banners, 0)
 	}
 	Info["banners"] = banners
-	repository.DataCache(config.IndexCacheKey, Info)
 	return Info
-}
-
-// ClearIndexCache 删除首页数据缓存
-func (i *IndexService) ClearIndexCache() {
-	spider.ClearCache()
 }
 
 // GetFilmDetail 影片详情信息页面处理
@@ -74,9 +61,12 @@ func (i *IndexService) GetFilmDetail(id int) model.MovieDetailVo {
 	if search == nil {
 		return model.MovieDetailVo{List: make([]model.PlayLinkVo, 0)}
 	}
-	movieDetail := repository.GetDetailByKey(fmt.Sprintf(config.MovieDetailKey, search.Cid, search.Mid))
-	res := model.MovieDetailVo{MovieDetail: movieDetail}
-	res.List = multipleSource(&movieDetail)
+	movieDetail := repository.GetMovieDetail(search.Cid, search.Mid)
+	if movieDetail == nil {
+		return model.MovieDetailVo{List: make([]model.PlayLinkVo, 0)}
+	}
+	res := model.MovieDetailVo{MovieDetail: *movieDetail}
+	res.List = multipleSource(movieDetail)
 	return res
 }
 
@@ -84,18 +74,16 @@ func (i *IndexService) GetFilmDetail(id int) model.MovieDetailVo {
 func (i *IndexService) GetCategoryInfo() map[string]any {
 	nav := make(map[string]any)
 	tree := repository.GetCategoryTree()
-	if true {
-		for _, t := range tree.Children {
-			switch t.Category.Name {
-			case "动漫", "动漫片":
-				nav["cartoon"] = t
-			case "电影", "电影片":
-				nav["film"] = t
-			case "连续剧", "电视剧":
-				nav["tv"] = t
-			case "综艺", "综艺片":
-				nav["variety"] = t
-			}
+	for _, t := range tree.Children {
+		switch t.Category.Name {
+		case "动漫", "动漫片":
+			nav["cartoon"] = t
+		case "电影", "电影片":
+			nav["film"] = t
+		case "连续剧", "电视剧":
+			nav["tv"] = t
+		case "综艺", "综艺片":
+			nav["variety"] = t
 		}
 	}
 	return nav
@@ -105,11 +93,9 @@ func (i *IndexService) GetCategoryInfo() map[string]any {
 func (i *IndexService) GetNavCategory() []*model.Category {
 	tree := repository.GetCategoryTree()
 	cl := make([]*model.Category, 0)
-	if true {
-		for _, c := range tree.Children {
-			if c.Show {
-				cl = append(cl, c.Category)
-			}
+	for _, c := range tree.Children {
+		if c.Show {
+			cl = append(cl, c.Category)
 		}
 	}
 	return cl
@@ -120,7 +106,7 @@ func (i *IndexService) SearchFilmInfo(key string, page *response.Page) []model.M
 	sl := repository.SearchFilmKeyword(key, page)
 	var bl []model.MovieBasicInfo
 	for _, s := range sl {
-		bl = append(bl, repository.GetBasicInfoByKey(fmt.Sprintf(config.MovieBasicInfoKey, s.Cid, s.Mid)))
+		bl = append(bl, repository.GetBasicInfoByKey(s.Cid, s.Mid))
 	}
 	return bl
 }

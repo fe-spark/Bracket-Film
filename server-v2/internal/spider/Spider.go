@@ -17,6 +17,8 @@ import (
 	"server-v2/internal/repository"
 	"server-v2/pkg/conver"
 	"server-v2/pkg/utils"
+
+	"golang.org/x/time/rate"
 )
 
 /*
@@ -37,9 +39,36 @@ var activeTasks sync.Map
 // taskMu 保护同一站点 cancel+Store 的原子性，防止并发截停竞态
 var taskMu sync.Mutex
 
+// limiters 存储各站点的限流器
+var limiters sync.Map
+
 type collectTask struct {
 	cancel context.CancelFunc
 	reqId  string
+}
+
+// getLimiter 获取指定站点的限流器，如果不存在则基于站点的 Interval 配置创建一个
+// Interval 单位为毫秒，表示两次请求间的最小间隔
+func getLimiter(s *model.FilmSource) *rate.Limiter {
+	if s == nil {
+		return rate.NewLimiter(rate.Every(config.DefaultSpiderInterval*time.Millisecond), 1)
+	}
+	if val, ok := limiters.Load(s.Id); ok {
+		return val.(*rate.Limiter)
+	}
+
+	// 优先使用站点配置的 Interval，否则使用全局默认配置
+	interval := int64(config.DefaultSpiderInterval)
+	if s.Interval > 0 {
+		interval = int64(s.Interval)
+	}
+
+	r := rate.Every(time.Duration(interval) * time.Millisecond)
+
+	// 允许最多 1 个令牌的突发流量（Burst = 1，即严格控制间隔）
+	l := rate.NewLimiter(r, 1)
+	limiters.Store(s.Id, l)
+	return l
 }
 
 func getPageCountWithRetry(ctx context.Context, r utils.RequestInfo) (int, error) {
@@ -184,29 +213,24 @@ func HandleCollect(id string, h int) error {
 					log.Printf("[Spider] 站点 %s 采集任务被中断(同步模式)\n", s.Name)
 					return nil
 				default:
+					// 使用限流器等待
+					_ = getLimiter(s).Wait(ctx)
 					collectFilm(ctx, s, h, i)
-					// 如果设置了采集间隔，每采集完一页后等待
-					if s.Interval > 0 {
-						time.Sleep(time.Duration(s.Interval) * time.Millisecond)
-					}
 				}
 			}
 		} else {
-			// 并发模式 (并发 Worker 内部已包含 Sleep 逻辑)
+			// 并发模式 (内部也已迁移至限流器)
 			ConcurrentPageSpider(ctx, pageCount, s, h, collectFilm)
 		}
-		// 视频数据采集完成后清理相关缓存
+
 		switch s.Grade {
 		case model.MasterCollect:
 			// 开启图片同步
 			if s.SyncPictures {
 				repository.SyncFilmPicture()
 			}
-			// 主站数据变更：清理所有影片相关缓存
-			ClearCache()
+
 		case model.SlaveCollect:
-			// 附属站只更新播放源，仅清 Cache:Play:*
-			repository.RemoveCacheByPattern("Cache:Play:*")
 		}
 
 	case model.CollectArticle, model.CollectActor, model.CollectRole, model.CollectWebSite:
@@ -224,7 +248,7 @@ func CollectCategory(s *model.FilmSource) {
 		log.Println("GetCategoryTree Error: ", err)
 		return
 	}
-	// 保存 tree 到 MySQL (及可选缓存)
+	// 保存 tree 到 MySQL
 	err = repository.SaveCategoryTree(categoryTree)
 	if err != nil {
 		log.Println("SaveCategoryTree Error: ", err)
@@ -277,6 +301,10 @@ func collectFilm(ctx context.Context, s *model.FilmSource, h, pg int) {
 	if h > 0 {
 		r.Params.Set("h", fmt.Sprint(h))
 	}
+
+	// collectFilm 本身作为并发 Worker 或同步循环的一部分
+	// 具体的 Wait 逻辑已由调用方（如 ConcurrentPageSpider 或 HandleCollect 循环）控制，
+	// 此处仅执行请求，保证原子请求的纯粹性
 	list, err := getFilmDetailWithRetry(ctx, r)
 	if err != nil || len(list) <= 0 {
 		saveFilmPageFailure(s, h, pg, err)
@@ -327,12 +355,10 @@ func ConcurrentPageSpider(ctx context.Context, capacity int, s *model.FilmSource
 					if !ok {
 						return
 					}
+					// 使用限流器等待授权，确保全局（跨 Worker）频率一致
+					_ = getLimiter(s).Wait(ctx)
 					// 执行对应的采集方法
 					collectFunc(ctx, s, h, pg)
-					// 如果设置了采集间隔，每个 worker 采集完一页后都要等待
-					if s.Interval > 0 {
-						time.Sleep(time.Duration(s.Interval) * time.Millisecond)
-					}
 				}
 			}
 		}()
@@ -349,35 +375,19 @@ func ConcurrentPageSpider(ctx context.Context, capacity int, s *model.FilmSource
 
 // BatchCollect 批量采集, 采集指定的所有站点最近x小时内更新的数据
 func BatchCollect(h int, ids ...string) {
-	masters := make([]model.FilmSource, 0)
-	slaves := make([]model.FilmSource, 0)
+	sources := make([]model.FilmSource, 0)
 	for _, id := range ids {
 		// 如果查询到对应Id的资源站信息, 且资源站处于启用状态
 		if fs := repository.FindCollectSourceById(id); fs != nil && fs.State {
-			if fs.Grade == model.MasterCollect {
-				masters = append(masters, *fs)
-			} else if fs.Grade == model.SlaveCollect {
-				slaves = append(slaves, *fs)
-			}
+			sources = append(sources, *fs)
 		}
 	}
 
-	if len(masters) > 0 {
-		runSourcesWithLimit(masters, h, "Spider-Master")
-	}
-	if len(slaves) == 0 {
+	if len(sources) == 0 {
 		return
 	}
 
-	if len(getEnabledSourcesByGrade(model.MasterCollect)) == 0 {
-		log.Println("[Spider] 批量采集：当前无启用主站，跳过附属站阶段")
-		return
-	}
-	if !repository.HasMasterData() {
-		log.Println("[Spider] 批量采集：主站数据未就绪，跳过附属站阶段")
-		return
-	}
-	runSourcesWithLimit(slaves, h, "Spider-Slave")
+	runSourcesWithLimit(sources, h, "Batch-Collect")
 }
 
 func getEnabledSourcesByGrade(grade model.SourceGrade) []model.FilmSource {
@@ -393,80 +403,73 @@ func getEnabledSourcesByGrade(grade model.SourceGrade) []model.FilmSource {
 
 // AutoCollect 自动进行对所有已启用站点的采集任务
 func AutoCollect(h int) {
-	// 阶段1：先采集主站（严格先主后从）
-	masters := getEnabledSourcesByGrade(model.MasterCollect)
-	if len(masters) == 0 {
-		log.Println("[Spider] 自动采集：未找到已启用主站，跳过主站阶段")
-		return
-	}
-	runSourcesWithLimit(masters, h, "Spider-Master")
-
-	// 主站阶段结束后再次检查主站启用状态（兼容运行期间被禁用/删除）
-	if len(getEnabledSourcesByGrade(model.MasterCollect)) == 0 {
-		log.Println("[Spider] 自动采集：主站阶段后无启用主站，跳过附属站阶段")
-		return
+	// 获取所有已启用的站点（不分主从，统一并行执行）
+	sources := repository.GetCollectSourceList()
+	enabled := make([]model.FilmSource, 0)
+	for _, s := range sources {
+		if s.State {
+			enabled = append(enabled, s)
+		}
 	}
 
-	// 阶段2：仅当主站数据存在时再采集附属站，防止主站异常变动导致附属站孤立更新
-	if !repository.HasMasterData() {
-		log.Println("[Spider] 自动采集：主站数据未就绪，跳过附属站阶段")
+	if len(enabled) == 0 {
+		log.Println("[Spider] 自动采集：未找到任何启用的站点")
 		return
 	}
 
-	slaves := getEnabledSourcesByGrade(model.SlaveCollect)
-	if len(slaves) == 0 {
-		log.Println("[Spider] 自动采集：无已启用附属站，任务完成")
-		return
-	}
-	runSourcesWithLimit(slaves, h, "Spider-Slave")
+	// 统一在并发限制下运行所有站点
+	runSourcesWithLimit(enabled, h, "Auto-Collect")
 }
 
-// ClearSpider  删除所有已采集的影片信息
+// ClearSpider 删除所有已采集的影片信息
 func ClearSpider() {
 	repository.FilmZero()
 }
 
-// ClearRedisOnly 仅清空 Redis 缓存
-func ClearRedisOnly() {
-	repository.RedisOnlyFlush()
-}
-
-// MasterOnlyCollect 仅对已启用的主站执行采集
-// 清空重采场景下使用：优先保证主站数据就绪，附属站由定时任务补充
-func MasterOnlyCollect(h int) {
-	masters := repository.GetCollectSourceListByGrade(model.MasterCollect)
+// StarZero 清空所有影视数据后重采所有已启用的站（并行模式）
+func StarZero(h int) {
+	repository.FilmZero()
+	// 获取所有已启用的主站与附属站
+	all := repository.GetCollectSourceList()
 	enabled := make([]model.FilmSource, 0)
-	for _, s := range masters {
+	for _, s := range all {
 		if s.State {
 			enabled = append(enabled, s)
 		}
 	}
 	if len(enabled) == 0 {
-		log.Println("[StarZero] 未找到已启用的主站，跳过采集")
+		log.Println("[StarZero] 未找到已启用的站点，跳过采集")
 		return
 	}
 	runSourcesWithLimit(enabled, h, "StarZero")
 }
 
-// StarZero 清空所有影视数据后仅重采主站
-// 附属站数据量大、独立更新，由定时任务或手动触发补采
-func StarZero(h int) {
-	repository.FilmZero()
-	MasterOnlyCollect(h)
-}
-
-// CollectSingleFilm 通过影片唯一ID获取影片信息
+// CollectSingleFilm 通过影片唯一ID获取影片信息 (多源并行同步)
 func CollectSingleFilm(ids string) {
-	// 获取采集站列表信息
-	fl := repository.GetCollectSourceList()
-	// 循环遍历所有采集站信息
-	for _, f := range fl {
-		// 目前仅对主站点进行处理
-		if f.Grade == model.MasterCollect && f.State {
-			collectFilmById(ids, &f)
-			return
+	// 获取所有已启用的采集站列表信息
+	all := repository.GetCollectSourceList()
+	enabled := make([]model.FilmSource, 0)
+	for _, f := range all {
+		if f.State {
+			enabled = append(enabled, f)
 		}
 	}
+
+	if len(enabled) == 0 {
+		log.Println("[Spider] CollectSingleFilm: 未找到任何启用的站点")
+		return
+	}
+
+	// 并行同步所有启用站点
+	var wg sync.WaitGroup
+	for _, s := range enabled {
+		wg.Add(1)
+		go func(src model.FilmSource) {
+			defer wg.Done()
+			collectFilmById(ids, &src)
+		}(s)
+	}
+	wg.Wait()
 }
 
 // recoverFilmPage 重试单条失败页：成功后标记原记录已处理，失败则更新待处理记录

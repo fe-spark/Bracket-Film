@@ -102,11 +102,6 @@ func (h *SpiderHandler) CoverFilmClass(c *gin.Context) {
 	response.SuccessOnlyMsg("影视分类信息重置成功, 请稍等片刻后刷新页面", c)
 }
 
-// DirectedSpider 采集指定的影片
-func (h *SpiderHandler) DirectedSpider(c *gin.Context) {
-	// Not Implemented
-}
-
 // SingleUpdateSpider 单一影片更新采集
 func (h *SpiderHandler) SingleUpdateSpider(c *gin.Context) {
 	ids := c.Query("ids")
@@ -116,11 +111,6 @@ func (h *SpiderHandler) SingleUpdateSpider(c *gin.Context) {
 	}
 	service.SpiderSvc.SyncCollect(ids)
 	response.SuccessOnlyMsg("影片更新任务已成功开启!!!", c)
-}
-
-// MasterDataStatus 查询主站是否已有采集数据
-func (h *SpiderHandler) MasterDataStatus(c *gin.Context) {
-	response.Success(service.SpiderSvc.HasMasterData(), "获取成功", c)
 }
 
 func verifyPassword(c *gin.Context, password string) bool {

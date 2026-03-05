@@ -36,15 +36,8 @@ const (
 const (
 	// CategoryTreeKey 分类树 key
 	CategoryTreeKey = "CategoryTree"
-	// FilmExpired 影片数据缓存有效期（主动失效，TTL 仅作兜底）
-	FilmExpired = time.Hour * 2
-	// ConfigCacheTTL 管理员写入控制的配置类 key 有效期（write-through，以长 TTL 最大化命中率）
+	// ConfigCacheTTL 管理员写入控制的配置类 key 有效期 (以长 TTL 最大化命中率)
 	ConfigCacheTTL = time.Hour * 24
-
-	// MovieDetailKey movie detail影视详情信息
-	MovieDetailKey = "MovieDetail:Cid%d:Id%d"
-	// MovieBasicInfoKey 影片基本信息, 简略版本
-	MovieBasicInfoKey = "MovieBasicInfo:Cid%d:Id%d"
 
 	// VirtualPictureKey 待同步图片临时存储 key
 	VirtualPictureKey = "VirtualPicture"
@@ -69,12 +62,8 @@ const (
 	EveryWeekSpec = "0 0 4 * * 0"
 	// DefaultUpdateTime 每次采集最近 3 小时内更新的影片
 	DefaultUpdateTime = 3
-)
-
-// -------------------------Web API相关redis key-----------------------------------
-const (
-	// IndexCacheKey , 首页数据缓存
-	IndexCacheKey = "IndexCache"
+	// DefaultSpiderInterval 默认采集间隔 (ms)，当站点未配置时使用
+	DefaultSpiderInterval = 500
 )
 
 // -------------------------Database Connection Params-----------------------------------
@@ -87,12 +76,10 @@ const (
 
 // -------------------------Provide Config-----------------------------------
 const (
-	// ResourceExpired API所需要的资源有效期
-	ResourceExpired = time.Hour * 24
-	PlayForm        = "bkm3u8"
-	PlayFormCloud   = "bracket"
-	PlayFormAll     = "bracket$$$bkm3u8"
-	RssVersion      = "5.1"
+	PlayForm      = "bkm3u8"
+	PlayFormCloud = "bracket"
+	PlayFormAll   = "bracket$$$bkm3u8"
+	RssVersion    = "5.1"
 )
 
 // -------------------------Security Config-----------------------------------

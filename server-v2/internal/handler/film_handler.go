@@ -165,7 +165,6 @@ func (h *FilmHandler) UpdateFilmClass(c *gin.Context) {
 		response.Failed(err.Error(), c)
 		return
 	}
-	service.IndexSvc.ClearIndexCache()
 	response.SuccessOnlyMsg("影片分类信息更新成功", c)
 }
 

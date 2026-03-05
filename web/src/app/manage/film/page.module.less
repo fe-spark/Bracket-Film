@@ -7,20 +7,31 @@
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+  align-items: center;
   padding: 16px;
-  margin-bottom: 16px;
   background: var(--ant-color-bg-container);
   border-radius: 8px;
+  margin-bottom: 16px;
 }
 
 .filterItem {
-  min-width: 140px;
+  width: 160px;
+}
+
+.searchInput {
+  width: 250px;
 }
 
 .tableContainer {
   background: var(--ant-color-bg-container);
   border-radius: 8px;
   overflow: hidden;
+}
+
+.tableTitleWarp {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .paginationContainer {
@@ -36,13 +47,13 @@
   color: var(--ant-color-primary);
 }
 
-.addFilmBtn {
-  font-weight: 600;
-  border-radius: 8px !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
-
-  &:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.22);
+.syncIcon {
+  &.syncing {
+    animation: rotate 1s linear infinite;
   }
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

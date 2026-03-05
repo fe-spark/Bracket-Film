@@ -23,9 +23,6 @@ func (s *FilmService) GetFilmPage(vo model.SearchVo) []model.SearchInfo {
 func (s *FilmService) GetSearchOptions() map[string]any {
 	var options = make(map[string]any)
 	tree := repository.GetCategoryTree()
-	if false {
-		return options
-	}
 	tree.Name = "全部分类"
 	options["class"] = conver.ConvertCategoryList(tree)
 	options["remarks"] = []map[string]string{{"Name": `全部`, "Value": ``}, {"Name": `完结`, "Value": `完结`}, {"Name": `未完结`, "Value": `未完结`}}
@@ -74,19 +71,12 @@ func (s *FilmService) DelFilm(id int64) error {
 
 // GetFilmClassTree 获取影片分类信息
 func (s *FilmService) GetFilmClassTree() model.CategoryTree {
-	tree := repository.GetCategoryTree()
-	if true {
-		return tree
-	}
-	return model.CategoryTree{}
+	return repository.GetCategoryTree()
 }
 
 // GetFilmClassById 通过ID获取影片分类信息
 func (s *FilmService) GetFilmClassById(id int64) *model.CategoryTree {
 	tree := repository.GetCategoryTree()
-	if false {
-		return nil
-	}
 	for _, c := range tree.Children {
 		if c.Id == id {
 			return c
@@ -105,9 +95,6 @@ func (s *FilmService) GetFilmClassById(id int64) *model.CategoryTree {
 // UpdateClass 更新分类信息
 func (s *FilmService) UpdateClass(class model.CategoryTree) error {
 	tree := repository.GetCategoryTree()
-	if false {
-		return errors.New("分类树不存在")
-	}
 	for _, c := range tree.Children {
 		if c.Id == class.Id {
 			if class.Name != "" {
@@ -149,9 +136,6 @@ func (s *FilmService) UpdateClass(class model.CategoryTree) error {
 // DelClass 删除分类信息
 func (s *FilmService) DelClass(id int64) error {
 	tree := repository.GetCategoryTree()
-	if false {
-		return errors.New("分类树不存在")
-	}
 	for i, c := range tree.Children {
 		if c.Id == id {
 			tree.Children = append(tree.Children[:i], tree.Children[i+1:]...)

@@ -34,7 +34,6 @@ func (s *CollectService) UpdateFilmSource(source model.FilmSource) error {
 	if masterSwitch || masterUriChanged {
 		log.Printf("[Collect] 检测到主站变更 (switch=%v, uriChanged=%v)，清理旧主站数据...", masterSwitch, masterUriChanged)
 		repository.MasterFilmZero()
-		spider.ClearCache()
 	}
 	return repository.UpdateCollectSource(source)
 }
