@@ -18,22 +18,22 @@
 
 ```
 server-v2/
-├── main.go                     # 程序入口，等待 DB 就绪后启动
-├── config/config.go            # 全局常量 & 环境变量加载
-├── internal/
-│   ├── handler/                # HTTP 处理层，仅做参数绑定与响应封装
-│   ├── service/                # 业务逻辑层
-│   ├── repository/             # 数据访问层（MySQL + Redis）
-│   ├── model/                  # 数据模型定义
-│   ├── middleware/             # Cors / JWT / XML 中间件
-│   ├── router/router.go        # 路由注册
-│   └── spider/                 # 爬虫核心 & 定时任务
-└── pkg/
-    ├── db/                     # MySQL & Redis 连接初始化
-    ├── conver/                 # 数据格式转换工具
-    ├── param/                  # 请求参数工具
-    ├── response/               # 统一响应封装
-    └── utils/                  # 通用工具（JWT、Hash、文件、字符串）
+├── cmd/
+│   └── server/             # 程序入口 main.go
+└── internal/               # 所有私有代码（编译器强制保护）
+    ├── config/             # 全局常量 & 环境变量加载
+    ├── handler/            # HTTP 处理层，仅做参数绑定与响应封装
+    ├── infra/
+    │   └── db/             # MySQL & Redis 连接初始化
+    ├── middleware/         # Cors / JWT / XML 中间件
+    ├── model/              # 数据模型定义
+    │   └── dto/            # HTTP 请求/响应 DTO (param, response)
+    ├── repository/         # 数据访问层（MySQL + Redis）
+    ├── router/             # 路由注册
+    ├── service/            # 业务逻辑层
+    ├── spider/             # 爬虫核心 & 定时任务
+    │   └── conver/         # 采集数据格式转换工具
+    └── utils/              # 通用工具（JWT、Hash、文件、字符串）
 ```
 
 ## 环境变量
@@ -57,7 +57,7 @@ server-v2/
 
 ```bash
 # 编译
-go build -o bracket-film .
+go build -o bracket-film ./cmd/server/...
 
 # 运行
 PORT=8080 \
