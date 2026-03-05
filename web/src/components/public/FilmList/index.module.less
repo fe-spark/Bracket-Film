@@ -1,3 +1,22 @@
+/* Theme tokens for FilmList */
+:global(html) {
+  --film-placeholder-bg: var(--public-surface-3);
+  --film-tag-bg: rgba(var(--primary-color-rgb), 0.15);
+  --film-tag-text: #fff;
+  --film-tag-border: rgba(255, 255, 255, 0.3);
+  --film-overlay-meta-text: rgba(255, 255, 255, 0.78);
+  --film-overlay-blurb-text: rgba(255, 255, 255, 0.68);
+}
+
+:global(html[data-theme="light"]) {
+  --film-placeholder-bg: var(--public-surface-2);
+  --film-tag-bg: rgba(var(--primary-color-rgb), 0.12);
+  --film-tag-text: var(--public-on-accent);
+  --film-tag-border: rgba(255, 255, 255, 0.18);
+  --film-overlay-meta-text: rgba(255, 255, 255, 0.88);
+  --film-overlay-blurb-text: rgba(255, 255, 255, 0.8);
+}
+
 // Flex override classes for non-24-divisor column counts (5, 7) or specific overrides
 .grid-col-5 {
   @media (min-width: 1200px) {
@@ -80,17 +99,45 @@
   aspect-ratio: 3 / 4.2;
   border-radius: 12px;
   overflow: hidden;
-  background: var(--public-surface-2);
+  background: var(--film-placeholder-bg);
   box-shadow: var(--public-shadow-sm);
   transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
   margin-bottom: 12px;
   border: 1px solid var(--public-border-1);
 
   .poster {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    opacity: 0;
     transition: transform 0.8s cubic-bezier(0.165, 0.84, 0.44, 1);
+    z-index: 1;
+  }
+}
+
+.posterLoaded {
+  opacity: 1 !important;
+}
+
+.loadingBg {
+  animation: posterPulse 1.5s ease-in-out infinite;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background: linear-gradient(
+      100deg,
+      transparent 10%,
+      rgba(255, 255, 255, 0.08) 45%,
+      transparent 80%
+    );
+    transform: translateX(-120%);
+    animation: posterShimmer 1.7s ease-in-out infinite;
+    pointer-events: none;
   }
 }
 
@@ -125,14 +172,14 @@
   transition: opacity 0.3s ease;
 
   .tag {
-    background: rgba(var(--primary-color-rgb), 0.15);
+    background: var(--film-tag-bg);
     backdrop-filter: blur(8px);
-    color: #fff;
+    color: var(--film-tag-text);
     padding: 2px 6px;
     border-radius: 4px; /* Slightly smaller radius for more content space */
     font-size: 10px;
     font-weight: 700;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    border: 1px solid var(--film-tag-border);
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
     white-space: nowrap;
     overflow: hidden;
@@ -208,7 +255,7 @@
     align-items: center;
     gap: 8px;
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.78);
+    color: var(--film-overlay-meta-text);
     margin-bottom: 8px;
 
     .dot {
@@ -219,7 +266,7 @@
 
   .overlayBlurb {
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.68);
+    color: var(--film-overlay-blurb-text);
     line-height: 1.45;
     margin-bottom: 10px;
     display: -webkit-box;
@@ -304,109 +351,31 @@
   }
 }
 
-// Skeleton Loading Styles
-.skeleton {
-  pointer-events: none;
-
-  // Base background that works for dark mode by default
-  --sk-bg: var(--public-surface-3);
-  --sk-shimmer: linear-gradient(90deg,
-      transparent,
-      rgba(255, 255, 255, 0.05),
-      transparent);
-
-  // Focus on Light Mode visibility
-  :global(html[data-theme="light"]) & {
-    --sk-bg: #e8ebf0;
-    --sk-shimmer: linear-gradient(90deg,
-        transparent,
-        rgba(255, 255, 255, 0.6),
-        transparent);
-  }
-
-  .skeletonPoster {
-    width: 100%;
-    height: 100%;
-    background: var(--sk-bg);
-    position: relative;
-    overflow: hidden;
-
-    &::after {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: var(--sk-shimmer);
-      animation: skeletonPulse 1.5s infinite;
-    }
-  }
-
-  .skeletonName {
-    width: 70%;
-    height: 14px;
-    background: var(--sk-bg);
-    border-radius: 4px;
-    margin-top: 8px;
-    position: relative;
-    overflow: hidden;
-
-    &::after {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: var(--sk-shimmer);
-      animation: skeletonPulse 1.5s infinite;
-    }
-  }
-
-  .skeletonSub {
-    width: 40%;
-    height: 12px;
-    background: var(--sk-bg);
-    border-radius: 4px;
-    margin-top: 6px;
-    position: relative;
-    overflow: hidden;
-
-    &::after {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: var(--sk-shimmer);
-      animation: skeletonPulse 1.5s infinite;
-    }
-  }
-
-  &.absoluteSkeleton {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 1;
-    border-radius: inherit;
-  }
-}
-
-.hidden {
-  opacity: 0;
-  visibility: hidden;
-}
-
-@keyframes skeletonPulse {
-  0% {
-    transform: translateX(-100%);
-  }
-
+@keyframes posterPulse {
+  0%,
   100% {
-    transform: translateX(100%);
+    filter: brightness(0.98);
+  }
+  50% {
+    filter: brightness(1.06);
+  }
+}
+
+@keyframes posterShimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingBg {
+    animation: none;
+
+    &::before {
+      animation: none;
+    }
   }
 }
