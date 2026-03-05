@@ -191,6 +191,7 @@ function PlayerContent() {
           <div className={`${styles.playerWrapper} ${playerError ? styles.isPlayerError : ""}`}>
             {current?.link && (
               <VideoPlayer
+                useProxy={false}
                 key={current.link}
                 src={current.link}
                 initialTime={initialTime ? parseFloat(initialTime) : 0}
