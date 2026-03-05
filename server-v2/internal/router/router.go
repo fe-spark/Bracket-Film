@@ -97,7 +97,6 @@ func SetupRouter() *gin.Engine {
 		spiderRoute := manageRoute.Group(`/spider`)
 		{
 			spiderRoute.POST(`/start`, handler.SpiderHd.StarSpider)
-			spiderRoute.GET(`/zero`, handler.SpiderHd.SpiderReset)
 			spiderRoute.GET(`/clear`, handler.SpiderHd.ClearAllFilm)
 			spiderRoute.GET(`/update/single`, handler.SpiderHd.SingleUpdateSpider)
 			spiderRoute.GET(`/class/cover`, handler.SpiderHd.CoverFilmClass)

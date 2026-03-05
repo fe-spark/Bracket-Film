@@ -21,7 +21,6 @@ import {
 import {
   PlusOutlined,
   SendOutlined,
-  ReloadOutlined,
   DeleteOutlined,
   EditOutlined,
   PoweroffOutlined,
@@ -79,7 +78,6 @@ export default function CollectManagePage() {
 
   // 清空/重采弹窗
   const [clearOpen, setClearOpen] = useState(false);
-  const [reCollectOpen, setReCollectOpen] = useState(false);
   const [password, setPassword] = useState("");
 
   // batchOptions 追加 grade 信息（与 siteList 合并）
@@ -277,18 +275,6 @@ export default function CollectManagePage() {
     if (resp.code === 0) message.success(resp.msg);
     else message.error(resp.msg);
     setClearOpen(false);
-    setPassword("");
-  };
-
-  const reCollect = async () => {
-    if (!password) {
-      message.error("请输入密钥");
-      return;
-    }
-    const resp = await ApiGet("/manage/spider/zero", { password });
-    if (resp.code === 0) message.success(resp.msg);
-    else message.error(resp.msg);
-    setReCollectOpen(false);
     setPassword("");
   };
 
@@ -560,13 +546,6 @@ export default function CollectManagePage() {
           </Button>
         </Tooltip>
         <Button
-          icon={<ReloadOutlined />}
-          style={{ color: "var(--ant-color-warning)", borderColor: "var(--ant-color-warning)" }}
-          onClick={() => setReCollectOpen(true)}
-        >
-          从零重采
-        </Button>
-        <Button
           danger
           icon={<DeleteOutlined />}
           onClick={() => setClearOpen(true)}
@@ -705,23 +684,6 @@ export default function CollectManagePage() {
         />
       </Modal>
 
-      <Modal
-        title="清空并重采所有站点"
-        open={reCollectOpen}
-        onCancel={() => setReCollectOpen(false)}
-        onOk={reCollect}
-        okText="确认执行"
-        okButtonProps={{ danger: true }}
-      >
-        <p style={{ color: "var(--ant-color-warning)", marginBottom: 16 }}>
-          此操作将<strong>清空所有影视数据</strong>，随后对<strong>所有已启用</strong>的资源站（主站与附属站）执行并行全量采集，操作不可逆。
-        </p>
-        <Input.Password
-          placeholder="请输入管理密码"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-      </Modal>
     </div>
   );
 }

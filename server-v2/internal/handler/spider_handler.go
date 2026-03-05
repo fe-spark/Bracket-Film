@@ -6,8 +6,8 @@ import (
 
 	"server-v2/internal/config"
 	"server-v2/internal/model"
-	"server-v2/internal/service"
 	"server-v2/internal/model/dto"
+	"server-v2/internal/service"
 	"server-v2/internal/utils"
 
 	"github.com/gin-gonic/gin"
@@ -80,17 +80,6 @@ func (h *SpiderHandler) ClearAllFilm(c *gin.Context) {
 	}
 	service.SpiderSvc.ClearFilms()
 	dto.SuccessOnlyMsg("影视数据已删除!!!", c)
-}
-
-// SpiderReset 重置影视数据, 清空库存, 从零开始
-func (h *SpiderHandler) SpiderReset(c *gin.Context) {
-	pwd := c.DefaultQuery("password", "")
-	if !verifyPassword(c, pwd) {
-		dto.Failed("重置失败, 密码校验失败!!!", c)
-		return
-	}
-	service.SpiderSvc.ZeroCollect(-1)
-	dto.SuccessOnlyMsg("影视数据已重置, 请耐心等待采集完成!!!", c)
 }
 
 // CoverFilmClass 重置覆盖影片分类信息

@@ -121,7 +121,6 @@ REDIS_HOST=127.0.0.1 REDIS_PORT=6379 \
 | 路径 | 说明 |
 |---|---|
 | `POST /start` | 手动触发采集 |
-| `GET /zero` | 清空并重采 |
 | `GET /clear` | 仅清空数据 |
 | `GET /update/single` | 单影片刷新 |
 | `GET /class/cover` | 同步影片分类 |

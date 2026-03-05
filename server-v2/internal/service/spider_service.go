@@ -47,11 +47,6 @@ func (s *SpiderService) ClearFilms() {
 	go spider.ClearSpider()
 }
 
-// ZeroCollect 数据清除从零开始采集
-func (s *SpiderService) ZeroCollect(time int) {
-	go spider.StarZero(time)
-}
-
 // SyncCollect 同步采集
 func (s *SpiderService) SyncCollect(ids string) {
 	go spider.CollectSingleFilm(ids)

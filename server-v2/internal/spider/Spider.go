@@ -425,24 +425,6 @@ func ClearSpider() {
 	repository.FilmZero()
 }
 
-// StarZero 清空所有影视数据后重采所有已启用的站（并行模式）
-func StarZero(h int) {
-	repository.FilmZero()
-	// 获取所有已启用的主站与附属站
-	all := repository.GetCollectSourceList()
-	enabled := make([]model.FilmSource, 0)
-	for _, s := range all {
-		if s.State {
-			enabled = append(enabled, s)
-		}
-	}
-	if len(enabled) == 0 {
-		log.Println("[StarZero] 未找到已启用的站点，跳过采集")
-		return
-	}
-	runSourcesWithLimit(enabled, h, "StarZero")
-}
-
 // CollectSingleFilm 通过影片唯一ID获取影片信息 (多源并行同步)
 func CollectSingleFilm(ids string) {
 	// 获取所有已启用的采集站列表信息
