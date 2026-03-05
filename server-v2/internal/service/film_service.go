@@ -21,13 +21,13 @@ func (s *FilmService) GetFilmPage(vo model.SearchVo) []model.SearchInfo {
 
 // GetSearchOptions 获取影片检索的select的选项options
 func (s *FilmService) GetSearchOptions() map[string]any {
-	var options = make(map[string]any)
+	options := make(map[string]any)
 	tree := repository.GetCategoryTree()
 	tree.Name = "全部分类"
 	options["class"] = conver.ConvertCategoryList(tree)
 	options["remarks"] = []map[string]string{{"Name": `全部`, "Value": ``}, {"Name": `完结`, "Value": `完结`}, {"Name": `未完结`, "Value": `未完结`}}
 	options["year"] = make([]map[string]string, 0)
-	var tagGroup = make(map[int64]map[string]any)
+	tagGroup := make(map[int64]map[string]any)
 	if tree.Children != nil {
 		for _, t := range tree.Children {
 			option := repository.GetSearchOptions(t.Id)
@@ -99,6 +99,20 @@ func (s *FilmService) UpdateClass(class model.CategoryTree) error {
 		if c.Id == class.Id {
 			if class.Name != "" {
 				c.Name = class.Name
+			}
+			// 修复：一级分类 Show 变更时，同步处理所有子分类的搜索可见性
+			if c.Show != class.Show && c.Children != nil {
+				for _, subC := range c.Children {
+					var err error
+					if class.Show {
+						err = repository.RecoverFilmSearch(subC.Id)
+					} else {
+						err = repository.ShieldFilmSearch(subC.Id)
+					}
+					if err != nil {
+						return fmt.Errorf("分类 [%d] 搜索可见性更新失败: %s", subC.Id, err.Error())
+					}
+				}
 			}
 			c.Show = class.Show
 			if err := repository.SaveCategoryTree(&tree); err != nil {

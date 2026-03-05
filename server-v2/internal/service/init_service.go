@@ -5,10 +5,10 @@ import (
 	"log"
 
 	"server-v2/internal/config"
+	"server-v2/internal/infra/db"
 	"server-v2/internal/model"
 	"server-v2/internal/repository"
 	"server-v2/internal/spider"
-	"server-v2/internal/infra/db"
 	"server-v2/internal/utils"
 )
 
@@ -17,8 +17,6 @@ type InitService struct{}
 var InitSvc = new(InitService)
 
 func (s *InitService) DefaultDataInit() {
-	repository.RedisOnlyFlush()
-
 	if !repository.ExistUserTable() {
 		s.TableInit()
 	}

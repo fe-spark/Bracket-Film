@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"server-v2/internal/config"
 	"server-v2/internal/infra/db"
 	"server-v2/internal/model"
 	"server-v2/internal/model/dto"
@@ -654,19 +653,9 @@ func RecoverFilmSearch(cid int64) error {
 	return nil
 }
 
-// RedisOnlyFlush 仅清空 Redis 配置类缓存
-func RedisOnlyFlush() {
-	// 清理分类树与临时队列
-	db.Rdb.Del(db.Cxt, config.CategoryTreeKey)
-	db.Rdb.Del(db.Cxt, config.VirtualPictureKey)
-}
-
 // FilmZero 删除所有库存数据 (包含 MySQL 持久化表)
 func FilmZero() {
-	// 1. 清理 Redis (基础缓存)
-	RedisOnlyFlush()
-
-	// 2. 清理 MySQL
+	// 清理 MySQL
 	tables := []string{
 		model.TableMovieDetail,
 		model.TableSearchInfo,
