@@ -7,11 +7,73 @@
   cursor: grab;
   user-select: none;
   touch-action: none;
+  -webkit-user-select: none;
 
   transition:
-    top 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-    left 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-    right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    top 0.26s cubic-bezier(0.2, 0.85, 0.2, 1),
+    left 0.26s cubic-bezier(0.2, 0.85, 0.2, 1),
+    transform 0.2s ease;
+}
+
+.dragging {
+  cursor: grabbing;
+  transition: none;
+}
+
+.snapping.left {
+  animation: dockSnapLeft 0.28s cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+
+.snapping.right {
+  animation: dockSnapRight 0.28s cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+
+@keyframes dockSnapLeft {
+  0% {
+    transform: translateX(8px);
+  }
+  65% {
+    transform: translateX(-1px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes dockSnapRight {
+  0% {
+    transform: translateX(-8px);
+  }
+  65% {
+    transform: translateX(1px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes snapLeft {
+  0% {
+    transform: translateX(7px) scale(0.98);
+  }
+  55% {
+    transform: translateX(-1px) scale(1.01);
+  }
+  100% {
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes snapRight {
+  0% {
+    transform: translateX(-7px) scale(0.98);
+  }
+  55% {
+    transform: translateX(1px) scale(1.01);
+  }
+  100% {
+    transform: translateX(0) scale(1);
+  }
 }
 
 // ── 圆形触发按钮 ────────────────────────────────────────────────
@@ -22,13 +84,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(18, 22, 33, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-  color: rgba(255, 255, 255, 0.6);
-  transition: box-shadow 0.2s ease, color 0.2s ease, background 0.2s ease;
+  background: color-mix(in srgb, var(--ant-color-bg-elevated) 86%, transparent);
+  border: 1px solid var(--ant-color-border-secondary);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  color: var(--ant-color-text-secondary);
+  transition: box-shadow 0.2s ease, color 0.2s ease, background 0.2s ease, transform 0.15s ease;
 
   svg {
     display: block;
@@ -36,15 +98,29 @@
   }
 
   .dock:hover & {
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-    color: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+    color: var(--ant-color-text);
+    transform: translateY(-1px);
   }
 
   .dock.expanded & {
-    color: var(--primary-color, #4e8ef7);
-    background: rgba(18, 22, 33, 0.85);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    color: var(--ant-color-primary);
+    background: color-mix(in srgb, var(--ant-color-primary-bg) 42%, var(--ant-color-bg-elevated));
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
   }
+}
+
+// 贴边态：改为边缘标签形态（非圆形）
+.dock.left .trigger {
+  border-radius: 0 22px 22px 0;
+  border-left: none;
+  padding-left: 4px;
+}
+
+.dock.right .trigger {
+  border-radius: 22px 0 0 22px;
+  border-right: none;
+  padding-right: 4px;
 }
 
 // ── 弹出选项面板 ─────────────────────────────────────────────────
@@ -57,11 +133,11 @@
   padding: 4px 6px;
   height: 44px;
   border-radius: 22px;
-  background: rgba(18, 22, 33, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  background: color-mix(in srgb, var(--ant-color-bg-elevated) 88%, transparent);
+  border: 1px solid var(--ant-color-border-secondary);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
   white-space: nowrap;
 
   // 收起态
@@ -107,7 +183,7 @@
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--ant-color-text-secondary);
   transition: background 0.15s ease, color 0.15s ease;
   outline: none;
   flex-shrink: 0;
@@ -118,53 +194,13 @@
   }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.9);
+    background: var(--ant-color-fill-tertiary);
+    color: var(--ant-color-text);
   }
 
   &.active {
-    background: rgba(255, 255, 255, 0.14);
-    color: #fff;
-  }
-}
-
-// ── 亮色主题 ─────────────────────────────────────────────────────
-:global(html[data-theme="light"]) {
-  .trigger {
-    background: rgba(255, 255, 255, 0.82);
-    border-color: rgba(0, 0, 0, 0.08);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    color: rgba(0, 0, 0, 0.45);
-
-    .dock:hover & {
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-      color: rgba(0, 0, 0, 0.7);
-    }
-
-    .dock.expanded & {
-      color: var(--primary-color, #4e8ef7);
-      background: rgba(255, 255, 255, 0.95);
-    }
-  }
-
-  .panel {
-    background: rgba(255, 255, 255, 0.88);
-    border-color: rgba(0, 0, 0, 0.07);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-  }
-
-  .option {
-    color: rgba(0, 0, 0, 0.45);
-
-    &:hover {
-      background: rgba(0, 0, 0, 0.06);
-      color: rgba(0, 0, 0, 0.85);
-    }
-
-    &.active {
-      background: rgba(0, 0, 0, 0.07);
-      color: rgba(0, 0, 0, 0.85);
-    }
+    background: var(--ant-color-primary-bg);
+    color: var(--ant-color-primary-text);
   }
 }
 
@@ -176,5 +212,14 @@
 
   .option {
     padding: 0 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock,
+  .trigger,
+  .panel,
+  .option {
+    transition: none !important;
   }
 }

@@ -38,7 +38,8 @@ const OPTIONS: { key: ThemeMode; icon: React.ReactNode; label: string }[] = [
 ];
 
 const SNAP_KEY = "theme-dock-snap";
-const MARGIN = 12;
+const EDGE_X = 0;
+const MARGIN_Y = 12;
 const DOCK_W = 44;
 const DOCK_H = 44;
 const DRAG_THRESHOLD = 5;
@@ -46,6 +47,21 @@ const DRAG_THRESHOLD = 5;
 interface SnapState {
   snappedLeft: boolean;
   y: number;
+}
+
+function clampY(y: number) {
+  return Math.max(MARGIN_Y, Math.min(y, window.innerHeight - DOCK_H - MARGIN_Y));
+}
+
+function snapX(snappedLeft: boolean) {
+  return snappedLeft ? EDGE_X : Math.max(EDGE_X, window.innerWidth - DOCK_W - EDGE_X);
+}
+
+function normalizeSnap(s: SnapState): SnapState {
+  return {
+    snappedLeft: !!s.snappedLeft,
+    y: Number.isFinite(s.y) ? clampY(s.y) : clampY(window.innerHeight / 2 - DOCK_H / 2),
+  };
 }
 
 function loadSnap(): SnapState | null {
@@ -71,11 +87,37 @@ export default function ThemeDock({ mode, onSelect }: Props) {
   // ── 位置 ─────────────────────────────────────────────────────
   // 组件由父级在 mounted 后才渲染，window 一定存在，可安全用懒初始化
   const [snap, setSnap] = useState<SnapState>(
-    () => loadSnap() ?? { snappedLeft: false, y: window.innerHeight / 2 - DOCK_H / 2 }
+    () => normalizeSnap(loadSnap() ?? { snappedLeft: true, y: window.innerHeight / 2 - DOCK_H / 2 })
   );
 
   // ── 展开/收起 ─────────────────────────────────────────────────
   const [expanded, setExpanded] = useState(false);
+  const [tempPos, setTempPos] = useState<{ x: number; y: number } | null>(null);
+  const [snapping, setSnapping] = useState(false);
+  const dragging = tempPos !== null;
+  const snapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (snapTimerRef.current) {
+        clearTimeout(snapTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => {
+      setSnap((prev) => {
+        const next = normalizeSnap(prev);
+        if (next.y !== prev.y) {
+          saveSnap(next);
+        }
+        return next;
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     if (!expanded) return;
@@ -115,31 +157,22 @@ export default function ThemeDock({ mode, onSelect }: Props) {
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const ds = dragRef.current;
     if (!ds) return;
-    const el = dockRef.current;
-    if (!el) return;
 
     const dx = e.clientX - ds.startX;
     const dy = e.clientY - ds.startY;
     if (!ds.moved && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
       ds.moved = true;
-      // 开始拖拽时收起面板，并清除 transition（由内联样式接管位置）
+      // 开始拖拽时收起面板
       setExpanded(false);
-      el.style.transition = "none";
     }
     if (!ds.moved) return;
 
     const newX = ds.elemLeft + dx;
     const newY = ds.elemTop + dy;
-    const clampedY = Math.max(MARGIN, Math.min(newY, window.innerHeight - DOCK_H - MARGIN));
+    const clampedX = Math.max(EDGE_X, Math.min(newX, window.innerWidth - DOCK_W - EDGE_X));
+    const clampedY = clampY(newY);
 
-    el.style.top = `${clampedY}px`;
-    if (newX + DOCK_W / 2 < window.innerWidth / 2) {
-      el.style.left = `${Math.max(MARGIN, newX)}px`;
-      el.style.right = "auto";
-    } else {
-      el.style.left = "auto";
-      el.style.right = `${Math.max(MARGIN, window.innerWidth - newX - DOCK_W)}px`;
-    }
+    setTempPos({ x: clampedX, y: clampedY });
   }, []);
 
   const onPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -158,25 +191,32 @@ export default function ThemeDock({ mode, onSelect }: Props) {
       return;
     }
 
-    // 拖拽结束：计算吸附，清除内联样式交由 state 接管
-    const rect = el.getBoundingClientRect();
-    const isLeft = rect.left + DOCK_W / 2 < window.innerWidth / 2;
-    const clampedY = Math.max(MARGIN, Math.min(rect.top, window.innerHeight - DOCK_H - MARGIN));
+    // 拖拽结束：基于拖拽中的临时坐标计算吸附
+    const finalX = tempPos?.x ?? el.getBoundingClientRect().left;
+    const finalY = clampY(tempPos?.y ?? el.getBoundingClientRect().top);
+    const isLeft = finalX + DOCK_W / 2 < window.innerWidth / 2;
 
-    el.style.left = "";
-    el.style.right = "";
-    el.style.top = "";
-    el.style.transition = "";
-
-    const next: SnapState = { snappedLeft: isLeft, y: clampedY };
+    setTempPos(null);
+    const next: SnapState = { snappedLeft: isLeft, y: finalY };
     setSnap(next);
     saveSnap(next);
+
+    setSnapping(true);
+    if (snapTimerRef.current) {
+      clearTimeout(snapTimerRef.current);
+    }
+    snapTimerRef.current = setTimeout(() => setSnapping(false), 260);
+  }, [tempPos]);
+
+  const onPointerCancel = useCallback(() => {
+    dragRef.current = null;
+    setTempPos(null);
   }, []);
 
   // ── 渲染 ─────────────────────────────────────────────────────
-  const posStyle: React.CSSProperties = snap.snappedLeft
-    ? { left: MARGIN, top: snap.y }
-    : { right: MARGIN, top: snap.y };
+  const posStyle: React.CSSProperties = tempPos
+    ? { left: tempPos.x, top: tempPos.y }
+    : { left: snapX(snap.snappedLeft), top: snap.y };
 
   const activeOption = OPTIONS.find((o) => o.key === mode) ?? OPTIONS[2];
 
@@ -186,6 +226,8 @@ export default function ThemeDock({ mode, onSelect }: Props) {
       className={[
         styles.dock,
         snap.snappedLeft ? styles.left : styles.right,
+        dragging ? styles.dragging : "",
+        snapping ? styles.snapping : "",
         expanded ? styles.expanded : "",
       ]
         .filter(Boolean)
@@ -194,6 +236,7 @@ export default function ThemeDock({ mode, onSelect }: Props) {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
     >
       {/* 圆形触发按钮 */}
       <div className={styles.trigger}>{activeOption.icon}</div>
