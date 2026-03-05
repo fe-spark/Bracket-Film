@@ -132,10 +132,13 @@ func SaveSitePlayList(id string, list []model.MovieDetail) error {
 		})
 	}
 	if len(playlists) > 0 {
-		db.Mdb.Clauses(clause.OnConflict{
+		if err := db.Mdb.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "source_id"}, {Name: "movie_key"}},
 			DoUpdates: clause.AssignmentColumns([]string{"content", "updated_at"}),
-		}).Create(&playlists)
+		}).Create(&playlists).Error; err != nil {
+			log.Printf("SaveSitePlayList Error: %v", err)
+			return err
+		}
 	}
 	return nil
 }

@@ -100,7 +100,7 @@ type MoviePlaylist struct {
 	gorm.Model
 	SourceId string `gorm:"index"`
 	MovieKey string `gorm:"index"` // hash(name) or hash(dbid)
-	Content  string `gorm:"type:text"`
+	Content  string `gorm:"type:longtext"`
 }
 
 // SearchInfo 存储用于检索的信息
@@ -174,34 +174,34 @@ type SearchVo struct {
 // FilmDetailVo 添加影片对象
 type FilmDetailVo struct {
 	Id           int64    `json:"id"`           // 影片id
-	Cid          int64    `json:"cid"`          //分类ID
-	Pid          int64    `json:"pid"`          //一级分类ID
-	Name         string   `json:"name"`         //片名
-	Picture      string   `json:"picture"`      //简介图片
+	Cid          int64    `json:"cid"`          // 分类ID
+	Pid          int64    `json:"pid"`          // 一级分类ID
+	Name         string   `json:"name"`         // 片名
+	Picture      string   `json:"picture"`      // 简介图片
 	PlayFrom     []string `json:"playFrom"`     // 播放来源
-	DownFrom     string   `json:"DownFrom"`     //下载来源 例: http
-	PlayLink     string   `json:"playLink"`     //播放地址url
+	DownFrom     string   `json:"DownFrom"`     // 下载来源 例: http
+	PlayLink     string   `json:"playLink"`     // 播放地址url
 	DownloadLink string   `json:"downloadLink"` // 下载url地址
-	SubTitle     string   `json:"subTitle"`     //子标题
-	CName        string   `json:"cName"`        //分类名称
-	EnName       string   `json:"enName"`       //英文名
-	Initial      string   `json:"initial"`      //首字母
-	ClassTag     string   `json:"classTag"`     //分类标签
-	Actor        string   `json:"actor"`        //主演
-	Director     string   `json:"director"`     //导演
-	Writer       string   `json:"writer"`       //作者
+	SubTitle     string   `json:"subTitle"`     // 子标题
+	CName        string   `json:"cName"`        // 分类名称
+	EnName       string   `json:"enName"`       // 英文名
+	Initial      string   `json:"initial"`      // 首字母
+	ClassTag     string   `json:"classTag"`     // 分类标签
+	Actor        string   `json:"actor"`        // 主演
+	Director     string   `json:"director"`     // 导演
+	Writer       string   `json:"writer"`       // 作者
 	Remarks      string   `json:"remarks"`      // 更新情况
-	ReleaseDate  string   `json:"releaseDate"`  //上映时间
+	ReleaseDate  string   `json:"releaseDate"`  // 上映时间
 	Area         string   `json:"area"`         // 地区
-	Language     string   `json:"language"`     //语言
-	Year         string   `json:"year"`         //年份
-	State        string   `json:"state"`        //影片状态 正片|预告...
-	UpdateTime   string   `json:"updateTime"`   //更新时间
-	AddTime      string   `json:"addTime"`      //资源添加时间戳
-	DbId         int64    `json:"dbId"`         //豆瓣id
+	Language     string   `json:"language"`     // 语言
+	Year         string   `json:"year"`         // 年份
+	State        string   `json:"state"`        // 影片状态 正片|预告...
+	UpdateTime   string   `json:"updateTime"`   // 更新时间
+	AddTime      string   `json:"addTime"`      // 资源添加时间戳
+	DbId         int64    `json:"dbId"`         // 豆瓣id
 	DbScore      string   `json:"dbScore"`      // 豆瓣评分
-	Hits         int64    `json:"hits"`         //影片热度
-	Content      string   `json:"content"`      //内容简介
+	Hits         int64    `json:"hits"`         // 影片热度
+	Content      string   `json:"content"`      // 内容简介
 }
 
 // PlayLinkVo 多站点播放链接数据列表
