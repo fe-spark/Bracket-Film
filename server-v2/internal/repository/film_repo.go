@@ -334,38 +334,45 @@ func SearchFilmKeyword(keyword string, page *dto.Page) []model.SearchInfo {
 }
 
 func GetRelateMovieBasicInfo(search model.SearchInfo, page *dto.Page) []model.MovieBasicInfo {
-	sql := ""
+	offset := page.Current
+	if offset <= 0 {
+		offset = 0
+	} else {
+		offset = (offset - 1) * page.PageSize
+	}
 	name := regexp.MustCompile(`(第.{1,3}季.*)|([0-9]{1,3})|(剧场版)|(\s\S*$)|(之.*)|([\p{P}\p{S}].*)`).ReplaceAllString(search.Name, "")
 	if len(name) == len(search.Name) && len(name) > 10 {
 		name = name[:int(math.Ceil(float64(len(name))/5)*3)]
 	}
-	sql = fmt.Sprintf(`select * from %s where (name LIKE "%%%s%%" or sub_title LIKE "%%%[2]s%%") AND cid=%d AND deleted_at IS NULL union`, model.TableSearchInfo, name, search.Cid)
+	base := db.Mdb.Model(&model.SearchInfo{}).
+		Where("cid = ?", search.Cid).
+		Where("deleted_at IS NULL")
 
-	sql = fmt.Sprintf(`%s (select * from %s where cid=%d AND `, sql, model.TableSearchInfo, search.Cid)
+	nameLike := fmt.Sprintf("%%%s%%", name)
+	condition := db.Mdb.Where("name LIKE ? OR sub_title LIKE ?", nameLike, nameLike)
+
 	search.ClassTag = strings.ReplaceAll(search.ClassTag, " ", "")
-
+	classTags := make([]string, 0)
 	if strings.Contains(search.ClassTag, ",") {
-		s := "("
-		for _, t := range strings.Split(search.ClassTag, ",") {
-			s = fmt.Sprintf(`%s class_tag like "%%%s%%" OR`, s, t)
-		}
-		sql = fmt.Sprintf("%s %s)", sql, strings.TrimSuffix(s, "OR"))
+		classTags = strings.Split(search.ClassTag, ",")
 	} else if strings.Contains(search.ClassTag, "/") {
-		s := "("
-		for _, t := range strings.Split(search.ClassTag, "/") {
-			s = fmt.Sprintf(`%s class_tag like "%%%s%%" OR`, s, t)
-		}
-		sql = fmt.Sprintf("%s %s)", sql, strings.TrimSuffix(s, "OR"))
-	} else {
-		sql = fmt.Sprintf(`%s class_tag like "%%%s%%"`, sql, search.ClassTag)
+		classTags = strings.Split(search.ClassTag, "/")
+	} else if strings.TrimSpace(search.ClassTag) != "" {
+		classTags = []string{search.ClassTag}
 	}
 
-	sql = fmt.Sprintf("%s AND search.deleted_at IS NULL limit %d,%d)", sql, page.Current, page.PageSize)
-	sql = fmt.Sprintf("(%s)  limit %d,%d", sql, page.Current, page.PageSize)
+	for _, tag := range classTags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		condition = condition.Or("class_tag LIKE ?", fmt.Sprintf("%%%s%%", tag))
+	}
 
 	var list []model.SearchInfo
-	if err := db.Mdb.Raw(sql).Scan(&list).Error; err != nil {
-		log.Println("Raw SQL Scan Error:", err)
+	if err := base.Where(condition).Order("update_stamp DESC").Offset(offset).Limit(page.PageSize).Find(&list).Error; err != nil {
+		log.Println("GetRelateMovieBasicInfo Error:", err)
+		return nil
 	}
 
 	var basicList []model.MovieBasicInfo
