@@ -5,11 +5,50 @@ import (
 	"server/internal/infra/db"
 	"server/internal/model"
 
+	"sync"
+	"sync/atomic"
+
 	"gorm.io/gorm"
 )
 
+// catCache 用于加速分类名到 ID 的查找，避免大规模入库时的频繁 DB 查询
+var catCache atomic.Value // 存储 map[string]int64
+var cacheMu sync.Mutex
+
+func refreshCache() {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	var all []model.Category
+	db.Mdb.Find(&all)
+	m := make(map[string]int64)
+	for _, c := range all {
+		// 子类具有更高的查找优先级 (Pid > 0)
+		if c.Pid > 0 {
+			m[c.Name] = c.Id
+		} else if _, ok := m[c.Name]; !ok {
+			// 如果该名称还没存入子类 ID，则存入大类 ID (Pid = 0)
+			m[c.Name] = c.Id
+		}
+	}
+	catCache.Store(m)
+}
+
+// GetCidByName 根据分类名称查找对应的类 ID (优先从内存缓存中获取)
+func GetCidByName(name string) int64 {
+	val := catCache.Load()
+	if val == nil {
+		refreshCache()
+		val = catCache.Load()
+	}
+	m := val.(map[string]int64)
+	if id, ok := m[name]; ok {
+		return id
+	}
+	return 0
+}
+
 // SaveCategoryTree 批量保存并同步分类树 (内存指针对齐 + 二阶段批量入库)
-// 这种方式完全不依赖硬编码的虚拟 ID，而是通过节点的内存地址 (Pointer) 在处理过程中建立映射。
+// 这种方式将采集站分类与本地数据库分类通过 Name 进行对齐，确保 ID 永久稳定，不随采集站变化。
 func SaveCategoryTree(tree *model.CategoryTree) error {
 	if tree == nil {
 		return nil
@@ -28,17 +67,18 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 		pointerToId := make(map[*model.CategoryTree]int64)
 		pointerToId[tree] = 0 // 树根 (Pid=-1) 的逻辑 ID 对应 0
 
-		// 3. 第一阶段：处理树的第一层子节点 (通常是“电影”、“电视剧”等虚拟大类或原始大类)
+		// 3. 第一阶段：处理树的第一层子节点 (通常是“电影”、“电视剧”等根分类)
 		var newRoots []*model.Category
 		for _, node := range tree.Children {
 			key := fmt.Sprintf("0_%s", node.Name)
 			if id, ok := cache[key]; ok {
 				pointerToId[node] = id
+				// 关键点：回填真实 ID 到内存对象中，供后续流程使用
+				node.Id = id
 			} else {
-				// 准备批量入库
+				// 准备批量入库 (不带 ID，交由 DB 自增)
 				c := &model.Category{Name: node.Name, Pid: 0, Show: true}
 				newRoots = append(newRoots, c)
-				// 预存，tx.Create 之后会自动填入真实 ID
 				node.Category = c
 			}
 		}
@@ -47,15 +87,15 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 				return err
 			}
 		}
-		// 回填第一层真实 ID 到映射表
+		// 回填新入库大类的真实 ID 到映射表和 node 对象
 		for _, node := range tree.Children {
 			if _, ok := pointerToId[node]; !ok {
 				pointerToId[node] = node.Category.Id
+				node.Id = node.Category.Id
 			}
 		}
 
-		// 4. 第二阶段：处理树的第二层及以后 (递归或双层遍历)
-		// 考虑到目前大部分采集站是两层结构，我们先实现二级批量入库。
+		// 4. 第二阶段：处理树的第二层 (子类)
 		var newSubs []*model.Category
 		for _, rootNode := range tree.Children {
 			realPid := pointerToId[rootNode]
@@ -63,6 +103,8 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 				key := fmt.Sprintf("%d_%s", realPid, subNode.Name)
 				if id, ok := cache[key]; ok {
 					pointerToId[subNode] = id
+					subNode.Id = id
+					subNode.Pid = realPid
 				} else {
 					subC := &model.Category{Name: subNode.Name, Pid: realPid, Show: true}
 					newSubs = append(newSubs, subC)
@@ -74,10 +116,22 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 			if err := tx.Create(&newSubs).Error; err != nil {
 				return err
 			}
+			// 回填子类 ID
+			for _, rootNode := range tree.Children {
+				for _, subNode := range rootNode.Children {
+					if subNode.Category != nil && subNode.Id == 0 {
+						subNode.Id = subNode.Category.Id
+						subNode.Pid = pointerToId[rootNode]
+					}
+				}
+			}
 		}
 
 		return nil
 	})
+	// 5. 同步完成后刷新缓存，确保入库后的二级 Cid 映射生效
+	refreshCache()
+	return nil
 }
 
 // GetCategoryTree 获取完整分类树 (从数据库行重建)

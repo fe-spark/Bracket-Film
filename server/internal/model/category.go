@@ -2,10 +2,10 @@ package model
 
 // Category 分类信息
 type Category struct {
-	Id   int64  `gorm:"primaryKey;autoIncrement:false" json:"id"` // 分类ID
-	Pid  int64  `gorm:"index" json:"pid"`                         // 父级分类ID
-	Name string `gorm:"size:64" json:"name"`                      // 分类名称
-	Show bool   `json:"show"`                                     // 是否展示
+	Id   int64  `gorm:"primaryKey;autoIncrement:true" json:"id"` // 分类ID
+	Pid  int64  `gorm:"index" json:"pid"`                        // 父级分类ID
+	Name string `gorm:"size:64" json:"name"`                     // 分类名称
+	Show bool   `json:"show"`                                    // 是否展示
 }
 
 func (Category) TableName() string {

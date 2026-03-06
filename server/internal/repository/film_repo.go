@@ -378,15 +378,23 @@ func ConvertSearchInfo(sourceId string, detail model.MovieDetail) model.SearchIn
 		contentKey = fmt.Sprintf("name_%s", utils.GenerateHashKey(detail.Name))
 	}
 
-	// 关键修复：不依赖采集来源的 Pid，而是根据 Cid 从我们维护的分类表中实时查询正确的 Pid
+	// 关键修复 1：基于分类名称 (CName) 从数据库获取我们维护的稳定 Cid
+	// 这样即使不同站点的 Cid 不同，只要名称一致（如“动作片”），就能归约为同一个分类 ID
+	resolvedCid := GetCidByName(detail.CName)
+	if resolvedCid == 0 {
+		// 兜底：如果名称没对上，暂时保留原始 Cid (虽然可能导致归位失败，但好过丢掉)
+		resolvedCid = detail.Cid
+	}
+
+	// 关键修复 2：根据解析后的 Cid 实时查询正确的 Pid
 	// 这确保了影片能正确归类到“电影”、“电视剧”等智能根分类下，从而让筛选标签正常显示
-	correctPid := GetParentId(detail.Cid)
+	correctPid := GetParentId(resolvedCid)
 
 	return model.SearchInfo{
 		Mid:          detail.Id,
 		ContentKey:   contentKey,
 		SourceId:     sourceId,
-		Cid:          detail.Cid,
+		Cid:          resolvedCid,
 		Pid:          correctPid,
 		Name:         detail.Name,
 		SubTitle:     detail.SubTitle,
