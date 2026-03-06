@@ -32,7 +32,7 @@ func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 		}
 	}
 
-	// 2. 识别核心大类 (优先精准匹配，排除资讯类)
+	// 2. 定义分类识别规则 (仅作为逻辑参考，不再预先创建 ID)
 	rules := map[string]struct{ kw, exclude []string }{
 		"movie":  {[]string{"电影", "影院"}, []string{"片", "资讯", "新闻", "站长", "解说"}},
 		"tv":     {[]string{"电视剧", "剧集", "连续剧"}, []string{"短剧", "资讯", "新闻", "站长", "解说"}},
@@ -44,36 +44,46 @@ func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 		"other":  {[]string{"其他", "福利", "伦理", "三级"}, nil},
 	}
 
+	// 用于存储最终确定的“大类”节点与其类型 Key 的映射
 	rootIds := make(map[string]int64)
-	// 第一遍：尝试精准匹配
-	for _, c := range list {
-		lowName := strings.ToLower(c.Name)
-		for key, rule := range rules {
-			for _, k := range rule.kw {
-				if lowName == k {
-					rootIds[key] = c.ID
-					break
-				}
-			}
-		}
+	rootNames := map[string]string{
+		"movie": "电影", "tv": "电视剧", "anime": "动漫", "show": "综艺",
+		"sports": "体育", "short": "短剧", "doc": "纪录片", "other": "其他",
 	}
-	// 第二遍：模糊匹配尚未识别的大类
+	// virtualRoots 记录按需生成的虚拟根节点指针
+	virtualRoots := make(map[string]*model.CategoryTree)
+
+	// 第一遍：初步扫描识别“真根” (采集站原始已归好的类)
 	for _, c := range list {
 		lowName := strings.ToLower(c.Name)
 		for key, rule := range rules {
-			if _, ok := rootIds[key]; !ok {
-				if utils.ContainsAny(lowName, rule.kw) && !utils.ContainsAny(lowName, rule.exclude) {
+			if c.Pid == 0 && utils.ContainsAny(lowName, rule.kw) && !utils.ContainsAny(lowName, rule.exclude) {
+				if _, ok := rootIds[key]; !ok {
 					rootIds[key] = c.ID
-					break
 				}
 			}
 		}
 	}
 
-	// 3. 建立父子关系 (智能归位)
-	// 顺序与规则优化：
-	// - 先识别强特征分类（如 电影、电视剧）
-	// - 后识别弱特征分类（如 爽剧、体育）
+	// 辅助逻辑：按需获取或创建根节点
+	getOrCreateRoot := func(key string) *model.CategoryTree {
+		if rid, ok := rootIds[key]; ok {
+			return nodes[rid]
+		}
+		if vr, ok := virtualRoots[key]; ok {
+			return vr
+		}
+		// 创建无 ID 的纯逻辑根节点，入库时由存取层自动根据 Name + 树位置对齐
+		vr := &model.CategoryTree{
+			Category: &model.Category{Name: rootNames[key], Pid: 0, Show: true},
+			Children: make([]*model.CategoryTree, 0),
+		}
+		virtualRoots[key] = vr
+		root.Children = append(root.Children, vr)
+		return vr
+	}
+
+	// 3. 建立层级关系 (智能归并)
 	subRules := []struct {
 		key string
 		kws []string
@@ -92,62 +102,46 @@ func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 		id, pid, name := c.ID, c.Pid, c.Name
 		lowName := strings.ToLower(name)
 
-		// 自动隐藏及过滤掉非影视资源的分类 (明星、资讯、解说等)
-		show := true
-		if utils.ContainsAny(lowName, []string{"资讯", "明星", "新闻", "解说", "站长", "教程"}) {
-			show = false
-		}
-		nodes[id].Show = show
+		// 忽略资讯、明星等
+		nodes[id].Show = !utils.ContainsAny(lowName, []string{"资讯", "明星", "新闻", "解说", "站长", "教程"})
 
 		if pid == 0 {
-			matched := false
-
-			// 首先判断当前 ID 是否已经作为某个大类的根节点，如果是，则不需要再归类
+			isRoot := false
 			for _, rid := range rootIds {
 				if id == rid {
-					matched = true
+					isRoot = true
 					break
 				}
 			}
 
-			if !matched {
-				// 特殊处理：优先归位到电影/电视剧
+			if !isRoot {
+				var target *model.CategoryTree
+				// 电影/电视剧优先
 				if utils.ContainsAny(lowName, []string{"电影", "影片", "影院", "蓝光", "4k", "仙侠", "古装", "悬疑", "烧脑", "惊悚"}) || (strings.Contains(lowName, "片") && !strings.Contains(lowName, "短片")) {
-					if rid, ok := rootIds["movie"]; ok && id != rid {
-						pid = rid
-						matched = true
-					}
+					target = getOrCreateRoot("movie")
 				} else if utils.ContainsAny(lowName, []string{"剧集", "电视剧", "连续剧"}) || (strings.Contains(lowName, "剧") && !strings.Contains(lowName, "短剧")) {
-					if rid, ok := rootIds["tv"]; ok && id != rid {
-						pid = rid
-						matched = true
-					}
-				}
-
-				if !matched {
+					target = getOrCreateRoot("tv")
+				} else {
 					for _, rule := range subRules {
 						if utils.ContainsAny(lowName, rule.kws) {
-							if rid, ok := rootIds[rule.key]; ok && id != rid {
-								pid = rid
-								matched = true
-								break
-							}
+							target = getOrCreateRoot(rule.key)
+							break
 						}
 					}
 				}
-
-				// 最终兜底：如果识别不了大类的，统统放在其他中 (需排除本身就是“其他”大类的情况)
-				if !matched {
-					if rid, ok := rootIds["other"]; ok && id != rid {
-						pid = rid
-					}
+				if target == nil {
+					target = getOrCreateRoot("other")
 				}
+				// 挂载并设置 Pid 语义
+				target.Children = append(target.Children, nodes[id])
+				// 注意：这里保留 nodes[id].Category.Pid = 0 不变，或者入库层处理，
+				// 为了让保存逻辑识别它是“被重新分配了父类”，我们可以手动干预：
+				// nodes[id].Category.Pid = target.Id // 如果 target 有 Id
+				continue
 			}
 		}
 
-		// 关键修复：同步更新节点内部记录的 Pid，确保返回到前端的 JSON 包含正确的层级关系
-		nodes[id].Category.Pid = pid
-
+		// 默认归位逻辑
 		parent := nodes[pid]
 		if parent == nil {
 			parent = root
@@ -158,18 +152,20 @@ func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 	return root
 }
 
-// ConvertCategoryList 将分类树形数据转化为list类型
-func ConvertCategoryList(tree model.CategoryTree) []model.Category {
-	cl := []model.Category{{Id: tree.Id, Pid: tree.Pid, Name: tree.Name, Show: tree.Show}}
-	for _, c := range tree.Children {
-		cl = append(cl, model.Category{Id: c.Id, Pid: c.Pid, Name: c.Name, Show: c.Show})
-		if len(c.Children) > 0 {
-			for _, subC := range c.Children {
-				cl = append(cl, model.Category{Id: subC.Id, Pid: subC.Pid, Name: subC.Name, Show: subC.Show})
-			}
-		}
+// ConvertCategoryList 将分类树形数据平滑展开为列表，支持深度嵌套
+func ConvertCategoryList(tree *model.CategoryTree) []model.Category {
+	var list []model.Category
+	if tree == nil {
+		return list
 	}
-	return cl
+	// 不保存虚拟根节点 0 本身到列表（通常数据库不需要这个占位符）
+	if tree.Id != 0 {
+		list = append(list, *tree.Category)
+	}
+	for _, child := range tree.Children {
+		list = append(list, ConvertCategoryList(child)...)
+	}
+	return list
 }
 
 // ConvertFilmDetails 批量处理影片详情信息

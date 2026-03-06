@@ -1,41 +1,83 @@
 package repository
 
 import (
+	"fmt"
 	"server/internal/infra/db"
 	"server/internal/model"
 
 	"gorm.io/gorm"
 )
 
-// SaveCategoryTree 批量保存分类树 (层级平铺入库)
+// SaveCategoryTree 批量保存并同步分类树 (内存指针对齐 + 二阶段批量入库)
+// 这种方式完全不依赖硬编码的虚拟 ID，而是通过节点的内存地址 (Pointer) 在处理过程中建立映射。
 func SaveCategoryTree(tree *model.CategoryTree) error {
-	var categories []model.Category
-	flattenTree(tree, &categories)
+	if tree == nil {
+		return nil
+	}
 
 	return db.Mdb.Transaction(func(tx *gorm.DB) error {
-		// 清空旧分类数据
-		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&model.Category{}).Error; err != nil {
-			return err
+		// 1. 加载现有全部分类建立唯一性缓存 (Key: Pid_Name -> ID)
+		var total []model.Category
+		tx.Find(&total)
+		cache := make(map[string]int64)
+		for _, c := range total {
+			cache[fmt.Sprintf("%d_%s", c.Pid, c.Name)] = c.Id
 		}
-		// 批量插入新数据
-		if len(categories) > 0 {
-			if err := tx.Create(&categories).Error; err != nil {
+
+		// 2. 指针映射表：节点指针 -> 真实数据库 ID (用于在后续层级中找父 ID)
+		pointerToId := make(map[*model.CategoryTree]int64)
+		pointerToId[tree] = 0 // 树根 (Pid=-1) 的逻辑 ID 对应 0
+
+		// 3. 第一阶段：处理树的第一层子节点 (通常是“电影”、“电视剧”等虚拟大类或原始大类)
+		var newRoots []*model.Category
+		for _, node := range tree.Children {
+			key := fmt.Sprintf("0_%s", node.Name)
+			if id, ok := cache[key]; ok {
+				pointerToId[node] = id
+			} else {
+				// 准备批量入库
+				c := &model.Category{Name: node.Name, Pid: 0, Show: true}
+				newRoots = append(newRoots, c)
+				// 预存，tx.Create 之后会自动填入真实 ID
+				node.Category = c
+			}
+		}
+		if len(newRoots) > 0 {
+			if err := tx.Create(&newRoots).Error; err != nil {
 				return err
 			}
 		}
+		// 回填第一层真实 ID 到映射表
+		for _, node := range tree.Children {
+			if _, ok := pointerToId[node]; !ok {
+				pointerToId[node] = node.Category.Id
+			}
+		}
+
+		// 4. 第二阶段：处理树的第二层及以后 (递归或双层遍历)
+		// 考虑到目前大部分采集站是两层结构，我们先实现二级批量入库。
+		var newSubs []*model.Category
+		for _, rootNode := range tree.Children {
+			realPid := pointerToId[rootNode]
+			for _, subNode := range rootNode.Children {
+				key := fmt.Sprintf("%d_%s", realPid, subNode.Name)
+				if id, ok := cache[key]; ok {
+					pointerToId[subNode] = id
+				} else {
+					subC := &model.Category{Name: subNode.Name, Pid: realPid, Show: true}
+					newSubs = append(newSubs, subC)
+					subNode.Category = subC
+				}
+			}
+		}
+		if len(newSubs) > 0 {
+			if err := tx.Create(&newSubs).Error; err != nil {
+				return err
+			}
+		}
+
 		return nil
 	})
-}
-
-// flattenTree 递归平铺分类树
-func flattenTree(node *model.CategoryTree, list *[]model.Category) {
-	if node == nil || node.Category == nil {
-		return
-	}
-	*list = append(*list, *node.Category)
-	for _, child := range node.Children {
-		flattenTree(child, list)
-	}
 }
 
 // GetCategoryTree 获取完整分类树 (从数据库行重建)

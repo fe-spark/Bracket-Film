@@ -24,7 +24,7 @@ func (s *FilmService) GetSearchOptions() map[string]any {
 	options := make(map[string]any)
 	tree := repository.GetCategoryTree()
 	tree.Name = "全部分类"
-	options["class"] = conver.ConvertCategoryList(tree)
+	options["class"] = conver.ConvertCategoryList(&tree)
 	options["remarks"] = []map[string]string{{"Name": `全部`, "Value": ``}, {"Name": `完结`, "Value": `完结`}, {"Name": `未完结`, "Value": `未完结`}}
 	options["year"] = make([]map[string]string, 0)
 	tagGroup := make(map[int64]map[string]any)
