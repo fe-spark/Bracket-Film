@@ -2,9 +2,9 @@ package repository
 
 import (
 	"log"
-	"server-v2/internal/model"
-	"server-v2/internal/infra/db"
-	"server-v2/internal/utils"
+	"server/internal/model"
+	"server/internal/infra/db"
+	"server/internal/utils"
 
 	"gorm.io/gorm"
 )

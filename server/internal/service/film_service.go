@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"server-v2/internal/model"
-	"server-v2/internal/repository"
-	"server-v2/internal/spider/conver"
+	"server/internal/model"
+	"server/internal/repository"
+	"server/internal/spider/conver"
 )
 
 type FilmService struct{}

@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 
-	"server-v2/internal/model"
-	"server-v2/internal/service"
-	"server-v2/internal/model/dto"
-	"server-v2/internal/utils"
+	"server/internal/model"
+	"server/internal/service"
+	"server/internal/model/dto"
+	"server/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )

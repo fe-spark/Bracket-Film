@@ -5,9 +5,9 @@ import (
 	"log"
 	"sort"
 
-	"server-v2/internal/config"
-	"server-v2/internal/model"
-	"server-v2/internal/infra/db"
+	"server/internal/config"
+	"server/internal/model"
+	"server/internal/infra/db"
 
 	"gorm.io/gorm/clause"
 )

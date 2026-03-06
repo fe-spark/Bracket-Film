@@ -6,9 +6,9 @@ import (
 	"regexp"
 	"strings"
 
-	"server-v2/internal/infra/db"
-	"server-v2/internal/model"
-	"server-v2/internal/utils"
+	"server/internal/infra/db"
+	"server/internal/model"
+	"server/internal/utils"
 )
 
 // SaveCategoryTree 保存影片分类信息 (MySQL 持久化)

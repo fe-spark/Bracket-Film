@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"server-v2/internal/model"
-	"server-v2/internal/repository"
-	"server-v2/internal/spider"
-	"server-v2/internal/utils"
+	"server/internal/model"
+	"server/internal/repository"
+	"server/internal/spider"
+	"server/internal/utils"
 
 	"github.com/robfig/cron/v3"
 )

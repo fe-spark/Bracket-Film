@@ -5,9 +5,9 @@ import (
 	"errors"
 	"log"
 
-	"server-v2/internal/model"
-	"server-v2/internal/spider/conver"
-	"server-v2/internal/utils"
+	"server/internal/model"
+	"server/internal/spider/conver"
+	"server/internal/utils"
 )
 
 /*

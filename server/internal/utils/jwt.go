@@ -2,7 +2,7 @@ package utils
 
 import (
 	"errors"
-	"server-v2/internal/config"
+	"server/internal/config"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"

@@ -1,4 +1,4 @@
-module server-v2
+module server
 
 go 1.24.0
 

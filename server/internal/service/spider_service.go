@@ -4,9 +4,9 @@ import (
 	"errors"
 	"log"
 
-	"server-v2/internal/model"
-	"server-v2/internal/repository"
-	"server-v2/internal/spider"
+	"server/internal/model"
+	"server/internal/repository"
+	"server/internal/spider"
 )
 
 type SpiderService struct{}

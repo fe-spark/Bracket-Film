@@ -2,7 +2,7 @@ package db
 
 import (
 	"context"
-	"server-v2/internal/config"
+	"server/internal/config"
 	"time"
 
 	"github.com/redis/go-redis/v9"

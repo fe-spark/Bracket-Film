@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"time"
 
-	"server-v2/internal/model"
-	"server-v2/internal/service"
-	"server-v2/internal/model/dto"
+	"server/internal/model"
+	"server/internal/service"
+	"server/internal/model/dto"
 
 	"github.com/gin-gonic/gin"
 )

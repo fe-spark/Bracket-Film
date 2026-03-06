@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"server-v2/internal/infra/db"
-	"server-v2/internal/model"
-	"server-v2/internal/model/dto"
-	"server-v2/internal/repository"
-	"server-v2/internal/utils"
+	"server/internal/infra/db"
+	"server/internal/model"
+	"server/internal/model/dto"
+	"server/internal/repository"
+	"server/internal/utils"
 
 	"gorm.io/gorm"
 )

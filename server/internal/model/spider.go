@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"server-v2/internal/model/dto"
+	"server/internal/model/dto"
 
 	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"

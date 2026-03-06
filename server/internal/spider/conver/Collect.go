@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"server-v2/internal/config"
-	"server-v2/internal/model"
+	"server/internal/config"
+	"server/internal/model"
 )
 
 /*

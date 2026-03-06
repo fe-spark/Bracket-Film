@@ -1,8 +1,8 @@
 package service
 
 import (
-	"server-v2/internal/model"
-	"server-v2/internal/repository"
+	"server/internal/model"
+	"server/internal/repository"
 )
 
 type ManageService struct{}

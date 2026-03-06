@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"log"
 
-	"server-v2/internal/config"
-	"server-v2/internal/infra/db"
-	"server-v2/internal/model"
-	"server-v2/internal/repository"
-	"server-v2/internal/spider"
-	"server-v2/internal/utils"
+	"server/internal/config"
+	"server/internal/infra/db"
+	"server/internal/model"
+	"server/internal/repository"
+	"server/internal/spider"
+	"server/internal/utils"
 )
 
 type InitService struct{}

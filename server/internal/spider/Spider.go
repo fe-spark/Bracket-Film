@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"server-v2/internal/config"
-	"server-v2/internal/model"
-	"server-v2/internal/repository"
-	"server-v2/internal/spider/conver"
-	"server-v2/internal/utils"
+	"server/internal/config"
+	"server/internal/model"
+	"server/internal/repository"
+	"server/internal/spider/conver"
+	"server/internal/utils"
 
 	"golang.org/x/time/rate"
 )

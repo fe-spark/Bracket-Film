@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"server-v2/internal/config"
-	"server-v2/internal/service"
-	"server-v2/internal/model/dto"
-	"server-v2/internal/utils"
+	"server/internal/config"
+	"server/internal/service"
+	"server/internal/model/dto"
+	"server/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )

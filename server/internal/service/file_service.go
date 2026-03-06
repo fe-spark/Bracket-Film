@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"server-v2/internal/config"
-	"server-v2/internal/model"
-	"server-v2/internal/repository"
-	"server-v2/internal/model/dto"
+	"server/internal/config"
+	"server/internal/model"
+	"server/internal/repository"
+	"server/internal/model/dto"
 	"strings"
 )
 

@@ -2,7 +2,7 @@ package conver
 
 import (
 	"errors"
-	"server-v2/internal/model"
+	"server/internal/model"
 	"time"
 )
 

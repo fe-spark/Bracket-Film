@@ -4,10 +4,10 @@ import (
 	"regexp"
 	"strings"
 
-	"server-v2/internal/model"
-	"server-v2/internal/repository"
-	"server-v2/internal/model/dto"
-	"server-v2/internal/utils"
+	"server/internal/model"
+	"server/internal/repository"
+	"server/internal/model/dto"
+	"server/internal/utils"
 )
 
 type IndexService struct{}

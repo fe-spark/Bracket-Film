@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"server-v2/internal/model"
-	"server-v2/internal/repository"
+	"server/internal/model"
+	"server/internal/repository"
 
 	"github.com/robfig/cron/v3"
 )

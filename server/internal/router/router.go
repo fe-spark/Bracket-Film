@@ -1,9 +1,9 @@
 package router
 
 import (
-	"server-v2/internal/config"
-	"server-v2/internal/handler"
-	"server-v2/internal/middleware"
+	"server/internal/config"
+	"server/internal/handler"
+	"server/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )

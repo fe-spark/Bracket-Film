@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"server-v2/internal/model"
-	"server-v2/internal/service"
+	"server/internal/model"
+	"server/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

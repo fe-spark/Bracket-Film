@@ -1,7 +1,7 @@
 package model
 
 import (
-	"server-v2/internal/model/dto"
+	"server/internal/model/dto"
 
 	"gorm.io/gorm"
 )

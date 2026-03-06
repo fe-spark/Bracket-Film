@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"log"
 
-	"server-v2/internal/model"
-	"server-v2/internal/infra/db"
-	"server-v2/internal/model/dto"
-	"server-v2/internal/utils"
+	"server/internal/model"
+	"server/internal/infra/db"
+	"server/internal/model/dto"
+	"server/internal/utils"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

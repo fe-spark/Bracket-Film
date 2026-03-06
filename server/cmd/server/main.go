@@ -5,10 +5,10 @@ import (
 	"log"
 	"time"
 
-	"server-v2/internal/config"
-	"server-v2/internal/router"
-	"server-v2/internal/service"
-	"server-v2/internal/infra/db"
+	"server/internal/config"
+	"server/internal/router"
+	"server/internal/service"
+	"server/internal/infra/db"
 )
 
 func init() {
