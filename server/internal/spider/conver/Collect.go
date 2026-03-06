@@ -79,12 +79,12 @@ func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 		kws []string
 	}{
 		{"anime", []string{"动漫", "动画", "新番"}},
-		{"show", []string{"综艺", "访谈", "晚会"}},
-		{"sports", []string{"足球", "篮球", "赛事", "斯诺克", "网球", "下注", "欧冠", "英超", "西甲", "德甲", "意甲", "法甲", "中超", "NBA", "CBA", "LPL", "WCBA", "竞技"}},
-		{"doc", []string{"纪录", "记录"}},
+		{"show", []string{"综艺", "访谈", "晚会", "各色演唱会", "演唱会"}},
+		{"sports", []string{"足球", "篮球", "赛事", "斯诺克", "网球", "下注", "欧冠", "英超", "西甲", "德甲", "意甲", "法甲", "中超", "nba", "cba", "lpl", "wcba", "竞技", "奥运", "亚运", "lol"}},
+		{"doc", []string{"纪录", "记录", "科普", "学习"}},
 		{"short", []string{"短剧", "爽剧", "重生", "穿越", "总裁", "都市", "虐恋", "逆袭", "甜宠", "短片"}},
-		{"movie", []string{"片"}},
-		{"tv", []string{"剧"}},
+		{"movie", []string{"电影", "影片", "片", "影院", "蓝光", "4k", "仙侠", "古装", "悬疑", "烧脑", "惊悚"}},
+		{"tv", []string{"剧", "剧集", "电视剧", "连续剧"}},
 		{"other", []string{"伦理", "三级", "两性", "写真"}},
 	}
 
@@ -101,32 +101,53 @@ func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 
 		if pid == 0 {
 			matched := false
-			// 特殊处理：如果包含“片”且不是“短片”，优先归位到电影
-			if strings.Contains(lowName, "片") && !strings.Contains(lowName, "短片") {
-				if rid, ok := rootIds["movie"]; ok && id != rid {
-					pid = rid
+
+			// 首先判断当前 ID 是否已经作为某个大类的根节点，如果是，则不需要再归类
+			for _, rid := range rootIds {
+				if id == rid {
 					matched = true
-				}
-			} else if strings.Contains(lowName, "剧") && !strings.Contains(lowName, "短剧") {
-				// 特殊处理：如果包含“剧”，优先归位到连续剧
-				if rid, ok := rootIds["tv"]; ok && id != rid {
-					pid = rid
-					matched = true
+					break
 				}
 			}
 
 			if !matched {
-				for _, rule := range subRules {
-					if utils.ContainsAny(lowName, rule.kws) {
-						if rid, ok := rootIds[rule.key]; ok && id != rid {
-							pid = rid
-							matched = true
-							break
+				// 特殊处理：优先归位到电影/电视剧
+				if utils.ContainsAny(lowName, []string{"电影", "影片", "影院", "蓝光", "4k", "仙侠", "古装", "悬疑", "烧脑", "惊悚"}) || (strings.Contains(lowName, "片") && !strings.Contains(lowName, "短片")) {
+					if rid, ok := rootIds["movie"]; ok && id != rid {
+						pid = rid
+						matched = true
+					}
+				} else if utils.ContainsAny(lowName, []string{"剧集", "电视剧", "连续剧"}) || (strings.Contains(lowName, "剧") && !strings.Contains(lowName, "短剧")) {
+					if rid, ok := rootIds["tv"]; ok && id != rid {
+						pid = rid
+						matched = true
+					}
+				}
+
+				if !matched {
+					for _, rule := range subRules {
+						if utils.ContainsAny(lowName, rule.kws) {
+							if rid, ok := rootIds[rule.key]; ok && id != rid {
+								pid = rid
+								matched = true
+								break
+							}
 						}
+					}
+				}
+
+				// 最终兜底：如果识别不了大类的，统统放在其他中 (需排除本身就是“其他”大类的情况)
+				if !matched {
+					if rid, ok := rootIds["other"]; ok && id != rid {
+						pid = rid
 					}
 				}
 			}
 		}
+
+		// 关键修复：同步更新节点内部记录的 Pid，确保返回到前端的 JSON 包含正确的层级关系
+		nodes[id].Category.Pid = pid
+
 		parent := nodes[pid]
 		if parent == nil {
 			parent = root
