@@ -117,8 +117,8 @@ type SearchInfo struct {
 	Mid          int64   `json:"mid" gorm:"uniqueIndex:idx_mid"`            // 影片ID (全局唯一)
 	ContentKey   string  `json:"contentKey" gorm:"uniqueIndex:idx_content"` // 内容指纹 (hash(name) or dbid)
 	SourceId     string  `json:"sourceId" gorm:"index"`                     // 来源站点ID
-	Cid          int64   `json:"cid"`                                       // 分类ID
-	Pid          int64   `json:"pid"`                                       // 上级分类ID
+	Cid          int64   `json:"cid" gorm:"index"`                          // 分类ID
+	Pid          int64   `json:"pid" gorm:"index"`                          // 上级分类ID
 	Name         string  `json:"name"`                                      // 片名
 	SubTitle     string  `json:"subTitle"`                                  // 影片子标题
 	CName        string  `json:"cName"`                                     // 分类名称

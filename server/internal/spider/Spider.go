@@ -253,11 +253,6 @@ func CollectCategory(s *model.FilmSource) {
 		log.Println("SaveCategoryTree Error: ", err)
 		return
 	}
-	// 核心逻辑：主站分类更新后，自动触发全库分类重对齐 (基于 CName)
-	log.Println("[Spider] 分类树更新成功，开始执行全库内容分类重关联...")
-	if err := repository.ReMapCategoryByName(); err != nil {
-		log.Println("ReMapCategoryByName Error: ", err)
-	}
 }
 
 // saveCollectedFilm 将已采集的 list 按站点类型写入存储，消除 collectFilm/collectFilmById 中的重复 switch 块。

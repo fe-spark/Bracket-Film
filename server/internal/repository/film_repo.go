@@ -20,19 +20,15 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// ========= Table Initialization =========
-
-func CleanDuplicateSearchInfo() {
-	if ExistSearchTable() {
-		dedup := fmt.Sprintf(`DELETE FROM %s WHERE id NOT IN (SELECT max_id FROM (SELECT MAX(id) AS max_id FROM %[1]s GROUP BY mid) AS t)`, model.TableSearchInfo)
-		if err := db.Mdb.Exec(dedup).Error; err != nil {
-			log.Println("Dedup search_infos Failed: ", err)
-		}
-	}
-}
-
+// ExistSearchTable 检查搜索表是否存在
 func ExistSearchTable() bool {
 	return db.Mdb.Migrator().HasTable(&model.SearchInfo{})
+}
+
+func ExistSearchInMid(mid int64) bool {
+	var count int64
+	db.Mdb.Model(&model.SearchInfo{}).Where("mid = ?", mid).Count(&count)
+	return count > 0
 }
 
 // ========= Upsert Logic =========

@@ -51,9 +51,6 @@ func (s *InitService) TableInit() {
 	// 专门处理表的默认或初始状态定义
 	db.Mdb.Exec(fmt.Sprintf("alter table %s auto_Increment = %d", model.TableUser, config.UserIdInitialVal))
 
-	// 清理初始化时可能的脏数据
-	repository.CleanDuplicateSearchInfo()
-
 	// 初始化默认超管账号
 	repository.InitAdminAccount()
 }
