@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"server/internal/infra/db"
@@ -245,56 +246,79 @@ func DeletePlaylistBySourceId(sourceId string) error {
 
 // ========= Tag Operations =========
 
+var initializedPids sync.Map
+
 func BatchHandleSearchTag(infos ...model.SearchInfo) {
+	if len(infos) == 0 {
+		return
+	}
+
+	// 1. 批量处理分类级的静态标签和分类节点 (按 Pid 去重)
+	pids := make(map[int64]bool)
 	for _, info := range infos {
-		SaveSearchTag(info)
+		if info.Pid > 0 {
+			pids[info.Pid] = true
+		}
+	}
+
+	for pid := range pids {
+		ensureStaticTagsForPid(pid)
+		// 确保分类节点同步 (Category 类型)
+		for _, t := range GetChildrenTree(pid) {
+			db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(
+				&model.SearchTagItem{Pid: pid, TagType: "Category", Name: t.Name, Value: fmt.Sprint(t.Id), Score: 0})
+		}
+	}
+
+	// 2. 处理每部影片的动态标签 (Plot, Area, Language)
+	for _, info := range infos {
+		if info.Pid <= 0 {
+			continue
+		}
+		HandleSearchTags(info.ClassTag, "Plot", info.Pid)
+		HandleSearchTags(info.Area, "Area", info.Pid)
+		HandleSearchTags(info.Language, "Language", info.Pid)
 	}
 }
 
 func SaveSearchTag(search model.SearchInfo) {
-	ensureStaticTagsForPid(search.Pid)
-	for _, t := range GetChildrenTree(search.Pid) {
-		db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(
-			&model.SearchTagItem{Pid: search.Pid, TagType: "Category", Name: t.Name, Value: fmt.Sprint(t.Id), Score: 0})
-	}
-	HandleSearchTags(search.ClassTag, "Plot", search.Pid)
-	HandleSearchTags(search.Area, "Area", search.Pid)
-	HandleSearchTags(search.Language, "Language", search.Pid)
+	BatchHandleSearchTag(search)
 }
 
 func ensureStaticTagsForPid(pid int64) {
-	var count int64
-	db.Mdb.Model(&model.SearchTagItem{}).Where("pid = ? AND tag_type = ?", pid, "Year").Count(&count)
-	if count == 0 {
-		currentYear := time.Now().Year()
-		var items []model.SearchTagItem
-		for i := 0; i < 12; i++ {
-			y := fmt.Sprint(currentYear - i)
-			items = append(items, model.SearchTagItem{Pid: pid, TagType: "Year", Name: y, Value: y, Score: int64(currentYear - i)})
-		}
-		db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&items)
+	// 1. 内存缓存检查，避免频繁查库
+	if _, ok := initializedPids.Load(pid); ok {
+		return
 	}
-	count = 0
-	db.Mdb.Model(&model.SearchTagItem{}).Where("pid = ? AND tag_type = ?", pid, "Initial").Count(&count)
-	if count == 0 {
-		var items []model.SearchTagItem
-		for i := 65; i <= 90; i++ {
-			v := string(rune(i))
-			items = append(items, model.SearchTagItem{Pid: pid, TagType: "Initial", Name: v, Value: v, Score: int64(90 - i)})
-		}
-		db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&items)
+
+	// 2. 初始化 Year
+	currentYear := time.Now().Year()
+	var yearItems []model.SearchTagItem
+	for i := 0; i < 12; i++ {
+		y := fmt.Sprint(currentYear - i)
+		yearItems = append(yearItems, model.SearchTagItem{Pid: pid, TagType: "Year", Name: y, Value: y, Score: int64(currentYear - i)})
 	}
-	count = 0
-	db.Mdb.Model(&model.SearchTagItem{}).Where("pid = ? AND tag_type = ?", pid, "Sort").Count(&count)
-	if count == 0 {
-		items := []model.SearchTagItem{
-			{Pid: pid, TagType: "Sort", Name: "时间排序", Value: "update_stamp", Score: 3},
-			{Pid: pid, TagType: "Sort", Name: "人气排序", Value: "hits", Score: 2},
-			{Pid: pid, TagType: "Sort", Name: "评分排序", Value: "score", Score: 1},
-			{Pid: pid, TagType: "Sort", Name: "最新上映", Value: "release_stamp", Score: 0},
-		}
-		db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&items)
+	db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&yearItems)
+
+	// 3. 初始化 Initial (A-Z)
+	var initialItems []model.SearchTagItem
+	for i := 65; i <= 90; i++ {
+		v := string(rune(i))
+		initialItems = append(initialItems, model.SearchTagItem{Pid: pid, TagType: "Initial", Name: v, Value: v, Score: int64(90 - i)})
 	}
+	db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&initialItems)
+
+	// 4. 初始化 Sort
+	sortItems := []model.SearchTagItem{
+		{Pid: pid, TagType: "Sort", Name: "时间排序", Value: "update_stamp", Score: 3},
+		{Pid: pid, TagType: "Sort", Name: "人气排序", Value: "hits", Score: 2},
+		{Pid: pid, TagType: "Sort", Name: "评分排序", Value: "score", Score: 1},
+		{Pid: pid, TagType: "Sort", Name: "最新上映", Value: "release_stamp", Score: 0},
+	}
+	db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&sortItems)
+
+	// 标记为已初始化
+	initializedPids.Store(pid, true)
 }
 
 func HandleSearchTags(preTags string, tagType string, pid int64) {

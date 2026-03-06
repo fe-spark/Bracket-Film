@@ -46,9 +46,6 @@ func (h *ProxyHandler) ProxyVideo(c *gin.Context) {
 		c.AbortWithStatus(400)
 		return
 	}
-	// 兼容历史脏数据：ConvertPlayUrl 修复前已入库的 "$http://..." 链接
-	// 新采集数据已在 ConvertPlayUrl 中统一清洗，此处仅作保底
-	targetUrl = strings.TrimLeft(targetUrl, "$")
 
 	// 判断请求类型：m3u8 索引 / key 文件 / TS 分片
 	isM3U8Request := strings.Contains(targetUrl, ".m3u8")
