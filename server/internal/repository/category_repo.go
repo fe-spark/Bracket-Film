@@ -134,7 +134,7 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 // GetCategoryTree 获取完整分类树 (从数据库行重建)
 func GetCategoryTree() model.CategoryTree {
 	var categories []model.Category
-	db.Mdb.Find(&categories)
+	db.Mdb.Order("id ASC").Find(&categories)
 
 	root := model.CategoryTree{
 		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
@@ -154,8 +154,9 @@ func GetCategoryTree() model.CategoryTree {
 		}
 	}
 
-	// 2. 建立层级关系
-	for _, node := range nodes {
+	// 2. 建立层级关系 (遍历已经排序的切片以保证顺序固定，切勿遍历 map 因为 Go 会打乱 map 的遍历顺序)
+	for i := range categories {
+		node := nodes[categories[i].Id]
 		if node.Pid == 0 {
 			// 一级大类，挂载到统一虚拟根
 			root.Children = append(root.Children, node)
@@ -193,13 +194,13 @@ func GetActiveCategoryTree() model.CategoryTree {
 
 	// 过滤：只有当分类 id 在 activeMap 中，且 show 为 true 时才保留
 	// 保留包含有效子分类的一级大类
-	var filteredRootChildren []*model.CategoryTree
+	filteredRootChildren := make([]*model.CategoryTree, 0)
 	for _, rootNode := range root.Children {
 		if !rootNode.Show {
 			continue
 		}
 
-		var filteredSubChildren []*model.CategoryTree
+		filteredSubChildren := make([]*model.CategoryTree, 0)
 		for _, subNode := range rootNode.Children {
 			if subNode.Show && activeMap[subNode.Id] {
 				filteredSubChildren = append(filteredSubChildren, subNode)
