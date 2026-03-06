@@ -94,7 +94,7 @@ func (s *InitService) FilmSourceInit() {
 		return
 	}
 	l := []model.FilmSource{
-		{Id: utils.GenerateSalt(), Name: "HD(LZ)", Uri: `https://cj.lziapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
+		{Id: utils.GenerateSalt(), Name: "HD(LZ)", Uri: `https://cj.lziapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.MasterCollect, SyncPictures: false, CollectType: model.CollectVideo, State: true, Interval: 500},
 		{Id: utils.GenerateSalt(), Name: "HD(BF)", Uri: `https://bfzyapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
 		{Id: utils.GenerateSalt(), Name: "HD(FF)", Uri: `http://cj.ffzyapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
 		{Id: utils.GenerateSalt(), Name: "HD(OK)", Uri: `https://okzyapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},

@@ -8,6 +8,10 @@ type Category struct {
 	Show bool   `json:"show"`                                     // 是否展示
 }
 
+func (Category) TableName() string {
+	return TableCategory
+}
+
 // CategoryTree 分类信息树形结构
 type CategoryTree struct {
 	*Category

@@ -14,7 +14,7 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 
 	return db.Mdb.Transaction(func(tx *gorm.DB) error {
 		// 清空旧分类数据
-		if err := tx.Exec("DELETE FROM " + model.TableCategory).Error; err != nil {
+		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&model.Category{}).Error; err != nil {
 			return err
 		}
 		// 批量插入新数据
@@ -53,9 +53,8 @@ func GetCategoryTree() model.CategoryTree {
 	// 1. 构建节点 Map
 	nodes := make(map[int64]*model.CategoryTree)
 	for i := range categories {
-		c := categories[i]
-		nodes[c.Id] = &model.CategoryTree{
-			Category: &c,
+		nodes[categories[i].Id] = &model.CategoryTree{
+			Category: &categories[i],
 			Children: make([]*model.CategoryTree, 0),
 		}
 	}
