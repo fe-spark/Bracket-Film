@@ -33,7 +33,7 @@ func (s *InitService) TableInit() {
 		&model.FileInfo{},
 		&model.FailureRecord{},
 		&model.MovieDetailInfo{},
-		&model.CategoryPersistent{},
+		&model.Category{},
 		&model.MoviePlaylist{},
 		&model.VirtualPictureQueue{},
 		&model.FilmSource{},

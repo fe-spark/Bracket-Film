@@ -1,62 +1,124 @@
 package repository
 
 import (
-	"encoding/json"
-
 	"server/internal/infra/db"
 	"server/internal/model"
+
+	"gorm.io/gorm"
 )
 
-// SaveCategoryTree 保存影片分类信息 (MySQL 持久化)
+// SaveCategoryTree 批量保存分类树 (层级平铺入库)
 func SaveCategoryTree(tree *model.CategoryTree) error {
-	data, _ := json.Marshal(tree)
-	if err := db.Mdb.Save(&model.CategoryPersistent{Content: string(data)}).Error; err != nil {
-		return err
-	}
-	return nil
+	var categories []model.Category
+	flattenTree(tree, &categories)
+
+	return db.Mdb.Transaction(func(tx *gorm.DB) error {
+		// 清空旧分类数据
+		if err := tx.Exec("DELETE FROM " + model.TableCategory).Error; err != nil {
+			return err
+		}
+		// 批量插入新数据
+		if len(categories) > 0 {
+			if err := tx.Create(&categories).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
-// GetCategoryTree 获取影片分类信息（直查 MySQL）
+// flattenTree 递归平铺分类树
+func flattenTree(node *model.CategoryTree, list *[]model.Category) {
+	if node == nil || node.Category == nil {
+		return
+	}
+	*list = append(*list, *node.Category)
+	for _, child := range node.Children {
+		flattenTree(child, list)
+	}
+}
+
+// GetCategoryTree 获取完整分类树 (从数据库行重建)
 func GetCategoryTree() model.CategoryTree {
-	var cp model.CategoryPersistent
-	tree := model.CategoryTree{}
-	if err := db.Mdb.Order("id DESC").First(&cp).Error; err != nil {
-		return tree
+	var categories []model.Category
+	db.Mdb.Find(&categories)
+
+	if len(categories) == 0 {
+		return model.CategoryTree{
+			Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
+			Children: make([]*model.CategoryTree, 0),
+		}
 	}
-	_ = json.Unmarshal([]byte(cp.Content), &tree)
-	return tree
+
+	// 1. 构建节点 Map
+	nodes := make(map[int64]*model.CategoryTree)
+	for i := range categories {
+		c := categories[i]
+		nodes[c.Id] = &model.CategoryTree{
+			Category: &c,
+			Children: make([]*model.CategoryTree, 0),
+		}
+	}
+
+	// 2. 建立层级关系
+	var root *model.CategoryTree
+	for _, node := range nodes {
+		if node.Pid == -1 {
+			root = node
+			continue
+		}
+		if parent, ok := nodes[node.Pid]; ok {
+			parent.Children = append(parent.Children, node)
+		} else {
+			// 如果找不到父级，挂载到根节点 (ID 0)
+			if rootNode, ok := nodes[0]; ok && node.Id != 0 {
+				rootNode.Children = append(rootNode.Children, node)
+			}
+		}
+	}
+
+	if root != nil {
+		return *root
+	}
+
+	// 最终兜底，如果没找到 root (Pid -1)
+	if rootNode, ok := nodes[0]; ok {
+		return *rootNode
+	}
+
+	return model.CategoryTree{
+		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
+		Children: make([]*model.CategoryTree, 0),
+	}
 }
 
-// ExistsCategoryTree 查询分类信息是否存在（直查 MySQL）
+// ExistsCategoryTree 查询分类信息是否存在
 func ExistsCategoryTree() bool {
 	var count int64
-	db.Mdb.Model(&model.CategoryPersistent{}).Count(&count)
+	db.Mdb.Table(model.TableCategory).Count(&count)
 	return count > 0
 }
 
 // GetChildrenTree 根据影片Id获取对应分类的子分类信息
-func GetChildrenTree(id int64) []*model.CategoryTree {
-	tree := GetCategoryTree()
-	for _, t := range tree.Children {
-		if t.Id == id {
-			return t.Children
-		}
+func GetChildrenTree(pid int64) []*model.CategoryTree {
+	var categories []model.Category
+	db.Mdb.Where("pid = ?", pid).Find(&categories)
+
+	res := make([]*model.CategoryTree, 0)
+	for i := range categories {
+		res = append(res, &model.CategoryTree{
+			Category: &categories[i],
+			Children: nil,
+		})
 	}
-	return nil
+	return res
 }
 
-// GetParentId 获取指定分类的父级 ID，如果本身是一级分类则返回其自身 ID
+// GetParentId 获取指定分类的父级 ID
 func GetParentId(id int64) int64 {
-	tree := GetCategoryTree()
-	for _, t := range tree.Children {
-		if t.Id == id {
-			return t.Id
-		}
-		for _, c := range t.Children {
-			if c.Id == id {
-				return t.Id
-			}
-		}
+	var category model.Category
+	if err := db.Mdb.Where("id = ?", id).First(&category).Error; err != nil {
+		return 0
 	}
-	return id
+	return category.Pid
 }
