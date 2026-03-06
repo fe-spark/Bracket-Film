@@ -71,16 +71,18 @@ func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 	}
 
 	// 3. 建立父子关系 (智能归位)
-	// 顺序很重要：优先判断更具体的分类（如短剧、动漫）
+	// 顺序与规则优化：
+	// - 先识别强特征分类（如 电影、电视剧）
+	// - 后识别弱特征分类（如 爽剧、体育）
 	subRules := []struct {
 		key string
 		kws []string
 	}{
-		{"short", []string{"短剧", "爽剧", "重生", "穿越", "总裁", "都市", "古装", "仙侠", "悬疑", "虐恋", "逆袭", "甜宠", "现代", "民国"}},
-		{"anime", []string{"动漫", "动画"}},
-		{"show", []string{"综艺"}},
-		{"sports", []string{"足球", "篮球", "赛事", "斯诺克", "网球", "羽毛球", "台球", "电竞", "LPL", "英雄联盟", "竞技"}},
+		{"anime", []string{"动漫", "动画", "新番"}},
+		{"show", []string{"综艺", "访谈", "晚会"}},
+		{"sports", []string{"足球", "篮球", "赛事", "斯诺克", "网球", "下注", "欧冠", "英超", "西甲", "德甲", "意甲", "法甲", "中超", "NBA", "CBA", "LPL", "WCBA", "竞技"}},
 		{"doc", []string{"纪录", "记录"}},
+		{"short", []string{"短剧", "爽剧", "重生", "穿越", "总裁", "都市", "虐恋", "逆袭", "甜宠", "短片"}},
 		{"movie", []string{"片"}},
 		{"tv", []string{"剧"}},
 		{"other", []string{"伦理", "三级", "两性", "写真"}},
@@ -88,27 +90,39 @@ func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 
 	for _, c := range list {
 		id, pid, name := c.ID, c.Pid, c.Name
+		lowName := strings.ToLower(name)
+
+		// 自动隐藏及过滤掉非影视资源的分类 (明星、资讯、解说等)
+		show := true
+		if utils.ContainsAny(lowName, []string{"资讯", "明星", "新闻", "解说", "站长", "教程"}) {
+			show = false
+		}
+		nodes[id].Show = show
+
 		if pid == 0 {
-			lowName := strings.ToLower(name)
 			matched := false
-			for _, rule := range subRules {
-				if utils.ContainsAny(lowName, rule.kws) {
-					if rid, ok := rootIds[rule.key]; ok && id != rid {
-						pid = rid
-						matched = true
-						break
-					}
+			// 特殊处理：如果包含“片”且不是“短片”，优先归位到电影
+			if strings.Contains(lowName, "片") && !strings.Contains(lowName, "短片") {
+				if rid, ok := rootIds["movie"]; ok && id != rid {
+					pid = rid
+					matched = true
+				}
+			} else if strings.Contains(lowName, "剧") && !strings.Contains(lowName, "短剧") {
+				// 特殊处理：如果包含“剧”，优先归位到连续剧
+				if rid, ok := rootIds["tv"]; ok && id != rid {
+					pid = rid
+					matched = true
 				}
 			}
-			// 如果没匹配到任何子规则，但包含“电影”或“连续剧”字样，尝试归位
+
 			if !matched {
-				if strings.Contains(lowName, "电影") {
-					if rid, ok := rootIds["movie"]; ok && id != rid {
-						pid = rid
-					}
-				} else if strings.Contains(lowName, "剧") {
-					if rid, ok := rootIds["tv"]; ok && id != rid {
-						pid = rid
+				for _, rule := range subRules {
+					if utils.ContainsAny(lowName, rule.kws) {
+						if rid, ok := rootIds[rule.key]; ok && id != rid {
+							pid = rid
+							matched = true
+							break
+						}
 					}
 				}
 			}

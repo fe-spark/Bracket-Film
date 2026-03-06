@@ -35,6 +35,8 @@
 - **爬虫 JSON 解析修复 (Crawler Parsing Fix)**：
     - **多字段兼容 Unmarshal**：实现了 `FilmClass` 的自定义 JSON 解析，同时支持标准的 `id/name` 与采集站常用的 `type_id/type_name`，解决了之前因字段名不匹配导致的采集后分类为空（ID 识别为 0）的严重漏洞。
     - **空切片初始化**：确保分类树根节点的 `children` 字段在 JSON 中始终返回 `[]` 而非 `null`，提升了前端渲染的兼容性。
+    - **V3 分类精准算法**：针对“古装片/悬疑片”被误划入短剧的问题，优化了后缀优先级，确保带“片/剧”字样的分类优先向电影/电视剧靠拢。
+    - **体育补全与静默过滤**：新增了 NBA、英超等数十个体育联赛关键词；自动屏蔽（Show: false）明星、资讯等非视频分类，保持 UI 纯净。
 - **TVBox 协议兼容增强 (TVBox/MacCMS Compatibility)**：
     - **双语义 JSON 输出**：在 `FilmClass` 模型中实现了自定义 `MarshalJSON`。现在接口会同时输出 `id/name` 和 `type_id/type_name` 两套字段，既保证了 V2 内部代码的洁净度，又完美兼容了 TVBox 对 MacCMS 协议的严苛解析要求。
 
