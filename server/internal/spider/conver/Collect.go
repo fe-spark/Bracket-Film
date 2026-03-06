@@ -23,56 +23,92 @@ func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 	nodes := make(map[int64]*model.CategoryTree)
 	nodes[0] = root
 
-	// 1. 初始化节点并识别核心大类关键字
-	rules := map[string]struct{ kw, exclude []string }{
-		"movie":  {[]string{"电影", "影院"}, []string{"片"}},
-		"tv":     {[]string{"电视剧", "剧集", "连续剧"}, []string{"短剧"}},
-		"anime":  {[]string{"动漫", "动画", "漫剧"}, []string{"国产", "日韩"}},
-		"show":   {[]string{"综艺"}, []string{"大陆", "港台"}},
-		"sports": {[]string{"体育", "赛事"}, []string{"足球", "篮球"}},
-		"short":  {[]string{"短剧", "爽剧"}, []string{"反转"}},
-		"doc":    {[]string{"纪录", "记录"}, []string{"片"}},
-		"other":  {[]string{"其他", "福利", "伦理", "三级"}, nil},
-	}
-
-	rootIds := make(map[string]int64)
+	// 1. 初始化节点
 	for _, c := range list {
 		id, name := c.ID, c.Name
 		nodes[id] = &model.CategoryTree{
 			Category: &model.Category{Id: id, Pid: c.Pid, Name: name, Show: true},
 			Children: make([]*model.CategoryTree, 0),
 		}
+	}
 
-		lowName := strings.ToLower(name)
+	// 2. 识别核心大类 (优先精准匹配，排除资讯类)
+	rules := map[string]struct{ kw, exclude []string }{
+		"movie":  {[]string{"电影", "影院"}, []string{"片", "资讯", "新闻", "站长", "解说"}},
+		"tv":     {[]string{"电视剧", "剧集", "连续剧"}, []string{"短剧", "资讯", "新闻", "站长", "解说"}},
+		"anime":  {[]string{"动漫", "动画", "漫剧"}, []string{"资讯", "新闻", "站长", "解说"}},
+		"show":   {[]string{"综艺"}, []string{"资讯", "新闻", "站长", "解说"}},
+		"sports": {[]string{"体育", "赛事"}, []string{"资讯", "新闻", "站长", "解说"}},
+		"short":  {[]string{"短剧", "爽剧"}, []string{"反转", "资讯", "新闻", "站长", "解说"}},
+		"doc":    {[]string{"纪录", "记录", "纪录片"}, []string{"资讯", "新闻", "站长", "解说"}},
+		"other":  {[]string{"其他", "福利", "伦理", "三级"}, nil},
+	}
+
+	rootIds := make(map[string]int64)
+	// 第一遍：尝试精准匹配
+	for _, c := range list {
+		lowName := strings.ToLower(c.Name)
 		for key, rule := range rules {
-			if utils.ContainsAny(lowName, rule.kw) && !utils.ContainsAny(lowName, rule.exclude) {
-				rootIds[key] = id
-				break
+			for _, k := range rule.kw {
+				if lowName == k {
+					rootIds[key] = c.ID
+					break
+				}
+			}
+		}
+	}
+	// 第二遍：模糊匹配尚未识别的大类
+	for _, c := range list {
+		lowName := strings.ToLower(c.Name)
+		for key, rule := range rules {
+			if _, ok := rootIds[key]; !ok {
+				if utils.ContainsAny(lowName, rule.kw) && !utils.ContainsAny(lowName, rule.exclude) {
+					rootIds[key] = c.ID
+					break
+				}
 			}
 		}
 	}
 
-	// 2. 建立父子关系 (智能归位)
-	subRules := map[string][]string{
-		"movie":  {"片"},
-		"tv":     {"剧"},
-		"anime":  {"动漫", "动画"},
-		"show":   {"综艺"},
-		"sports": {"足球", "篮球", "赛事", "斯诺克"},
-		"short":  {"短剧", "爽剧"},
-		"doc":    {"纪录", "记录"},
-		"other":  {"伦理", "三级", "两性", "写真"},
+	// 3. 建立父子关系 (智能归位)
+	// 顺序很重要：优先判断更具体的分类（如短剧、动漫）
+	subRules := []struct {
+		key string
+		kws []string
+	}{
+		{"short", []string{"短剧", "爽剧", "重生", "穿越", "总裁", "都市", "古装", "仙侠", "悬疑", "虐恋", "逆袭", "甜宠", "现代", "民国"}},
+		{"anime", []string{"动漫", "动画"}},
+		{"show", []string{"综艺"}},
+		{"sports", []string{"足球", "篮球", "赛事", "斯诺克", "网球", "羽毛球", "台球", "电竞", "LPL", "英雄联盟", "竞技"}},
+		{"doc", []string{"纪录", "记录"}},
+		{"movie", []string{"片"}},
+		{"tv", []string{"剧"}},
+		{"other", []string{"伦理", "三级", "两性", "写真"}},
 	}
 
 	for _, c := range list {
 		id, pid, name := c.ID, c.Pid, c.Name
 		if pid == 0 {
 			lowName := strings.ToLower(name)
-			for key, kws := range subRules {
-				if utils.ContainsAny(lowName, kws) {
-					if rid, ok := rootIds[key]; ok && id != rid {
+			matched := false
+			for _, rule := range subRules {
+				if utils.ContainsAny(lowName, rule.kws) {
+					if rid, ok := rootIds[rule.key]; ok && id != rid {
 						pid = rid
+						matched = true
 						break
+					}
+				}
+			}
+			// 如果没匹配到任何子规则，但包含“电影”或“连续剧”字样，尝试归位
+			if !matched {
+				if strings.Contains(lowName, "电影") {
+					if rid, ok := rootIds["movie"]; ok && id != rid {
+						pid = rid
+					}
+				} else if strings.Contains(lowName, "剧") {
+					if rid, ok := rootIds["tv"]; ok && id != rid {
+						pid = rid
 					}
 				}
 			}
