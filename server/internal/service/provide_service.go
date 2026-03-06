@@ -90,8 +90,8 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 	for _, c := range tree.Children {
 		if c.Show {
 			classList = append(classList, model.FilmClass{
-				TypeID:   c.Id,
-				TypeName: c.Name,
+				ID:   c.Id,
+				Name: c.Name,
 			})
 
 			searchTags := repository.GetSearchTag(c.Id)

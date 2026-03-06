@@ -47,9 +47,9 @@ type FilmList struct {
 
 // FilmClass 影视分类信息结构体
 type FilmClass struct {
-	TypeID   int64  `json:"type_id"`   // 分类ID
-	TypePid  int64  `json:"type_pid"`  // 父级ID
-	TypeName string `json:"type_name"` // 类型名称
+	ID   int64  `json:"id"`   // 分类ID
+	Pid  int64  `json:"pid"`  // 父级ID
+	Name string `json:"name"` // 类型名称
 }
 
 //-------------------------------------------------Xml 格式-------------------------------------------------

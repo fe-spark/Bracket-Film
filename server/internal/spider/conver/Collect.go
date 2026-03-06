@@ -6,6 +6,7 @@ import (
 
 	"server/internal/config"
 	"server/internal/model"
+	"server/internal/utils"
 )
 
 /*
@@ -15,32 +16,72 @@ import (
 
 // GenCategoryTree 解析处理 filmListPage数据 生成分类树形数据
 func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
-	// 遍历所有分类进行树形结构组装
-	tree := &model.CategoryTree{Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true}}
-	temp := make(map[int64]*model.CategoryTree)
-	temp[tree.Id] = tree
-	for _, c := range list {
-		// 判断当前节点ID是否存在于 temp中
-		category, ok := temp[c.TypeID]
-		if ok {
-			// 将当前节点信息保存
-			category.Category = &model.Category{Id: c.TypeID, Pid: c.TypePid, Name: c.TypeName, Show: true}
-		} else {
-			// 如果不存在则将当前分类存放到 temp中
-			category = &model.CategoryTree{Category: &model.Category{Id: c.TypeID, Pid: c.TypePid, Name: c.TypeName, Show: true}}
-			temp[c.TypeID] = category
-		}
-		// 根据 pid获取父节点信息
-		parent, ok := temp[category.Pid]
-		if !ok {
-			// 如果不存在父节点存在, 则将父节点存放到temp中
-			temp[c.TypePid] = parent
-		}
-		// 将当前节点存放到父节点的Children中
-		parent.Children = append(parent.Children, category)
+	root := &model.CategoryTree{Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true}}
+	nodes := make(map[int64]*model.CategoryTree)
+	nodes[0] = root
+
+	// 1. 初始化节点并识别核心大类关键字
+	rules := map[string]struct{ kw, exclude []string }{
+		"movie":  {[]string{"电影", "影院"}, []string{"片"}},
+		"tv":     {[]string{"电视剧", "剧集", "连续剧"}, []string{"短剧"}},
+		"anime":  {[]string{"动漫", "动画", "漫剧"}, []string{"国产", "日韩"}},
+		"show":   {[]string{"综艺"}, []string{"大陆", "港台"}},
+		"sports": {[]string{"体育", "赛事"}, []string{"足球", "篮球"}},
+		"short":  {[]string{"短剧", "爽剧"}, []string{"反转"}},
+		"doc":    {[]string{"纪录", "记录"}, []string{"片"}},
+		"other":  {[]string{"其他", "福利", "伦理", "三级"}, nil},
 	}
 
-	return tree
+	rootIds := make(map[string]int64)
+	for _, c := range list {
+		id, name := c.ID, c.Name
+		nodes[id] = &model.CategoryTree{
+			Category: &model.Category{Id: id, Pid: c.Pid, Name: name, Show: true},
+			Children: make([]*model.CategoryTree, 0),
+		}
+
+		lowName := strings.ToLower(name)
+		for key, rule := range rules {
+			if utils.ContainsAny(lowName, rule.kw) && !utils.ContainsAny(lowName, rule.exclude) {
+				rootIds[key] = id
+				break
+			}
+		}
+	}
+
+	// 2. 建立父子关系 (智能归位)
+	subRules := map[string][]string{
+		"movie":  {"片"},
+		"tv":     {"剧"},
+		"anime":  {"动漫", "动画"},
+		"show":   {"综艺"},
+		"sports": {"足球", "篮球", "赛事", "斯诺克"},
+		"short":  {"短剧", "爽剧"},
+		"doc":    {"纪录", "记录"},
+		"other":  {"伦理", "三级", "两性", "写真"},
+	}
+
+	for _, c := range list {
+		id, pid, name := c.ID, c.Pid, c.Name
+		if pid == 0 {
+			lowName := strings.ToLower(name)
+			for key, kws := range subRules {
+				if utils.ContainsAny(lowName, kws) {
+					if rid, ok := rootIds[key]; ok && id != rid {
+						pid = rid
+						break
+					}
+				}
+			}
+		}
+		parent := nodes[pid]
+		if parent == nil {
+			parent = root
+		}
+		parent.Children = append(parent.Children, nodes[id])
+	}
+
+	return root
 }
 
 // ConvertCategoryList 将分类树形数据转化为list类型
@@ -274,7 +315,7 @@ func DetailCovertListXml(details []model.FilmDetail) []model.VideoList {
 func ClassListCovertXml(cl []model.FilmClass) model.ClassXL {
 	var l model.ClassXL
 	for _, c := range cl {
-		l.ClassX = append(l.ClassX, model.ClassX{ID: c.TypeID, Value: c.TypeName})
+		l.ClassX = append(l.ClassX, model.ClassX{ID: c.ID, Value: c.Name})
 	}
 	return l
 }

@@ -85,10 +85,13 @@ func ReMapCategoryByName() error {
 
 	// 内置核心大类模糊规则 (正则表达式)
 	coreRules := map[string]*regexp.Regexp{
-		"电影":  regexp.MustCompile(`电影|影院|蓝光`),
+		"电影":  regexp.MustCompile(`电影|影院|蓝光|.*片`),
 		"连续剧": regexp.MustCompile(`电视剧|剧集|连续剧|.*剧`),
-		"动漫":  regexp.MustCompile(`动漫|动画`),
+		"动漫":  regexp.MustCompile(`动漫|动画|漫剧`),
 		"综艺":  regexp.MustCompile(`综艺|真人秀`),
+		"体育":  regexp.MustCompile(`体育|篮球|足球|赛事|斯诺克`),
+		"短剧":  regexp.MustCompile(`短剧|爽剧`),
+		"纪录片": regexp.MustCompile(`纪录|记录`),
 	}
 
 	// 填充映射表

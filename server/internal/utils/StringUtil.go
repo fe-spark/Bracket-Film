@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/url"
 	"regexp"
+	"strings"
 )
 
 // GenerateUUID 生成UUID
@@ -145,4 +146,17 @@ func ValidPwd(s string) error {
 		return errors.New("密码必须包含特殊字")
 	}
 	return nil
+}
+
+// ContainsAny 判断字符串是否包含切片中的任意一个关键词
+func ContainsAny(s string, keywords []string) bool {
+	if keywords == nil {
+		return false
+	}
+	for _, kw := range keywords {
+		if kw != "" && (s == kw || (len(kw) > 0 && (strings.Contains(s, kw)))) {
+			return true
+		}
+	}
+	return false
 }
