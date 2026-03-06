@@ -45,9 +45,18 @@ var upsertColumns = []string{
 }
 
 func BatchSaveOrUpdate(list []model.SearchInfo) map[string]int64 {
-	if len(list) == 0 {
+	// 过滤无意义的空记录
+	validList := make([]model.SearchInfo, 0, len(list))
+	for _, v := range list {
+		if strings.TrimSpace(v.Name) != "" {
+			validList = append(validList, v)
+		}
+	}
+	if len(validList) == 0 {
 		return nil
 	}
+	list = validList
+
 	// 1. 基于 ContentKey 进行冲突检测，实现内容级的去重
 	if err := db.Mdb.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "content_key"}},
@@ -817,6 +826,19 @@ func MasterFilmZero() {
 			log.Printf("TRUNCATE TABLE %s Error: %v\n", t, err)
 		}
 	}
+}
+
+// CleanEmptyFilms 清理所有片名为空的无效记录
+func CleanEmptyFilms() int64 {
+	var infos []model.SearchInfo
+	db.Mdb.Where("name = ? OR name IS NULL", "").Find(&infos)
+	if len(infos) == 0 {
+		return 0
+	}
+	for _, info := range infos {
+		_ = DelFilmSearch(info.Mid)
+	}
+	return int64(len(infos))
 }
 
 // CleanOrphanPlaylists 清理 movie_playlists 中与 search_infos 不匹配的孤儿记录

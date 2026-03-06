@@ -195,7 +195,8 @@ func executeTask(ft model.FilmCollectTask) {
 			}
 		}
 		n := repository.CleanOrphanPlaylists()
-		log.Printf("执行一次孤儿数据清理任务，共删除 %d 条记录\n", n)
+		m := repository.CleanEmptyFilms()
+		log.Printf("执行一次数据清理任务，删除了 %d 条孤儿记录和 %d 条空记录\n", n, m)
 	}
 
 	log.Printf("定时任务执行完毕: Task[%s]\n", ft.Id)

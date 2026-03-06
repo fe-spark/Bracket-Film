@@ -61,6 +61,10 @@ func ConvertCategoryList(tree model.CategoryTree) []model.Category {
 func ConvertFilmDetails(details []model.FilmDetail) []model.MovieDetail {
 	var dl []model.MovieDetail
 	for _, d := range details {
+		// 跳过片名为空的无效数据，防止数据库出现空记录
+		if strings.TrimSpace(d.VodName) == "" {
+			continue
+		}
 		dl = append(dl, ConvertFilmDetail(d))
 	}
 	return dl

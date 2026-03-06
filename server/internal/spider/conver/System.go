@@ -1,6 +1,7 @@
 package conver
 
 import (
+	"errors"
 	"server-v2/internal/model"
 	"time"
 )
@@ -11,6 +12,9 @@ import (
 
 // CovertFilmDetailVo 将 FilmDetailVo 转化为 MovieDetail
 func CovertFilmDetailVo(fd model.FilmDetailVo) (model.MovieDetail, error) {
+	if fd.Name == "" {
+		return model.MovieDetail{}, errors.New("影片名称不能为空")
+	}
 	t, err := time.ParseInLocation(time.DateTime, fd.AddTime, time.Local)
 	md := model.MovieDetail{
 		Id:       fd.Id,
