@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"server/internal/config"
 	"server/internal/model"
 	"server/internal/utils"
 )
@@ -316,103 +315,4 @@ func ConvertVirtualPicture(details []model.MovieDetail) []model.VirtualPicture {
 		}
 	}
 	return l
-}
-
-// ----------------------------------Provide API---------------------------------------------------
-
-// DetailCovertList 将影视详情信息转化为列表信息
-func DetailCovertList(details []model.FilmDetail) []model.FilmList {
-	var l []model.FilmList
-	for _, d := range details {
-		fl := model.FilmList{
-			VodID:       d.VodID,
-			VodName:     d.VodName,
-			TypeID:      d.TypeID,
-			TypeName:    d.TypeName,
-			VodEn:       d.VodEn,
-			VodTime:     d.VodTime,
-			VodRemarks:  d.VodRemarks,
-			VodPlayFrom: d.VodPlayFrom,
-		}
-		l = append(l, fl)
-	}
-	return l
-}
-
-// DetailCovertXml 将影片详情信息转化为Xml格式的对象
-func DetailCovertXml(details []model.FilmDetail) []model.VideoDetail {
-	var vl []model.VideoDetail
-	for _, d := range details {
-		vl = append(vl, model.VideoDetail{
-			Last:     d.VodTime,
-			ID:       d.VodID,
-			Tid:      d.TypeID,
-			Name:     model.CDATA{Text: d.VodName},
-			Type:     d.TypeName,
-			Pic:      d.VodPic,
-			Lang:     d.VodLang,
-			Area:     d.VodArea,
-			Year:     d.VodYear,
-			State:    d.VodState,
-			Note:     model.CDATA{Text: d.VodRemarks},
-			Actor:    model.CDATA{Text: d.VodActor},
-			Director: model.CDATA{Text: d.VodDirector},
-			DL:       model.DL{DD: []model.DD{{Flag: d.VodPlayFrom, Value: d.VodPlayURL}}},
-			Des:      model.CDATA{Text: d.VodContent},
-		})
-	}
-	return vl
-}
-
-// DetailCovertListXml 将影片详情信息转化为Xml格式FilmList的对象
-func DetailCovertListXml(details []model.FilmDetail) []model.VideoList {
-	var vl []model.VideoList
-	for _, d := range details {
-		vl = append(vl, model.VideoList{
-			Last: d.VodTime,
-			ID:   d.VodID,
-			Tid:  d.TypeID,
-			Name: model.CDATA{Text: d.VodName},
-			Type: d.TypeName,
-			Dt:   d.VodPlayFrom,
-			Note: model.CDATA{Text: d.VodRemarks},
-		})
-	}
-	return vl
-}
-
-// ClassListCovertXml 将影片分类列表转化为XML格式
-func ClassListCovertXml(cl []model.FilmClass) model.ClassXL {
-	var l model.ClassXL
-	for _, c := range cl {
-		l.ClassX = append(l.ClassX, model.ClassX{ID: c.ID, Value: c.Name})
-	}
-	return l
-}
-
-// FilterFilmDetail 对影片详情数据进行处理, t 修饰类型 0-返回m3u8,mp4 | 1 返回 云播链接 | 2 返回全部
-func FilterFilmDetail(fd model.FilmDetail, t int64) model.FilmDetail {
-	// 只保留 mu38 | mp4 格式的播放源, 如果包含多种格式的播放数据
-	if strings.Contains(fd.VodPlayURL, fd.VodPlayNote) {
-		switch t {
-		case 2:
-			fd.VodPlayFrom = config.PlayFormAll
-		case 1, 0:
-			for _, v := range strings.Split(fd.VodPlayURL, fd.VodPlayNote) {
-				if t == 0 && (strings.Contains(v, ".m3u8") || strings.Contains(v, ".mp4")) {
-					fd.VodPlayFrom = config.PlayForm
-					fd.VodPlayURL = v
-				} else if t == 1 && !strings.Contains(v, ".m3u8") && !strings.Contains(v, ".mp4") {
-					fd.VodPlayFrom = config.PlayFormCloud
-					fd.VodPlayURL = v
-				}
-			}
-
-		}
-	} else {
-		// 如果只有一种类型的播放链,则默认为m3u8  修改 VodPlayFrom 信息
-		fd.VodPlayFrom = config.PlayForm
-	}
-
-	return fd
 }

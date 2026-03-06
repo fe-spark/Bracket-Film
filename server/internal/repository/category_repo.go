@@ -129,8 +129,6 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 
 		return nil
 	})
-	// 5. 同步完成后刷新缓存，确保入库后的二级 Cid 映射生效
-	refreshCache()
 	return nil
 }
 
@@ -139,11 +137,13 @@ func GetCategoryTree() model.CategoryTree {
 	var categories []model.Category
 	db.Mdb.Find(&categories)
 
+	root := model.CategoryTree{
+		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
+		Children: make([]*model.CategoryTree, 0),
+	}
+
 	if len(categories) == 0 {
-		return model.CategoryTree{
-			Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
-			Children: make([]*model.CategoryTree, 0),
-		}
+		return root
 	}
 
 	// 1. 构建节点 Map
@@ -156,35 +156,20 @@ func GetCategoryTree() model.CategoryTree {
 	}
 
 	// 2. 建立层级关系
-	var root *model.CategoryTree
 	for _, node := range nodes {
-		if node.Pid == -1 {
-			root = node
-			continue
-		}
-		if parent, ok := nodes[node.Pid]; ok {
+		if node.Pid == 0 {
+			// 一级大类，挂载到统一虚拟根
+			root.Children = append(root.Children, node)
+		} else if parent, ok := nodes[node.Pid]; ok {
+			// 二级子类，挂载到对应的一级大类下
 			parent.Children = append(parent.Children, node)
 		} else {
-			// 如果找不到父级，挂载到根节点 (ID 0)
-			if rootNode, ok := nodes[0]; ok && node.Id != 0 {
-				rootNode.Children = append(rootNode.Children, node)
-			}
+			// 如果找不到父级，兜底挂载到虚拟根
+			root.Children = append(root.Children, node)
 		}
 	}
 
-	if root != nil {
-		return *root
-	}
-
-	// 最终兜底，如果没找到 root (Pid -1)
-	if rootNode, ok := nodes[0]; ok {
-		return *rootNode
-	}
-
-	return model.CategoryTree{
-		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
-		Children: make([]*model.CategoryTree, 0),
-	}
+	return root
 }
 
 // ExistsCategoryTree 查询分类信息是否存在
