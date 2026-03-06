@@ -6,9 +6,10 @@ import (
 	"sort"
 
 	"server/internal/config"
-	"server/internal/model"
 	"server/internal/infra/db"
+	"server/internal/model"
 
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -22,7 +23,7 @@ func ExistSiteConfig() bool {
 // ExistBannersConfig 判断 MySQL 中是否已有轮播配置
 func ExistBannersConfig() bool {
 	var count int64
-	db.Mdb.Model(&model.BannersRecord{}).Count(&count)
+	db.Mdb.Model(&model.Banner{}).Count(&count)
 	return count > 0
 }
 
@@ -78,28 +79,36 @@ func GetBanners() model.Banners {
 		}
 	}
 	// 2. MySQL 兜底
-	var rec model.BannersRecord
-	if err := db.Mdb.Order("id DESC").First(&rec).Error; err != nil || rec.Content == "" {
+	if err := db.Mdb.Order("sort ASC").Find(&bl).Error; err != nil {
+		log.Println("GetBanners MySQL Error:", err)
 		return bl
 	}
-	if err := json.Unmarshal([]byte(rec.Content), &bl); err != nil {
-		log.Println("GetBanners Unmarshal Error:", err)
+
+	if len(bl) > 0 {
+		sort.Sort(bl)
+		// 回填缓存
+		data, _ := json.Marshal(bl)
+		_ = db.Rdb.Set(db.Cxt, config.BannersKey, data, config.ConfigCacheTTL).Err()
 	}
-	sort.Sort(bl)
-	// 回填缓存
-	_ = db.Rdb.Set(db.Cxt, config.BannersKey, rec.Content, config.ConfigCacheTTL).Err()
 	return bl
 }
 
 // SaveBanners 保存轮播配置信息 (MySQL + Redis 短期缓存)
 func SaveBanners(bl model.Banners) error {
-	data, _ := json.Marshal(bl)
-	// MySQL 单行 upsert
-	db.Mdb.Where("id > 0").Delete(&model.BannersRecord{})
-	if err := db.Mdb.Create(&model.BannersRecord{Content: string(data)}).Error; err != nil {
-		return err
-	}
-	// write-through
-	_ = db.Rdb.Set(db.Cxt, config.BannersKey, data, config.ConfigCacheTTL).Err()
-	return nil
+	return db.Mdb.Transaction(func(tx *gorm.DB) error {
+		// 清空旧轮播数据
+		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&model.Banner{}).Error; err != nil {
+			return err
+		}
+		// 批量插入新数据
+		if len(bl) > 0 {
+			if err := tx.Create(&bl).Error; err != nil {
+				return err
+			}
+		}
+		// write-through cache
+		data, _ := json.Marshal(bl)
+		_ = db.Rdb.Set(db.Cxt, config.BannersKey, data, config.ConfigCacheTTL).Err()
+		return nil
+	})
 }

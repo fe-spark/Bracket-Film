@@ -25,12 +25,21 @@ type FilmCollectTask struct {
 type CrontabRecord struct {
 	gorm.Model
 	TaskId    string `gorm:"uniqueIndex;size:64"`
-	IdsJson   string `gorm:"type:text"` // JSON 序列化的 []string
 	Time      int
 	Spec      string `gorm:"size:64"`
 	TaskModel int    `gorm:"column:task_model"` // 任务类型 (避免与 gorm.Model 嵌入名冲突)
 	State     bool
 	Remark    string `gorm:"size:256"`
+}
+
+// CronSourceRel 定时任务与资源站关联表
+type CronSourceRel struct {
+	TaskId   string `gorm:"primaryKey;index;size:64"`
+	SourceId string `gorm:"primaryKey;index;size:64"`
+}
+
+func (CronSourceRel) TableName() string {
+	return "cron_source_rel"
 }
 
 type SourceGrade int

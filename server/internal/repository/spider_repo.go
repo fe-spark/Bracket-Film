@@ -1,13 +1,12 @@
 package repository
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 
-	"server/internal/model"
 	"server/internal/infra/db"
+	"server/internal/model"
 	"server/internal/model/dto"
 	"server/internal/utils"
 
@@ -17,40 +16,42 @@ import (
 
 // --------- Crontab Tasks -----------
 
-func toCrontabRecord(t model.FilmCollectTask) model.CrontabRecord {
-	idsJson, _ := json.Marshal(t.Ids)
-	return model.CrontabRecord{
+// SaveFilmTask 保存影视采集任务信息
+func SaveFilmTask(t model.FilmCollectTask) {
+	rec := model.CrontabRecord{
 		TaskId:    t.Id,
-		IdsJson:   string(idsJson),
 		Time:      t.Time,
 		Spec:      t.Spec,
 		TaskModel: t.Model,
 		State:     t.State,
 		Remark:    t.Remark,
 	}
-}
 
-func fromCrontabRecord(r model.CrontabRecord) model.FilmCollectTask {
-	var ids []string
-	_ = json.Unmarshal([]byte(r.IdsJson), &ids)
-	return model.FilmCollectTask{
-		Id:     r.TaskId,
-		Ids:    ids,
-		Time:   r.Time,
-		Spec:   r.Spec,
-		Model:  r.TaskModel,
-		State:  r.State,
-		Remark: r.Remark,
-	}
-}
+	err := db.Mdb.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "task_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"time", "spec", "task_model", "state", "remark", "updated_at"}),
+		}).Create(&rec).Error; err != nil {
+			return err
+		}
 
-// SaveFilmTask 保存影视采集任务信息
-func SaveFilmTask(t model.FilmCollectTask) {
-	rec := toCrontabRecord(t)
-	if err := db.Mdb.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "task_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"ids_json", "time", "spec", "task_model", "state", "remark", "updated_at"}),
-	}).Create(&rec).Error; err != nil {
+		// 更新关联站点
+		if err := tx.Where("task_id = ?", t.Id).Delete(&model.CronSourceRel{}).Error; err != nil {
+			return err
+		}
+		if len(t.Ids) > 0 {
+			rels := make([]model.CronSourceRel, 0, len(t.Ids))
+			for _, sid := range t.Ids {
+				rels = append(rels, model.CronSourceRel{TaskId: t.Id, SourceId: sid})
+			}
+			if err := tx.Create(&rels).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
 		log.Println("SaveFilmTask Error:", err)
 	}
 }
@@ -62,20 +63,43 @@ func GetAllFilmTask() []model.FilmCollectTask {
 		log.Println("GetAllFilmTask Error:", err)
 		return nil
 	}
+
 	var tl []model.FilmCollectTask
 	for _, r := range records {
-		tl = append(tl, fromCrontabRecord(r))
+		var ids []string
+		db.Mdb.Model(&model.CronSourceRel{}).Where("task_id = ?", r.TaskId).Pluck("source_id", &ids)
+		tl = append(tl, model.FilmCollectTask{
+			Id:     r.TaskId,
+			Ids:    ids,
+			Time:   r.Time,
+			Spec:   r.Spec,
+			Model:  r.TaskModel,
+			State:  r.State,
+			Remark: r.Remark,
+		})
 	}
 	return tl
 }
 
 // GetFilmTaskById 通过Id获取当前任务信息
 func GetFilmTaskById(id string) (model.FilmCollectTask, error) {
-	var rec model.CrontabRecord
-	if err := db.Mdb.Where("task_id = ?", id).First(&rec).Error; err != nil {
+	var r model.CrontabRecord
+	if err := db.Mdb.Where("task_id = ?", id).First(&r).Error; err != nil {
 		return model.FilmCollectTask{}, errors.New(" The task does not exist ")
 	}
-	return fromCrontabRecord(rec), nil
+
+	var ids []string
+	db.Mdb.Model(&model.CronSourceRel{}).Where("task_id = ?", r.TaskId).Pluck("source_id", &ids)
+
+	return model.FilmCollectTask{
+		Id:     r.TaskId,
+		Ids:    ids,
+		Time:   r.Time,
+		Spec:   r.Spec,
+		Model:  r.TaskModel,
+		State:  r.State,
+		Remark: r.Remark,
+	}, nil
 }
 
 // UpdateFilmTask 更新定时任务信息(直接覆盖Id对应的定时任务信息)
@@ -85,9 +109,12 @@ func UpdateFilmTask(t model.FilmCollectTask) {
 
 // DelFilmTask 通过Id删除对应的定时任务信息
 func DelFilmTask(id string) {
-	if err := db.Mdb.Where("task_id = ?", id).Delete(&model.CrontabRecord{}).Error; err != nil {
-		log.Println("DelFilmTask Error:", err)
-	}
+	_ = db.Mdb.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("task_id = ?", id).Delete(&model.CrontabRecord{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("task_id = ?", id).Delete(&model.CronSourceRel{}).Error
+	})
 }
 
 // ExistTask 是否存在定时任务相关信息
@@ -130,7 +157,18 @@ func FindCollectSourceById(id string) *model.FilmSource {
 
 // DelCollectResource 通过Id删除对应的采集站点信息
 func DelCollectResource(id string) {
-	db.Mdb.Where("id = ?", id).Delete(&model.FilmSource{})
+	_ = db.Mdb.Transaction(func(tx *gorm.DB) error {
+		// 1. 删除关联的定时任务关系
+		if err := tx.Where("source_id = ?", id).Delete(&model.CronSourceRel{}).Error; err != nil {
+			return err
+		}
+		// 2. 删除采集失败记录
+		if err := tx.Where("origin_id = ?", id).Delete(&model.FailureRecord{}).Error; err != nil {
+			return err
+		}
+		// 3. 删除采集站本身
+		return tx.Where("id = ?", id).Delete(&model.FilmSource{}).Error
+	})
 }
 
 // AddCollectSource 添加采集站信息

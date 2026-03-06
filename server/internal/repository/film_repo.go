@@ -378,12 +378,16 @@ func ConvertSearchInfo(sourceId string, detail model.MovieDetail) model.SearchIn
 		contentKey = fmt.Sprintf("name_%s", utils.GenerateHashKey(detail.Name))
 	}
 
+	// 关键修复：不依赖采集来源的 Pid，而是根据 Cid 从我们维护的分类表中实时查询正确的 Pid
+	// 这确保了影片能正确归类到“电影”、“电视剧”等智能根分类下，从而让筛选标签正常显示
+	correctPid := GetParentId(detail.Cid)
+
 	return model.SearchInfo{
 		Mid:          detail.Id,
 		ContentKey:   contentKey,
 		SourceId:     sourceId,
 		Cid:          detail.Cid,
-		Pid:          detail.Pid,
+		Pid:          correctPid,
 		Name:         detail.Name,
 		SubTitle:     detail.SubTitle,
 		CName:        detail.CName,
@@ -621,6 +625,26 @@ func GetTagsByTitle(pid int64, t string) []string {
 	for _, item := range items {
 		tags = append(tags, fmt.Sprintf("%s:%s", item.Name, item.Value))
 	}
+
+	// 关键修复：如果数据库中缺失静态标签（Year, Sort），自动提供默认值
+	// 确保前端筛选栏始终有基础选项，不会因为采集库为空而导致 UI 残缺
+	if len(tags) == 0 {
+		switch t {
+		case "Year":
+			currentYear := time.Now().Year()
+			for i := 0; i < 12; i++ {
+				y := currentYear - i
+				tags = append(tags, fmt.Sprintf("%d:%d", y, y))
+			}
+		case "Sort":
+			tags = []string{
+				"时间排序:update_stamp",
+				"人气排序:hits",
+				"评分排序:score",
+				"最新上映:release_stamp",
+			}
+		}
+	}
 	return tags
 }
 
@@ -790,6 +814,10 @@ func DelFilmSearch(id int64) error {
 		if err := tx.Where("global_mid = ?", id).Delete(&model.MovieSourceMapping{}).Error; err != nil {
 			return err
 		}
+		// 4. 删除相关的 Banner (横幅)
+		if err := tx.Where("mid = ?", id).Delete(&model.Banner{}).Error; err != nil {
+			return err
+		}
 		return nil
 	})
 }
@@ -820,6 +848,7 @@ func FilmZero() {
 		model.TableCategory,
 		model.TableVirtualPicture,
 		model.TableSearchTag,
+		model.TableBanners,
 	}
 	for _, t := range tables {
 		if err := db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", t)).Error; err != nil {
@@ -840,6 +869,7 @@ func MasterFilmZero() {
 		model.TableCategory,
 		model.TableVirtualPicture,
 		model.TableSearchTag,
+		model.TableBanners,
 	}
 	for _, t := range tables {
 		if err := db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", t)).Error; err != nil {
