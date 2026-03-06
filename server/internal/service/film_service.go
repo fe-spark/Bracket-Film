@@ -22,7 +22,7 @@ func (s *FilmService) GetFilmPage(vo model.SearchVo) []model.SearchInfo {
 // GetSearchOptions 获取影片检索的select的选项options
 func (s *FilmService) GetSearchOptions() map[string]any {
 	options := make(map[string]any)
-	tree := repository.GetCategoryTree()
+	tree := repository.GetActiveCategoryTree()
 	tree.Name = "全部分类"
 	options["class"] = conver.ConvertCategoryList(&tree)
 	options["remarks"] = []map[string]string{{"Name": `全部`, "Value": ``}, {"Name": `完结`, "Value": `完结`}, {"Name": `未完结`, "Value": `未完结`}}

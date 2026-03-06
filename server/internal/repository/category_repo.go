@@ -129,7 +129,6 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 
 		return nil
 	})
-	return nil
 }
 
 // GetCategoryTree 获取完整分类树 (从数据库行重建)
@@ -168,6 +167,53 @@ func GetCategoryTree() model.CategoryTree {
 			root.Children = append(root.Children, node)
 		}
 	}
+
+	return root
+}
+
+// GetActiveCategoryTree 获取仅包含有影视内容的分类树的副本
+func GetActiveCategoryTree() model.CategoryTree {
+	root := GetCategoryTree() // 先查全量
+
+	// 查出哪些 cid (二级) 和 pid (一级) 下有资源
+	var activeCids []int64
+	db.Mdb.Model(&model.SearchInfo{}).Select("cid").Group("cid").Find(&activeCids)
+
+	var activePids []int64
+	db.Mdb.Model(&model.SearchInfo{}).Select("pid").Group("pid").Find(&activePids)
+
+	// 放进 map 方便查找
+	activeMap := make(map[int64]bool)
+	for _, id := range activeCids {
+		activeMap[id] = true
+	}
+	for _, id := range activePids {
+		activeMap[id] = true
+	}
+
+	// 过滤：只有当分类 id 在 activeMap 中，且 show 为 true 时才保留
+	// 保留包含有效子分类的一级大类
+	var filteredRootChildren []*model.CategoryTree
+	for _, rootNode := range root.Children {
+		if !rootNode.Show {
+			continue
+		}
+
+		var filteredSubChildren []*model.CategoryTree
+		for _, subNode := range rootNode.Children {
+			if subNode.Show && activeMap[subNode.Id] {
+				filteredSubChildren = append(filteredSubChildren, subNode)
+			}
+		}
+
+		rootNode.Children = filteredSubChildren
+
+		// 如果该一级大类自己有视频，或者它包含有效子类，则展示它
+		if activeMap[rootNode.Id] || len(rootNode.Children) > 0 {
+			filteredRootChildren = append(filteredRootChildren, rootNode)
+		}
+	}
+	root.Children = filteredRootChildren
 
 	return root
 }

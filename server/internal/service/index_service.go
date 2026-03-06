@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"server/internal/model"
-	"server/internal/repository"
 	"server/internal/model/dto"
+	"server/internal/repository"
 	"server/internal/utils"
 )
 
@@ -18,7 +18,7 @@ var IndexSvc = new(IndexService)
 func (i *IndexService) IndexPage() map[string]interface{} {
 	Info := make(map[string]interface{})
 	tree := model.CategoryTree{Category: &model.Category{Id: 0, Name: "分类信息"}}
-	sysTree := repository.GetCategoryTree()
+	sysTree := repository.GetActiveCategoryTree()
 	for _, c := range sysTree.Children {
 		if c.Show {
 			tree.Children = append(tree.Children, c)

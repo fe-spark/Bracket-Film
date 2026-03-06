@@ -86,7 +86,7 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 	var classList []model.FilmClass
 	filters := make(map[string][]map[string]interface{})
 
-	tree := repository.GetCategoryTree()
+	tree := repository.GetActiveCategoryTree()
 	for _, c := range tree.Children {
 		if c.Show {
 			classList = append(classList, model.FilmClass{
