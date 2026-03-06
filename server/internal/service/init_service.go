@@ -40,6 +40,7 @@ func (s *InitService) TableInit() {
 		&model.SearchTagItem{},
 		&model.CrontabRecord{},
 		&model.SiteConfigRecord{},
+		&model.MovieSourceMapping{},
 		&model.BannersRecord{},
 	)
 	if err != nil {

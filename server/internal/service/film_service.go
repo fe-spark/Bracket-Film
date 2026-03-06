@@ -57,7 +57,13 @@ func (s *FilmService) SaveFilmDetail(fd model.FilmDetailVo) error {
 		return errors.New("影片参数格式异常或缺少关键信息")
 	}
 
-	return repository.SaveDetail(detail)
+	// 手动上传的影片，尝试归属于当前主站 ID，如果没有主站则标记为 "manual"
+	sourceId := "manual"
+	if master := repository.GetCollectSourceListByGrade(model.MasterCollect); len(master) > 0 {
+		sourceId = master[0].Id
+	}
+
+	return repository.SaveDetail(sourceId, detail)
 }
 
 // DelFilm 删除分类影片

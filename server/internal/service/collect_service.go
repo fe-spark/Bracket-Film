@@ -26,19 +26,47 @@ func (s *CollectService) UpdateFilmSource(source model.FilmSource) error {
 	if old == nil {
 		return errors.New("采集站信息不存在")
 	}
-	// 检测到主站切换: 原来是附属站、现在升级为主站，或 URI 发生变更
-	// 旧主站数据的 mid 与新主站不同，需要清理 search_infos / movie_detail_infos / category
-	// 保留 movie_playlists（附属站数据按名字 hash 匹配，切换后仍可复用）
-	masterSwitch := old.Grade == model.SlaveCollect && source.Grade == model.MasterCollect
+
+	// 1. 安全校验：如果有任何采集任务正在运行，禁止修改等级或 URI，防止引发元数据清空冲突
+	isGradeChanged := old.Grade != source.Grade
+	isUriChanged := old.Uri != source.Uri
+	if (isGradeChanged || isUriChanged) && spider.IsAnyTaskRunning() {
+		return errors.New("当前有采集任务正在运行，请先停止所有任务后再执行等级或地址变更操作")
+	}
+
+	// 2. 强制单主站机制：如果新等级设为主站，则自动将旧主站降级
+	if source.Grade == model.MasterCollect && old.Grade != model.MasterCollect {
+		log.Printf("[Collect] 站点 %s 提升为主采集站，清理其旧有播放列表数据并降级现有主站...", source.Name)
+		// 清理该站点在作为附属站时期采集的所有播放列表，防止数据冗余
+		_ = repository.DeletePlaylistBySourceId(source.Id)
+		if err := repository.DemoteExistingMaster(); err != nil {
+			log.Printf("[Collect] 自动降级旧主站失败: %v", err)
+			return errors.New("主站自动降级失败，请重试")
+		}
+	}
+
+	// 3. 检测主站切换并清理数据
+	// 情况A: 原来是附属站、现在升级为主站
+	masterLookup := old.Grade == model.SlaveCollect && source.Grade == model.MasterCollect
+	// 情况B: 依然是主站，但 URI 发生变更
 	masterUriChanged := old.Grade == model.MasterCollect && source.Grade == model.MasterCollect && old.Uri != source.Uri
-	if masterSwitch || masterUriChanged {
-		log.Printf("[Collect] 检测到主站变更 (switch=%v, uriChanged=%v)，清理旧主站数据...", masterSwitch, masterUriChanged)
+
+	if masterLookup || masterUriChanged {
+		log.Printf("[Collect] 检测到主站变更 (lookup=%v, uriChanged=%v)，进行数据重置...", masterLookup, masterUriChanged)
+		// 强制中断所有任务（双重保险）
+		spider.StopAllTasks()
 		repository.MasterFilmZero()
 	}
+
 	return repository.UpdateCollectSource(source)
 }
 
 func (s *CollectService) SaveFilmSource(source model.FilmSource) error {
+	// 强制单主站机制：如果新增站点为主站，自动降级现有主站
+	if source.Grade == model.MasterCollect {
+		log.Printf("[Collect] 新增站点 %s 为主采集站，自动降级现有主站...", source.Name)
+		_ = repository.DemoteExistingMaster()
+	}
 	return repository.AddCollectSource(source)
 }
 

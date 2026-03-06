@@ -162,6 +162,13 @@ func UpdateCollectSource(s model.FilmSource) error {
 	return db.Mdb.Save(&s).Error
 }
 
+// DemoteExistingMaster 将现有的主站降级为附属站，确保全局仅一个主站
+func DemoteExistingMaster() error {
+	return db.Mdb.Model(&model.FilmSource{}).
+		Where("grade = ?", model.MasterCollect).
+		Update("grade", model.SlaveCollect).Error
+}
+
 // ClearAllCollectSource 删除所有采集站信息
 func ClearAllCollectSource() {
 	if err := db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", model.TableFilmSource)).Error; err != nil {

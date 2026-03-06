@@ -38,73 +38,162 @@ func ExistSearchTable() bool {
 // ========= Upsert Logic =========
 
 var upsertColumns = []string{
-	"cid", "pid", "name", "sub_title", "c_name", "class_tag",
+	"mid", "cid", "pid", "name", "sub_title", "c_name", "class_tag",
 	"area", "language", "year", "initial", "score",
 	"update_stamp", "hits", "state", "remarks", "release_stamp",
 	"picture", "actor", "director", "blurb", "updated_at", "deleted_at",
 }
 
-func BatchSaveOrUpdate(list []model.SearchInfo) {
+func BatchSaveOrUpdate(list []model.SearchInfo) map[string]int64 {
 	if len(list) == 0 {
-		return
+		return nil
 	}
+	// 1. 基于 ContentKey 进行冲突检测，实现内容级的去重
 	if err := db.Mdb.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "mid"}},
-		DoUpdates: clause.AssignmentColumns(upsertColumns),
+		Columns: []clause.Column{{Name: "content_key"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"source_id", "cid", "pid", "name", "sub_title", "c_name", "class_tag",
+			"area", "language", "year", "initial", "score",
+			"update_stamp", "hits", "state", "remarks", "release_stamp",
+			"picture", "actor", "director", "blurb", "updated_at",
+		}),
 	}).CreateInBatches(&list, 200).Error; err != nil {
 		log.Printf("BatchSaveOrUpdate upsert 失败: %v\n", err)
-		return
+		return nil
 	}
+
+	// 2. 建立来源映射关系 (获取最终生效的 GlobalMid)
+	var contentKeys []string
+	for _, v := range list {
+		contentKeys = append(contentKeys, v.ContentKey)
+	}
+
+	var latestInfos []model.SearchInfo
+	db.Mdb.Where("content_key IN ?", contentKeys).Find(&latestInfos)
+
+	keyToMid := make(map[string]int64)
+	for _, info := range latestInfos {
+		keyToMid[info.ContentKey] = info.Mid
+	}
+
+	var mappings []model.MovieSourceMapping
+	for _, v := range list {
+		if globalMid, ok := keyToMid[v.ContentKey]; ok {
+			mappings = append(mappings, model.MovieSourceMapping{
+				SourceId:  v.SourceId,
+				SourceMid: v.Mid,
+				GlobalMid: globalMid,
+			})
+		}
+	}
+
+	if len(mappings) > 0 {
+		db.Mdb.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "source_id"}, {Name: "source_mid"}},
+			DoUpdates: clause.AssignmentColumns([]string{"global_mid", "updated_at"}),
+		}).CreateInBatches(&mappings, 200)
+	}
+
 	BatchHandleSearchTag(list...)
+	return keyToMid
 }
 
 func SaveSearchInfo(s model.SearchInfo) error {
-	isNew := !ExistSearchInfo(s.Mid)
+	// 同样采用 ContentKey 去重策略，确保 Mid 唯一归约
 	err := db.Mdb.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "mid"}},
-		DoUpdates: clause.AssignmentColumns(upsertColumns),
+		Columns: []clause.Column{{Name: "content_key"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"source_id", "cid", "pid", "name", "sub_title", "c_name", "class_tag",
+			"area", "language", "year", "initial", "score",
+			"update_stamp", "hits", "state", "remarks", "release_stamp",
+			"picture", "actor", "director", "blurb", "updated_at",
+		}),
 	}).Create(&s).Error
-	if err != nil {
-		return err
+
+	if err == nil {
+		// 记录映射
+		var info model.SearchInfo
+		db.Mdb.Where("content_key = ?", s.ContentKey).First(&info)
+		db.Mdb.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "source_id"}, {Name: "source_mid"}},
+			DoUpdates: clause.AssignmentColumns([]string{"global_mid", "updated_at"}),
+		}).Create(&model.MovieSourceMapping{
+			SourceId:  s.SourceId,
+			SourceMid: s.Mid,
+			GlobalMid: info.Mid,
+		})
 	}
-	if isNew {
-		BatchHandleSearchTag(s)
-	}
-	return nil
+
+	BatchHandleSearchTag(s)
+	return err
 }
 
-func SaveDetails(list []model.MovieDetail) error {
+func SaveDetails(id string, list []model.MovieDetail) error {
 	var infoList []model.SearchInfo
 	for _, v := range list {
-		infoList = append(infoList, ConvertSearchInfo(v))
+		infoList = append(infoList, ConvertSearchInfo(id, v))
 	}
-	BatchSaveOrUpdate(infoList)
+	keyToMid := BatchSaveOrUpdate(infoList)
 
 	var details []model.MovieDetailInfo
 	for _, v := range list {
+		// 获取内容标识
+		info := ConvertSearchInfo(id, v)
+		globalMid, ok := keyToMid[info.ContentKey]
+		if !ok {
+			globalMid = v.Id
+		}
+
+		v.Id = globalMid // 将详情内的 ID 也归约到 Global ID
 		data, _ := json.Marshal(v)
-		details = append(details, model.MovieDetailInfo{Mid: v.Id, Cid: v.Cid, Content: string(data)})
+		details = append(details, model.MovieDetailInfo{Mid: globalMid, SourceId: id, Content: string(data)})
 	}
 
 	if len(details) > 0 {
 		return db.Mdb.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "mid"}},
-			DoUpdates: clause.AssignmentColumns([]string{"cid", "content", "updated_at"}),
+			DoUpdates: clause.AssignmentColumns([]string{"source_id", "content", "updated_at"}),
 		}).Create(&details).Error
 	}
 	return nil
 }
 
-func SaveDetail(detail model.MovieDetail) error {
-	searchInfo := ConvertSearchInfo(detail)
-	if err := SaveSearchInfo(searchInfo); err != nil {
+func SaveDetail(id string, detail model.MovieDetail) error {
+	searchInfo := ConvertSearchInfo(id, detail)
+	// 模拟 BatchSaveOrUpdate 逻辑获取 GlobalMid
+	if err := db.Mdb.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "content_key"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"source_id", "cid", "pid", "name", "sub_title", "c_name", "class_tag",
+			"area", "language", "year", "initial", "score",
+			"update_stamp", "hits", "state", "remarks", "release_stamp",
+			"picture", "actor", "director", "blurb", "updated_at",
+		}),
+	}).Create(&searchInfo).Error; err != nil {
 		return err
 	}
+
+	// 查回最终生效的 Mid
+	var info model.SearchInfo
+	db.Mdb.Where("content_key = ?", searchInfo.ContentKey).First(&info)
+	globalMid := info.Mid
+
+	// 映射记录
+	db.Mdb.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "source_id"}, {Name: "source_mid"}},
+		DoUpdates: clause.AssignmentColumns([]string{"global_mid", "updated_at"}),
+	}).Create(&model.MovieSourceMapping{
+		SourceId:  id,
+		SourceMid: detail.Id,
+		GlobalMid: globalMid,
+	})
+
+	detail.Id = globalMid
 	data, _ := json.Marshal(detail)
 	return db.Mdb.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "mid"}},
-		DoUpdates: clause.AssignmentColumns([]string{"cid", "content", "updated_at"}),
-	}).Create(&model.MovieDetailInfo{Mid: detail.Id, Cid: detail.Cid, Content: string(data)}).Error
+		DoUpdates: clause.AssignmentColumns([]string{"source_id", "content", "updated_at"}),
+	}).Create(&model.MovieDetailInfo{Mid: globalMid, SourceId: id, Content: string(data)}).Error
 }
 
 func SaveSitePlayList(id string, list []model.MovieDetail) error {
@@ -139,8 +228,14 @@ func SaveSitePlayList(id string, list []model.MovieDetail) error {
 			log.Printf("SaveSitePlayList Error: %v", err)
 			return err
 		}
+		log.Printf("[Playlist] 为站点 %s 保存了 %d 条记录\n", id, len(playlists))
 	}
 	return nil
+}
+
+// DeletePlaylistBySourceId 根据来源站点 ID 删除所有关联的播放列表资源
+func DeletePlaylistBySourceId(sourceId string) error {
+	return db.Mdb.Where("source_id = ?", sourceId).Delete(&model.MoviePlaylist{}).Error
 }
 
 // ========= Tag Operations =========
@@ -238,15 +333,26 @@ func ExistSearchInfo(mid int64) bool {
 	return count > 0
 }
 
-func ConvertSearchInfo(detail model.MovieDetail) model.SearchInfo {
+func ConvertSearchInfo(sourceId string, detail model.MovieDetail) model.SearchInfo {
 	score, _ := strconv.ParseFloat(detail.DbScore, 64)
 	stamp, _ := time.ParseInLocation(time.DateTime, detail.UpdateTime, time.Local)
 	year, err := strconv.ParseInt(regexp.MustCompile(`[1-9][0-9]{3}`).FindString(detail.ReleaseDate), 10, 64)
 	if err != nil {
 		year = 0
 	}
+
+	// 生成内容指纹：优先使用豆瓣 ID，无豆瓣 ID 则使用名称哈希
+	var contentKey string
+	if detail.DbId != 0 {
+		contentKey = fmt.Sprintf("dbid_%d", detail.DbId)
+	} else {
+		contentKey = fmt.Sprintf("name_%s", utils.GenerateHashKey(detail.Name))
+	}
+
 	return model.SearchInfo{
 		Mid:          detail.Id,
+		ContentKey:   contentKey,
+		SourceId:     sourceId,
 		Cid:          detail.Cid,
 		Pid:          detail.Pid,
 		Name:         detail.Name,
@@ -260,6 +366,7 @@ func ConvertSearchInfo(detail model.MovieDetail) model.SearchInfo {
 		Score:        score,
 		Hits:         detail.Hits,
 		UpdateStamp:  stamp.Unix(),
+		DbId:         detail.DbId,
 		State:        detail.State,
 		Remarks:      detail.Remarks,
 		ReleaseStamp: detail.AddTime,
@@ -640,11 +747,22 @@ func GetSearchInfoById(id int64) *model.SearchInfo {
 }
 
 func DelFilmSearch(id int64) error {
-	if err := db.Mdb.Where("mid = ?", id).Delete(&model.SearchInfo{}).Error; err != nil {
-		log.Printf("DelFilmSearch Error: %v", err)
-		return err
-	}
-	return nil
+	// 开启事务保证清理的一致性
+	return db.Mdb.Transaction(func(tx *gorm.DB) error {
+		// 1. 删除检索信息
+		if err := tx.Where("mid = ?", id).Delete(&model.SearchInfo{}).Error; err != nil {
+			return err
+		}
+		// 2. 删除主站详情记录
+		if err := tx.Where("mid = ?", id).Delete(&model.MovieDetailInfo{}).Error; err != nil {
+			return err
+		}
+		// 3. 删除来源映射记录
+		if err := tx.Where("global_mid = ?", id).Delete(&model.MovieSourceMapping{}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func ShieldFilmSearch(cid int64) error {
@@ -704,21 +822,29 @@ func MasterFilmZero() {
 // CleanOrphanPlaylists 清理 movie_playlists 中与 search_infos 不匹配的孤儿记录
 // 仅当 search_infos 存在数据时执行，避免主站清空后误删全部播放列表
 func CleanOrphanPlaylists() int64 {
-	// 1. 取出所有主站影片名称
-	var names []string
-	db.Mdb.Model(&model.SearchInfo{}).Pluck("name", &names)
-	if len(names) == 0 {
+	// 1. 取出所有主站影片
+	var films []struct {
+		Name string
+		DbId int64
+	}
+	db.Mdb.Model(&model.SearchInfo{}).Select("name", "db_id").Scan(&films)
+	if len(films) == 0 {
 		log.Println("[CleanOrphan] search_infos 为空，跳过孤儿清理")
 		return 0
 	}
 
-	// 2. 生成有效 movie_key 集合（名称原文 + 去除"第一季"后缀的变体）
+	// 2. 生成有效 movie_key 集合
+	validKeys := make(map[string]struct{}, len(films)*2)
 	re := regexp.MustCompile(`第一季$`)
-	validKeys := make(map[string]struct{}, len(names)*2)
-	for _, name := range names {
-		validKeys[utils.GenerateHashKey(name)] = struct{}{}
-		if trimmed := re.ReplaceAllString(name, ""); trimmed != name {
+	for _, f := range films {
+		// 基于名称的哈希
+		validKeys[utils.GenerateHashKey(f.Name)] = struct{}{}
+		if trimmed := re.ReplaceAllString(f.Name, ""); trimmed != f.Name {
 			validKeys[utils.GenerateHashKey(trimmed)] = struct{}{}
+		}
+		// 基于豆瓣ID的哈希 (如果存在)
+		if f.DbId != 0 {
+			validKeys[utils.GenerateHashKey(f.DbId)] = struct{}{}
 		}
 	}
 

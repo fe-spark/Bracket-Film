@@ -90,43 +90,54 @@ type MoviePlaySource struct {
 // MovieDetailInfo 影片详情持久化模型 (MySQL)
 type MovieDetailInfo struct {
 	gorm.Model
-	Mid     int64  `gorm:"uniqueIndex"`
-	Cid     int64  `gorm:"index"`
-	Content string `gorm:"type:longtext"` // 存储序列化后的完整 MovieDetail JSON
+	Mid      int64  `gorm:"uniqueIndex"`
+	SourceId string `gorm:"index"`         // 预留：标识主站来源
+	Content  string `gorm:"type:longtext"` // 存储序列化后的完整 MovieDetail JSON
+}
+
+// MovieSourceMapping 影片来源映射表 (核心：解决不同站 ID 不一致问题)
+type MovieSourceMapping struct {
+	gorm.Model
+	SourceId  string `gorm:"uniqueIndex:uidx_source_mid"` // 来源站点ID
+	SourceMid int64  `gorm:"uniqueIndex:uidx_source_mid"` // 来源站点原始ID
+	GlobalMid int64  `gorm:"index"`                       // 映射到的全局统一ID
 }
 
 // MoviePlaylist 多源播放列表持久化模型 (MySQL)
 type MoviePlaylist struct {
 	gorm.Model
-	SourceId string `gorm:"index"`
-	MovieKey string `gorm:"index"` // hash(name) or hash(dbid)
+	SourceId string `gorm:"uniqueIndex:uidx_source_key"`
+	MovieKey string `gorm:"uniqueIndex:uidx_source_key"` // hash(name) or hash(dbid)
 	Content  string `gorm:"type:longtext"`
 }
 
 // SearchInfo 存储用于检索的信息
 type SearchInfo struct {
 	gorm.Model
-	Mid          int64   `json:"mid" gorm:"uniqueIndex:idx_mid"` // 影片ID
-	Cid          int64   `json:"cid"`                            // 分类ID
-	Pid          int64   `json:"pid"`                            // 上级分类ID
-	Name         string  `json:"name"`                           // 片名
-	SubTitle     string  `json:"subTitle"`                       // 影片子标题
-	CName        string  `json:"cName"`                          // 分类名称
-	ClassTag     string  `json:"classTag"`                       // 类型标签
-	Area         string  `json:"area"`                           // 地区
-	Language     string  `json:"language"`                       // 语言
-	Year         int64   `json:"year"`                           // 年份
-	Initial      string  `json:"initial"`                        // 首字母
-	Score        float64 `json:"score"`                          // 评分
-	UpdateStamp  int64   `json:"updateStamp"`                    // 更新时间
-	Hits         int64   `json:"hits"`                           // 热度排行
-	State        string  `json:"state"`                          // 状态 正片|预告
-	Remarks      string  `json:"remarks"`                        // 完结 | 更新至x集
-	ReleaseStamp int64   `json:"releaseStamp"`                   // 上映时间 时间戳
-	Picture      string  `json:"picture"`                        // 简介图片
-	Actor        string  `json:"actor"`                          // 主演
-	Director     string  `json:"director"`                       // 导演
-	Blurb        string  `json:"blurb"`                          // 简介, 不完整
+	Mid          int64   `json:"mid" gorm:"uniqueIndex:idx_mid"`            // 影片ID (全局唯一)
+	ContentKey   string  `json:"contentKey" gorm:"uniqueIndex:idx_content"` // 内容指纹 (hash(name) or dbid)
+	SourceId     string  `json:"sourceId" gorm:"index"`                     // 来源站点ID
+	Cid          int64   `json:"cid"`                                       // 分类ID
+	Pid          int64   `json:"pid"`                                       // 上级分类ID
+	Name         string  `json:"name"`                                      // 片名
+	SubTitle     string  `json:"subTitle"`                                  // 影片子标题
+	CName        string  `json:"cName"`                                     // 分类名称
+	ClassTag     string  `json:"classTag"`                                  // 类型标签
+	Area         string  `json:"area"`                                      // 地区
+	Language     string  `json:"language"`                                  // 语言
+	Year         int64   `json:"year"`                                      // 年份
+	Initial      string  `json:"initial"`                                   // 首字母
+	Score        float64 `json:"score"`                                     // 评分
+	UpdateStamp  int64   `json:"updateStamp"`                               // 更新时间
+	Hits         int64   `json:"hits"`                                      // 热度排行
+	State        string  `json:"state"`                                     // 状态 正片|预告
+	Remarks      string  `json:"remarks"`                                   // 完结 | 更新至x集
+	DbId         int64   `json:"dbId" gorm:"index"`                         // 豆瓣ID (用于精准去重)
+	ReleaseStamp int64   `json:"releaseStamp"`                              // 上映时间 时间戳
+	Picture      string  `json:"picture"`                                   // 简介图片
+	Actor        string  `json:"actor"`                                     // 主演
+	Director     string  `json:"director"`                                  // 导演
+	Blurb        string  `json:"blurb"`                                     // 简介, 不完整
 }
 
 // SearchTagItem 影片检索标签持久化模型 (MySQL)

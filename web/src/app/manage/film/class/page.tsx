@@ -127,8 +127,8 @@ export default function FilmClassPage() {
         <Switch
           checked={v}
           onChange={(checked) => changeClassState(record.id, checked)}
-          checkedChildren={record.pid === 0 ? "展示" : "恢复"}
-          unCheckedChildren={record.pid === 0 ? "隐藏" : "屏蔽"}
+          checkedChildren="展示"
+          unCheckedChildren="隐藏"
         />
       ),
     },

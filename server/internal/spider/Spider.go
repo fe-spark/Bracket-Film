@@ -251,16 +251,22 @@ func CollectCategory(s *model.FilmSource) {
 	err = repository.SaveCategoryTree(categoryTree)
 	if err != nil {
 		log.Println("SaveCategoryTree Error: ", err)
+		return
+	}
+	// 核心逻辑：主站分类更新后，自动触发全库分类重对齐 (基于 CName)
+	log.Println("[Spider] 分类树更新成功，开始执行全库内容分类重关联...")
+	if err := repository.ReMapCategoryByName(); err != nil {
+		log.Println("ReMapCategoryByName Error: ", err)
 	}
 }
 
 // saveCollectedFilm 将已采集的 list 按站点类型写入存储，消除 collectFilm/collectFilmById 中的重复 switch 块。
 // saveMaster 由调用方注入，区分批量(SaveDetails)与单条(SaveDetail)两种写入策略。
-func saveCollectedFilm(s *model.FilmSource, list []model.MovieDetail, saveMaster func([]model.MovieDetail) error) {
+func saveCollectedFilm(s *model.FilmSource, list []model.MovieDetail, saveMaster func(string, []model.MovieDetail) error) {
 	var err error
 	switch s.Grade {
 	case model.MasterCollect:
-		if err = saveMaster(list); err != nil {
+		if err = saveMaster(s.Id, list); err != nil {
 			log.Println("SaveDetails Error: ", err)
 		}
 		if s.SyncPictures {
@@ -323,8 +329,8 @@ func collectFilmById(ids string, s *model.FilmSource) {
 		log.Println("GetMovieDetail Error: ", err)
 		return
 	}
-	saveCollectedFilm(s, list, func(l []model.MovieDetail) error {
-		return repository.SaveDetail(l[0])
+	saveCollectedFilm(s, list, func(id string, l []model.MovieDetail) error {
+		return repository.SaveDetail(id, l[0])
 	})
 }
 
@@ -583,4 +589,14 @@ func StopTask(id string) {
 func IsTaskRunning(id string) bool {
 	_, ok := activeTasks.Load(id)
 	return ok
+}
+
+// IsAnyTaskRunning 查询系统中是否有任何采集任务正在进行
+func IsAnyTaskRunning() bool {
+	running := false
+	activeTasks.Range(func(key, value any) bool {
+		running = true
+		return false // 找到一个就退出循环
+	})
+	return running
 }
