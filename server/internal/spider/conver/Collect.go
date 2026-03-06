@@ -16,7 +16,10 @@ import (
 
 // GenCategoryTree 解析处理 filmListPage数据 生成分类树形数据
 func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
-	root := &model.CategoryTree{Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true}}
+	root := &model.CategoryTree{
+		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
+		Children: make([]*model.CategoryTree, 0),
+	}
 	nodes := make(map[int64]*model.CategoryTree)
 	nodes[0] = root
 
