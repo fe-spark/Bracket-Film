@@ -655,12 +655,6 @@ func GetTagsByTitle(pid int64, tagType string) []string {
 	// 关键修复：如果数据库中缺失静态标签（Year, Sort），自动提供默认值
 	if len(tags) == 0 {
 		switch tagType {
-		case "Year":
-			currentYear := time.Now().Year()
-			for i := 0; i < 12; i++ {
-				y := currentYear - i
-				tags = append(tags, fmt.Sprintf("%d:%d", y, y))
-			}
 		case "Sort":
 			tags = []string{
 				"时间排序:update_stamp",
@@ -761,7 +755,7 @@ func GetSearchPage(s model.SearchVo) []model.SearchInfo {
 	if s.Language != "" {
 		query = query.Where("language = ?", s.Language)
 	}
-	if int(s.Year) > time.Now().Year()-12 {
+	if s.Year > 0 {
 		query = query.Where("year = ?", s.Year)
 	}
 	switch s.Remarks {
