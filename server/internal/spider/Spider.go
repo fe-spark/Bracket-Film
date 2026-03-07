@@ -139,14 +139,16 @@ func runSourcesWithLimit(sources []model.FilmSource, h int, tag string) {
 
 // HandleCollect 影视采集  id-采集站ID h-时长/h
 func HandleCollect(id string, h int) error {
-	// 同站截停：原子地中断旧任务并注册新任务，防止两个并发请求同时通过 Load 后各自 Store
+	// 同站跳过：如果该站点已有采集任务在运行，则跳过此次采集任务
 	reqId := utils.GenerateSalt()
-	ctx, cancel := context.WithCancel(context.Background())
+
 	taskMu.Lock()
-	if val, ok := activeTasks.Load(id); ok {
-		log.Printf("[Spider] 站点 %s 已有任务运行，正在抢断旧任务...\n", id)
-		val.(collectTask).cancel()
+	if _, ok := activeTasks.Load(id); ok {
+		taskMu.Unlock()
+		log.Printf("[Spider] 站点 %s 已有任务正在运行，跳过本次采集...\n", id)
+		return fmt.Errorf("站点 %s 已有任务正在运行，已跳过本次采集", id)
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	activeTasks.Store(id, collectTask{cancel: cancel, reqId: reqId})
 	taskMu.Unlock()
 
