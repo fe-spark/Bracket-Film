@@ -853,20 +853,27 @@ func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 			}
 		case "Plot":
 			sticky = st.Plot
-			// 特殊处理性能：Plot 仍然需要模糊匹配验证，这里通过传递 query 的 Where 子句来支持联动
-			// 由于 GetTagsByTitle 的局限性，我们在这里预筛选符合条件的剧情标签记录
-			var plotValues []string
-			db.Mdb.Raw("SELECT DISTINCT value FROM search_tag_item WHERE pid = ? AND tag_type = 'Plot'", pid).Scan(&plotValues)
+			// --- 高性能优化：Batch Processing Plot Linkage ---
+			// 1. 一次性获取当前联动状态下所有不重复的剧情组合字符串
+			var combinations []string
+			query.Distinct().Pluck("class_tag", &combinations)
+
+			// 2. 获取该 PID 下的所有预定义剧情标签
+			var allPlotItems []model.SearchTagItem
+			db.Mdb.Where("pid = ? AND tag_type = 'Plot'", pid).Find(&allPlotItems)
+
+			// 3. 在内存中交叉比对，判定哪些标签“有片子”
 			activeSet = make(map[string]bool)
-			for _, pv := range plotValues {
-				var count int64
-				// 检查该剧情标签在当前联动条件下是否有结果
-				tempQuery := query.Session(&gorm.Session{})
-				tempQuery.Where("class_tag LIKE ?", fmt.Sprintf("%%%s%%", pv)).Limit(1).Count(&count)
-				if count > 0 {
-					activeSet[pv] = true
+			for _, item := range allPlotItems {
+				for _, combo := range combinations {
+					// 字符串包含匹配比起数据库 LIKE 快得多
+					if strings.Contains(combo, item.Value) {
+						activeSet[item.Value] = true
+						break
+					}
 				}
 			}
+			// ----------------------------------------------
 		}
 
 		tags := HandleTagStr(pid, t, GetTagsByTitle(pid, t, activeSet, sticky)...)
