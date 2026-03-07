@@ -283,6 +283,10 @@ func BatchHandleSearchTag(infos ...model.SearchInfo) {
 		HandleSearchTags(info.ClassTag, "Plot", info.Pid)
 		HandleSearchTags(info.Area, "Area", info.Pid)
 		HandleSearchTags(info.Language, "Language", info.Pid)
+		// 新增：动态年分标签
+		if info.Year > 0 {
+			HandleSearchTags(fmt.Sprint(info.Year), "Year", info.Pid)
+		}
 	}
 }
 
@@ -296,14 +300,7 @@ func ensureStaticTagsForPid(pid int64) {
 		return
 	}
 
-	// 2. 初始化 Year
-	currentYear := time.Now().Year()
-	var yearItems []model.SearchTagItem
-	for i := 0; i < 12; i++ {
-		y := fmt.Sprint(currentYear - i)
-		yearItems = append(yearItems, model.SearchTagItem{Pid: pid, TagType: "Year", Name: y, Value: y, Score: int64(currentYear - i)})
-	}
-	db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&yearItems)
+	// 此时不再初始化 Year，年份将随数据动态生成
 
 	// 3. 初始化 Initial (A-Z)
 	var initialItems []model.SearchTagItem
@@ -340,10 +337,20 @@ func HandleSearchTags(preTags string, tagType string, pid int64, customValues ..
 			val = customVal[0]
 		}
 
+		score := int64(1)
+		doUpdates := clause.Assignments(map[string]interface{}{"score": gorm.Expr("score + 1")})
+
+		// 年份特殊处理：分值即年份，确保按年份倒序排列
+		if tagType == "Year" {
+			y, _ := strconv.Atoi(v)
+			score = int64(y)
+			doUpdates = clause.Assignments(map[string]interface{}{"score": score}) // 年份分数固定为年份值
+		}
+
 		db.Mdb.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "pid"}, {Name: "tag_type"}, {Name: "value"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{"score": gorm.Expr("score + 1")}),
-		}).Create(&model.SearchTagItem{Pid: pid, TagType: tagType, Name: v, Value: val, Score: 1})
+			DoUpdates: doUpdates,
+		}).Create(&model.SearchTagItem{Pid: pid, TagType: tagType, Name: v, Value: val, Score: score})
 	}
 
 	if tagType == "Category" && len(customValues) > 0 {
@@ -670,13 +677,28 @@ func HandleTagStr(title string, tags ...string) []map[string]string {
 	list := make([]map[string]string, 0)
 
 	// 除排序外，默认都有“全部”选项
-	if !strings.EqualFold(title, "Sort") {
+	hasAll := !strings.EqualFold(title, "Sort")
+	if hasAll {
 		list = append(list, map[string]string{"Name": "全部", "Value": ""})
 	}
 
 	for _, t := range tags {
 		if sl := strings.Split(t, ":"); len(sl) > 1 {
 			list = append(list, map[string]string{"Name": sl[0], "Value": sl[1]})
+		}
+	}
+
+	// 针对特定类型，恢复显示“其它”选项，方便过滤不属于列表的数据
+	// 核心修复：如果除了“全部”外没有任何具体的动态标签，则不显示“其它”，避免界面尴尬
+	if strings.EqualFold(title, "Plot") || strings.EqualFold(title, "Area") ||
+		strings.EqualFold(title, "Language") || strings.EqualFold(title, "Year") {
+
+		threshold := 0
+		if hasAll {
+			threshold = 1
+		}
+		if len(list) > threshold {
+			list = append(list, map[string]string{"Name": "其它", "Value": "其它"})
 		}
 	}
 
