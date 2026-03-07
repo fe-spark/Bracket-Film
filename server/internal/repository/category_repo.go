@@ -5,101 +5,57 @@ import (
 	"server/internal/infra/db"
 	"server/internal/model"
 
-	"sync"
-	"sync/atomic"
-
 	"gorm.io/gorm"
 )
 
-type catCacheData struct {
-	nameToId map[string]int64
-	idToPid  map[int64]int64
-	tree     *model.CategoryTree
-}
+// 简易内存映射：仅用于爬虫入库等批量场景的高频查找，避免过多的数据库 IO
+var nameToId = make(map[string]int64)
+var idToPid = make(map[int64]int64)
 
-// catCache 用于加速分类数据查找
-var catCache atomic.Value // 存储 *catCacheData
-var cacheMu sync.Mutex
-
-// RefreshCategoryCache 用于重新加载分类缓存到内存
+// RefreshCategoryCache 用于重新加载基础映射映射到内存
 func RefreshCategoryCache() {
-	cacheMu.Lock()
-	defer cacheMu.Unlock()
 	var all []model.Category
 	db.Mdb.Find(&all)
 
-	data := &catCacheData{
-		nameToId: make(map[string]int64),
-		idToPid:  make(map[int64]int64),
-	}
-
-	nodes := make(map[int64]*model.CategoryTree)
-	root := &model.CategoryTree{
-		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
-		Children: make([]*model.CategoryTree, 0),
-	}
+	newNameMap := make(map[string]int64)
+	newPidMap := make(map[int64]int64)
 
 	for _, c := range all {
 		item := c
-		data.idToPid[item.Id] = item.Pid
+		newPidMap[item.Id] = item.Pid
 		// 子类具有更高的查找优先级 (Pid > 0)
 		if item.Pid > 0 {
-			data.nameToId[item.Name] = item.Id
-		} else if _, ok := data.nameToId[item.Name]; !ok {
+			newNameMap[item.Name] = item.Id
+		} else if _, ok := newNameMap[item.Name]; !ok {
 			// 如果该名称还没存入子类 ID，则存入大类 ID (Pid = 0)
-			data.nameToId[item.Name] = item.Id
-		}
-
-		nodes[item.Id] = &model.CategoryTree{
-			Category: &item,
-			Children: make([]*model.CategoryTree, 0),
+			newNameMap[item.Name] = item.Id
 		}
 	}
-
-	for _, c := range all {
-		node := nodes[c.Id]
-		if node.Pid == 0 {
-			root.Children = append(root.Children, node)
-		} else if parent, ok := nodes[node.Pid]; ok {
-			parent.Children = append(parent.Children, node)
-		} else {
-			root.Children = append(root.Children, node)
-		}
-	}
-	data.tree = root
-	catCache.Store(data)
+	nameToId = newNameMap
+	idToPid = newPidMap
 }
 
-// GetCidByName 根据分类名称查找对应的类 ID (优先从内存缓存中获取)
+// GetCidByName 根据分类名称查找对应的类 ID (从内存简单映射获取)
 func GetCidByName(name string) int64 {
-	val := catCache.Load()
-	if val == nil {
+	if len(nameToId) == 0 {
 		RefreshCategoryCache()
-		val = catCache.Load()
 	}
-	data := val.(*catCacheData)
-	if id, ok := data.nameToId[name]; ok {
-		return id
-	}
-	return 0
+	return nameToId[name]
 }
 
-// GetRootId 获取分类的顶级根 ID (通过缓存递归或一次性查出)
+// GetRootId 获取分类的顶级根 ID (通过内存递归映射)
 func GetRootId(id int64) int64 {
 	if id == 0 {
 		return 0
 	}
-	val := catCache.Load()
-	if val == nil {
+	if len(idToPid) == 0 {
 		RefreshCategoryCache()
-		val = catCache.Load()
 	}
-	data := val.(*catCacheData)
 
 	curr := id
 	// 为防止循环引用死循环，最多查找 5 层 (目前本项目只有 2 层)
 	for i := 0; i < 5; i++ {
-		p, ok := data.idToPid[curr]
+		p, ok := idToPid[curr]
 		if !ok || p == 0 {
 			return curr
 		}
@@ -113,13 +69,10 @@ func IsRootCategory(id int64) bool {
 	if id == 0 {
 		return false
 	}
-	val := catCache.Load()
-	if val == nil {
+	if len(idToPid) == 0 {
 		RefreshCategoryCache()
-		val = catCache.Load()
 	}
-	data := val.(*catCacheData)
-	p, ok := data.idToPid[id]
+	p, ok := idToPid[id]
 	return ok && p == 0
 }
 
@@ -205,86 +158,93 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 
 		return nil
 	})
-	// 事务提交成功后，从库中重新加载缓存
+	// 事务提交成功后，同步更新内存临时映射
 	RefreshCategoryCache()
 	return err
 }
 
-// GetCategoryTree 获取完整分类树 (从缓存重建，返回副本以防外部修改影响缓存)
-func GetCategoryTree() model.CategoryTree {
-	val := catCache.Load()
-	if val == nil {
-		RefreshCategoryCache()
-		val = catCache.Load()
+// buildTreeHelper 内部辅助函数：直接从列表构建树形结构内存模型
+func buildTreeHelper(all []model.Category) model.CategoryTree {
+	nodes := make(map[int64]*model.CategoryTree)
+	for _, c := range all {
+		item := c
+		nodes[item.Id] = &model.CategoryTree{
+			Category: &item,
+			Children: make([]*model.CategoryTree, 0),
+		}
 	}
-	data := val.(*catCacheData)
 
-	// 简单的树深复制，目前只有 2 层
 	root := model.CategoryTree{
 		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
-		Children: make([]*model.CategoryTree, 0, len(data.tree.Children)),
+		Children: make([]*model.CategoryTree, 0),
 	}
 
-	for _, c := range data.tree.Children {
-		node := &model.CategoryTree{
-			Category: c.Category,
-			Children: make([]*model.CategoryTree, 0, len(c.Children)),
+	for _, c := range all {
+		node := nodes[c.Id]
+		if c.Pid == 0 {
+			root.Children = append(root.Children, node)
+		} else if parent, ok := nodes[c.Pid]; ok {
+			parent.Children = append(parent.Children, node)
 		}
-		for _, sub := range c.Children {
-			node.Children = append(node.Children, &model.CategoryTree{
-				Category: sub.Category,
-				Children: nil,
-			})
-		}
-		root.Children = append(root.Children, node)
 	}
-
 	return root
 }
 
-// GetActiveCategoryTree 获取仅包含有影视内容的分类树的副本
+// GetCategoryTree 获取完整分类树副本 (实时查库，不走长期缓存)
+func GetCategoryTree() model.CategoryTree {
+	var all []model.Category
+	db.Mdb.Find(&all)
+	return buildTreeHelper(all)
+}
+
+// GetActiveCategoryTree 获取仅包含有影视内容的分类树副本 (实时查库)
 func GetActiveCategoryTree() model.CategoryTree {
-	root := GetCategoryTree() // 先查全量
+	// 1. 获取所有配置显示且未删除的分类
+	var all []model.Category
+	db.Mdb.Where("`show` = ?", true).Find(&all)
 
-	// 查出哪些 cid (二级) 和 pid (一级) 下有资源
-	var activeCids []int64
-	db.Mdb.Model(&model.SearchInfo{}).Select("cid").Group("cid").Find(&activeCids)
+	// 2. 实时查出哪些 Pid 和 Cid 下面真的存有视频记录 (DISTINCT)
+	var activeIds []int64
+	db.Mdb.Raw("SELECT DISTINCT pid FROM search_info UNION SELECT DISTINCT cid FROM search_info").Pluck("pid", &activeIds)
 
-	var activePids []int64
-	db.Mdb.Model(&model.SearchInfo{}).Select("pid").Group("pid").Find(&activePids)
-
-	// 放进 map 方便查找
 	activeMap := make(map[int64]bool)
-	for _, id := range activeCids {
-		activeMap[id] = true
-	}
-	for _, id := range activePids {
+	for _, id := range activeIds {
 		activeMap[id] = true
 	}
 
-	// 过滤：只有当分类 id 在 activeMap 中，且 show 为 true 时才保留
-	// 保留包含有效子分类的一级大类
-	filteredRootChildren := make([]*model.CategoryTree, 0)
-	for _, rootNode := range root.Children {
-		if !rootNode.Show {
-			continue
+	// 3. 内存构建树
+	nodes := make(map[int64]*model.CategoryTree)
+	for _, c := range all {
+		item := c
+		nodes[item.Id] = &model.CategoryTree{
+			Category: &item,
+			Children: make([]*model.CategoryTree, 0),
 		}
+	}
 
-		filteredSubChildren := make([]*model.CategoryTree, 0)
-		for _, subNode := range rootNode.Children {
-			if subNode.Show && activeMap[subNode.Id] {
-				filteredSubChildren = append(filteredSubChildren, subNode)
+	root := model.CategoryTree{
+		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
+		Children: make([]*model.CategoryTree, 0),
+	}
+
+	// 4. 第一遍：挂载子类
+	for _, c := range all {
+		if c.Pid != 0 {
+			if parent, ok := nodes[c.Pid]; ok && activeMap[c.Id] {
+				parent.Children = append(parent.Children, nodes[c.Id])
 			}
 		}
+	}
 
-		rootNode.Children = filteredSubChildren
-
-		// 如果该一级大类自己有视频，或者它包含有效子类，则展示它
-		if activeMap[rootNode.Id] || len(rootNode.Children) > 0 {
-			filteredRootChildren = append(filteredRootChildren, rootNode)
+	// 5. 第二遍：挂载有数据或有子类的大类到根部
+	for _, c := range all {
+		if c.Pid == 0 {
+			node := nodes[c.Id]
+			if activeMap[c.Id] || len(node.Children) > 0 {
+				root.Children = append(root.Children, node)
+			}
 		}
 	}
-	root.Children = filteredRootChildren
 
 	return root
 }
@@ -296,21 +256,16 @@ func ExistsCategoryTree() bool {
 	return count > 0
 }
 
-// GetChildrenTree 根据影片Id获取对应分类的子分类信息
+// GetChildrenTree 获取对应主分类下的子分类列表 (实时查库)
 func GetChildrenTree(pid int64) []*model.CategoryTree {
-	val := catCache.Load()
-	if val == nil {
-		RefreshCategoryCache()
-		val = catCache.Load()
-	}
-	data := val.(*catCacheData)
+	var all []model.Category
+	db.Mdb.Find(&all)
+	tree := buildTreeHelper(all)
 
-	// 查找该 pid 对应的节点，并返回其子分类
 	if pid == 0 {
-		return data.tree.Children
+		return tree.Children
 	}
-
-	for _, c := range data.tree.Children {
+	for _, c := range tree.Children {
 		if c.Id == pid {
 			return c.Children
 		}
@@ -318,13 +273,10 @@ func GetChildrenTree(pid int64) []*model.CategoryTree {
 	return nil
 }
 
-// GetParentId 获取指定分类的父级 ID
+// GetParentId 获取指定分类的父级 ID (从高性能映射获取)
 func GetParentId(id int64) int64 {
-	val := catCache.Load()
-	if val == nil {
+	if len(idToPid) == 0 {
 		RefreshCategoryCache()
-		val = catCache.Load()
 	}
-	data := val.(*catCacheData)
-	return data.idToPid[id]
+	return idToPid[id]
 }
