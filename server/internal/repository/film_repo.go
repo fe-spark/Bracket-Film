@@ -667,7 +667,7 @@ func GetTagsByTitle(pid int64, tagType string) []string {
 	return tags
 }
 
-func HandleTagStr(title string, tags ...string) []map[string]string {
+func HandleTagStr(pid int64, title string, tags ...string) []map[string]string {
 	list := make([]map[string]string, 0)
 
 	// 除排序外，默认都有“全部”选项
@@ -676,23 +676,37 @@ func HandleTagStr(title string, tags ...string) []map[string]string {
 		list = append(list, map[string]string{"Name": "全部", "Value": ""})
 	}
 
+	displayedValues := make([]string, 0)
 	for _, t := range tags {
 		if sl := strings.Split(t, ":"); len(sl) > 1 {
 			list = append(list, map[string]string{"Name": sl[0], "Value": sl[1]})
+			displayedValues = append(displayedValues, sl[1])
 		}
 	}
 
 	// 针对特定类型，恢复显示“其它”选项，方便过滤不属于列表的数据
-	// 核心修复：如果除了“全部”外没有任何具体的动态标签，则不显示“其它”，避免界面尴尬
+	// 核心修复：只有当数据库中确实存在“其它”数据时（NotIn 已显示的标签），才显示“其它”
 	if strings.EqualFold(title, "Plot") || strings.EqualFold(title, "Area") ||
 		strings.EqualFold(title, "Language") || strings.EqualFold(title, "Year") {
 
-		threshold := 0
-		if hasAll {
-			threshold = 1
-		}
-		if len(list) > threshold {
-			list = append(list, map[string]string{"Name": "其它", "Value": "其它"})
+		if len(displayedValues) > 0 {
+			var count int64
+			query := db.Mdb.Model(&model.SearchInfo{}).Where("pid = ?", pid)
+			field := strings.ToLower(title)
+
+			if title == "Plot" {
+				field = "class_tag"
+				for _, v := range displayedValues {
+					query = query.Where("class_tag NOT LIKE ?", fmt.Sprintf("%%%s%%", v))
+				}
+			} else {
+				query = query.Where(fmt.Sprintf("%s NOT IN ?", field), displayedValues)
+			}
+
+			query.Count(&count)
+			if count > 0 {
+				list = append(list, map[string]string{"Name": "其它", "Value": "其它"})
+			}
 		}
 	}
 
@@ -714,7 +728,7 @@ func GetSearchTag(pid int64) map[string]interface{} {
 	}
 	tagMap := make(map[string]interface{})
 	for _, t := range sortList {
-		tagMap[t] = HandleTagStr(t, GetTagsByTitle(pid, t)...)
+		tagMap[t] = HandleTagStr(pid, t, GetTagsByTitle(pid, t)...)
 	}
 	res["tags"] = tagMap
 	return res
@@ -723,7 +737,7 @@ func GetSearchTag(pid int64) map[string]interface{} {
 func GetSearchOptions(pid int64) map[string]interface{} {
 	tagMap := make(map[string]interface{})
 	for _, t := range []string{"Plot", "Area", "Language", "Year"} {
-		tagMap[t] = HandleTagStr(t, GetTagsByTitle(pid, t)...)
+		tagMap[t] = HandleTagStr(pid, t, GetTagsByTitle(pid, t)...)
 	}
 	return tagMap
 }
