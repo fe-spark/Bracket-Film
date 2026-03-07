@@ -123,9 +123,9 @@ type SearchInfo struct {
 	SubTitle     string  `json:"subTitle"`                                  // 影片子标题
 	CName        string  `json:"cName"`                                     // 分类名称
 	ClassTag     string  `json:"classTag"`                                  // 类型标签
-	Area         string  `json:"area"`                                      // 地区
-	Language     string  `json:"language"`                                  // 语言
-	Year         int64   `json:"year"`                                      // 年份
+	Area         string  `json:"area" gorm:"index"`                         // 地区
+	Language     string  `json:"language" gorm:"index"`                     // 语言
+	Year         int64   `json:"year" gorm:"index"`                         // 年份
 	Initial      string  `json:"initial"`                                   // 首字母
 	Score        float64 `json:"score"`                                     // 评分
 	UpdateStamp  int64   `json:"updateStamp"`                               // 更新时间

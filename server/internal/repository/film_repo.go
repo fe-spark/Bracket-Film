@@ -676,19 +676,21 @@ func GetTagsByTitle(pid int64, tagType string, activeValues map[string]bool, sti
 		}
 
 		// 存在性判断
-		if tagType == "Plot" {
-			// Plot 比较特殊，因为是模糊匹配，这里我们依然保留针对单个标签的 Count，
-			// 但因为有 Redis 缓存，整体性能可控。
+		if activeValues != nil {
+			// 如果外部传入了精准的已锁定标签集（如联动查询时），直接使用
+			if activeValues[item.Value] {
+				tags = append(tags, fmt.Sprintf("%s:%s", item.Name, item.Value))
+			}
+		} else if tagType == "Plot" {
+			// Plot 在没有预计算 activeValues 时走模糊匹配兜底 (例如简单的面板初始化)
 			var exists int64
 			db.Mdb.Model(&model.SearchInfo{}).Where("pid = ? AND class_tag LIKE ?", pid, fmt.Sprintf("%%%s%%", item.Value)).Limit(1).Count(&exists)
 			if exists > 0 {
 				tags = append(tags, fmt.Sprintf("%s:%s", item.Name, item.Value))
 			}
 		} else {
-			// 其他类型使用预先查出来的 activeValues 快速判断
-			if activeValues[item.Value] {
-				tags = append(tags, fmt.Sprintf("%s:%s", item.Name, item.Value))
-			}
+			// 其他类型在没有 activeValues 时暂时不做即时校验 (通常走缓存)
+			tags = append(tags, fmt.Sprintf("%s:%s", item.Name, item.Value))
 		}
 	}
 
@@ -753,49 +755,23 @@ func HandleTagStr(pid int64, title string, tags ...string) []map[string]string {
 	return list
 }
 
-// GetSearchTag 获取搜索标签 (带分类树并支持结果感知)
+// GetSearchTag 获取搜索标签 (带联动感知与复合 Redis 缓存)
 func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 	pid := st.Pid
-	// 1. 尝试从 Redis 获取 (只有在没有任何筛选参数时才走全局缓存)
-	isNoFilter := st.Cid == 0 && st.Area == "" && st.Language == "" && st.Year == "" && st.Plot == ""
-	cacheKey := fmt.Sprintf(config.SearchTagsKey, pid)
-	if isNoFilter {
-		if data, err := db.Rdb.Get(db.Cxt, cacheKey).Result(); err == nil && data != "" {
-			var res map[string]interface{}
-			if json.Unmarshal([]byte(data), &res) == nil {
-				return res
-			}
+	// 1. 生成复合缓存 Key (含所有筛选维度)
+	// 格式: SearchTags:{pid}:{cid}:{area}:{language}:{year}:{plot}
+	// 这里直接使用原值拼接（或简单清理），比 GenerateHashKey 更快且更直观
+	cacheKey := fmt.Sprintf("SearchTags:%d:%d:%s:%s:%s:%s",
+		pid, st.Cid,
+		st.Area, st.Language, st.Year, st.Plot,
+	)
+
+	// 2. 尝试从 Redis 获取缓存
+	if data, err := db.Rdb.Get(db.Cxt, cacheKey).Result(); err == nil && data != "" {
+		var res map[string]interface{}
+		if json.Unmarshal([]byte(data), &res) == nil {
+			return res
 		}
-	}
-
-	// 2. 实时查询当前 PID 下实际存在的各维度值 (高性能 DISTINCT)
-	activeAreas := make(map[string]bool)
-	activeLangs := make(map[string]bool)
-	activeYears := make(map[string]bool)
-	activeCids := make(map[string]bool)
-
-	var areas []string
-	db.Mdb.Model(&model.SearchInfo{}).Where("pid = ?", pid).Distinct().Pluck("area", &areas)
-	for _, v := range areas {
-		activeAreas[v] = true
-	}
-
-	var langs []string
-	db.Mdb.Model(&model.SearchInfo{}).Where("pid = ?", pid).Distinct().Pluck("language", &langs)
-	for _, v := range langs {
-		activeLangs[v] = true
-	}
-
-	var years []int64
-	db.Mdb.Model(&model.SearchInfo{}).Where("pid = ?", pid).Distinct().Pluck("year", &years)
-	for _, v := range years {
-		activeYears[fmt.Sprint(v)] = true
-	}
-
-	var cids []int64
-	db.Mdb.Model(&model.SearchInfo{}).Where("pid = ?", pid).Distinct().Pluck("cid", &cids)
-	for _, v := range cids {
-		activeCids[fmt.Sprint(v)] = true
 	}
 
 	res := make(map[string]interface{})
@@ -811,32 +787,89 @@ func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 
 	tagMap := make(map[string]interface{})
 	activeSortList := make([]string, 0)
+
+	// 多维联动逻辑：计算每一行的选项时，锁定其他所有已选中的行
 	for _, t := range sortList {
-		var activeSet map[string]bool
 		var sticky string
+		var activeSet map[string]bool
+		query := db.Mdb.Model(&model.SearchInfo{}).Where("pid = ?", pid)
+
+		// 联动核心：计算当前行时，应用其他维度的已选条件
+		if t != "Category" && st.Cid > 0 {
+			if IsRootCategory(st.Cid) {
+				query = query.Where("pid = ?", st.Cid)
+			} else {
+				query = query.Where("cid = ?", st.Cid)
+			}
+		}
+		if t != "Area" && st.Area != "" && st.Area != "全部" && st.Area != "其它" {
+			query = query.Where("area = ?", st.Area)
+		}
+		if t != "Language" && st.Language != "" && st.Language != "全部" && st.Language != "其它" {
+			query = query.Where("language = ?", st.Language)
+		}
+		if t != "Year" && st.Year != "" && st.Year != "全部" && st.Year != "其它" {
+			query = query.Where("year = ?", st.Year)
+		}
+		if t != "Plot" && st.Plot != "" && st.Plot != "全部" && st.Plot != "其它" {
+			query = query.Where("class_tag LIKE ?", fmt.Sprintf("%%%s%%", st.Plot))
+		}
+
 		switch t {
 		case "Category":
-			activeSet = activeCids
 			sticky = fmt.Sprint(st.Cid)
 			if st.Cid == 0 {
 				sticky = ""
 			}
+			var vals []int64
+			query.Distinct().Pluck("cid", &vals)
+			activeSet = make(map[string]bool)
+			for _, v := range vals {
+				activeSet[fmt.Sprint(v)] = true
+			}
 		case "Area":
-			activeSet = activeAreas
 			sticky = st.Area
+			var vals []string
+			query.Distinct().Pluck("area", &vals)
+			activeSet = make(map[string]bool)
+			for _, v := range vals {
+				activeSet[v] = true
+			}
 		case "Language":
-			activeSet = activeLangs
 			sticky = st.Language
+			var vals []string
+			query.Distinct().Pluck("language", &vals)
+			activeSet = make(map[string]bool)
+			for _, v := range vals {
+				activeSet[v] = true
+			}
 		case "Year":
-			activeSet = activeYears
 			sticky = st.Year
+			var vals []int64
+			query.Distinct().Pluck("year", &vals)
+			activeSet = make(map[string]bool)
+			for _, v := range vals {
+				activeSet[fmt.Sprint(v)] = true
+			}
 		case "Plot":
 			sticky = st.Plot
+			// 特殊处理性能：Plot 仍然需要模糊匹配验证，这里通过传递 query 的 Where 子句来支持联动
+			// 由于 GetTagsByTitle 的局限性，我们在这里预筛选符合条件的剧情标签记录
+			var plotValues []string
+			db.Mdb.Raw("SELECT DISTINCT value FROM search_tag_item WHERE pid = ? AND tag_type = 'Plot'", pid).Scan(&plotValues)
+			activeSet = make(map[string]bool)
+			for _, pv := range plotValues {
+				var count int64
+				// 检查该剧情标签在当前联动条件下是否有结果
+				tempQuery := query.Session(&gorm.Session{})
+				tempQuery.Where("class_tag LIKE ?", fmt.Sprintf("%%%s%%", pv)).Limit(1).Count(&count)
+				if count > 0 {
+					activeSet[pv] = true
+				}
+			}
 		}
 
 		tags := HandleTagStr(pid, t, GetTagsByTitle(pid, t, activeSet, sticky)...)
-		// 如果一个筛选维度只有“全部”，或者除了“全部”就没有有效选项了，则不显示该行
-		// 粘性逻辑：如果当前用户确实选中了该维度下的某个值，即使只有这一个，也显示
 		if t == "Sort" || len(tags) > 1 || (sticky != "" && sticky != "全部") {
 			tagMap[t] = tags
 			activeSortList = append(activeSortList, t)
@@ -845,11 +878,9 @@ func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 	res["sortList"] = activeSortList
 	res["tags"] = tagMap
 
-	// 3. 只有无筛选时才持久化回 Redis (因为筛选组合是动态的)
-	if isNoFilter {
-		if data, err := json.Marshal(res); err == nil {
-			db.Rdb.Set(db.Cxt, cacheKey, string(data), time.Hour*24)
-		}
+	// 3. 写入 Redis 缓存 (所有组合均缓存 24 小时)
+	if data, err := json.Marshal(res); err == nil {
+		db.Rdb.Set(db.Cxt, cacheKey, string(data), time.Hour*24)
 	}
 
 	return res
@@ -1088,9 +1119,17 @@ func RecoverFilmSearch(cid int64) error {
 	return nil
 }
 
-// ClearSearchTagsCache 清除特定分类的搜索标签缓存
+// ClearSearchTagsCache 清除特定分类的所有复合搜索标签缓存
 func ClearSearchTagsCache(pid int64) {
-	db.Rdb.Del(db.Cxt, fmt.Sprintf(config.SearchTagsKey, pid))
+	// 使用通配符前缀：SearchTags:{pid}:*
+	pattern := fmt.Sprintf("SearchTags:%d:*", pid)
+	ctx := db.Cxt
+	iter := db.Rdb.Scan(ctx, 0, pattern, config.MaxScanCount).Iterator()
+	for iter.Next(ctx) {
+		db.Rdb.Del(ctx, iter.Val())
+	}
+	// 同时兼容旧版/基础版 key: SearchTags:{pid}
+	db.Rdb.Del(ctx, fmt.Sprintf(config.SearchTagsKey, pid))
 }
 
 // ClearAllSearchTagsCache 清除所有分类的搜索标签缓存 (扫描清理)
