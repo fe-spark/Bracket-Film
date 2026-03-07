@@ -268,6 +268,7 @@ func GetActiveCategoryTree() model.CategoryTree {
 // ClearCategoryCache 清除分类相关的所有缓存 (Redis + 内存映射)
 func ClearCategoryCache() {
 	db.Rdb.Del(db.Cxt, config.ActiveCategoryTreeKey)
+	ClearAllSearchTagsCache()
 	RefreshCategoryCache()
 }
 

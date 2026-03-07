@@ -1005,6 +1005,16 @@ func ClearSearchTagsCache(pid int64) {
 	db.Rdb.Del(db.Cxt, fmt.Sprintf(config.SearchTagsKey, pid))
 }
 
+// ClearAllSearchTagsCache 清除所有分类的搜索标签缓存 (扫描清理)
+func ClearAllSearchTagsCache() {
+	// 基于 config 里的模板生成通配符，防止硬编码 prefix 不一致
+	pattern := strings.Replace(config.SearchTagsKey, "%d", "*", 1)
+	keys, err := db.Rdb.Keys(db.Cxt, pattern).Result()
+	if err == nil && len(keys) > 0 {
+		db.Rdb.Del(db.Cxt, keys...)
+	}
+}
+
 // FilmZero 删除所有库存数据 (包含 MySQL 持久化表)
 func FilmZero() {
 	// 清理 MySQL
@@ -1060,6 +1070,7 @@ func CleanEmptyFilms() int64 {
 	}
 	for _, info := range infos {
 		_ = DelFilmSearch(info.Mid)
+		ClearSearchTagsCache(info.Pid)
 	}
 	// DelFilmSearch 内部会精确清除对应的 Pid 缓存
 	return int64(len(infos))
