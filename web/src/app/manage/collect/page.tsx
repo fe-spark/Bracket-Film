@@ -278,6 +278,16 @@ export default function CollectManagePage() {
     setPassword("");
   };
 
+  const submitStopAllTasks = async () => {
+    const resp = await ApiGet("/manage/spider/stopAll");
+    if (resp.code === 0) {
+      message.success(resp.msg);
+      getCollectingState();
+    } else {
+      message.error(resp.msg);
+    }
+  };
+
   const columns: ColumnsType<FilmSource> = [
     {
       title: "资源名称",
@@ -545,6 +555,24 @@ export default function CollectManagePage() {
             一键采集
           </Button>
         </Tooltip>
+        <Popconfirm
+          title="一键终止所有采集"
+          description="确定要强制终止当前所有正在运行的采集任务吗？这可能导致部分数据不完整。"
+          onConfirm={submitStopAllTasks}
+          okText="确认终止"
+          cancelText="取消"
+          okButtonProps={{ danger: true }}
+          disabled={activeCollectIds.length === 0}
+        >
+          <Button
+            type="primary"
+            danger
+            icon={<PauseOutlined />}
+            disabled={activeCollectIds.length === 0}
+          >
+            一键终止
+          </Button>
+        </Popconfirm>
         <Button
           danger
           icon={<DeleteOutlined />}

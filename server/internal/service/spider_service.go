@@ -66,3 +66,8 @@ func (s *SpiderService) FilmClassCollect() error {
 	}
 	return errors.New("未获取到已启用的主采集站信息")
 }
+
+// StopAllTasks 强制停止所有採集任務
+func (s *SpiderService) StopAllTasks() {
+	spider.StopAllTasks()
+}

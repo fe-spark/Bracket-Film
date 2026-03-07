@@ -100,6 +100,7 @@ func SetupRouter() *gin.Engine {
 			spiderRoute.GET(`/clear`, handler.SpiderHd.ClearAllFilm)
 			spiderRoute.GET(`/update/single`, handler.SpiderHd.SingleUpdateSpider)
 			spiderRoute.GET(`/class/cover`, handler.SpiderHd.CoverFilmClass)
+			spiderRoute.GET(`/stopAll`, handler.SpiderHd.StopAllTasks)
 		}
 
 		// filmManage 影视管理

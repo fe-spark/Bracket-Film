@@ -102,6 +102,12 @@ func (h *SpiderHandler) SingleUpdateSpider(c *gin.Context) {
 	dto.SuccessOnlyMsg("影片更新任务已成功开启!!!", c)
 }
 
+// StopAllTasks 一键终止所有采集中任务
+func (h *SpiderHandler) StopAllTasks(c *gin.Context) {
+	service.SpiderSvc.StopAllTasks()
+	dto.SuccessOnlyMsg("已发送终止指令，所有采集任务正在停止", c)
+}
+
 func verifyPassword(c *gin.Context, password string) bool {
 	v, ok := c.Get(config.AuthUserClaims)
 	if !ok {
