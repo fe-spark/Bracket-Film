@@ -113,7 +113,60 @@ func BatchSaveOrUpdate(list []model.SearchInfo) map[string]int64 {
 	}
 
 	BatchHandleSearchTag(list...)
+	// 3. 异步同步标签关系表 (规范化存储以供高性能联动)
+	go SyncMovieTagRel(latestInfos)
+
 	return keyToMid
+}
+
+// SyncMovieTagRel 同步影片与各维度标签的关系表 (供智能联动筛选使用)
+func SyncMovieTagRel(list []model.SearchInfo) {
+	if len(list) == 0 {
+		return
+	}
+
+	var mids []int64
+	for _, v := range list {
+		mids = append(mids, v.Mid)
+	}
+
+	// 在独立事务中处理
+	_ = db.Mdb.Transaction(func(tx *gorm.DB) error {
+		// 1. 清理旧的关系
+		tx.Where("mid IN ?", mids).Delete(&model.MovieTagRel{})
+
+		// 2. 构造新的关系集合
+		var rels []model.MovieTagRel
+		for _, v := range list {
+			// Area
+			if v.Area != "" && v.Area != "全部" && v.Area != "其它" {
+				rels = append(rels, model.MovieTagRel{Mid: v.Mid, TagType: "Area", TagValue: v.Area})
+			}
+			// Language
+			if v.Language != "" && v.Language != "全部" && v.Language != "其它" {
+				rels = append(rels, model.MovieTagRel{Mid: v.Mid, TagType: "Language", TagValue: v.Language})
+			}
+			// Year
+			if v.Year > 0 {
+				rels = append(rels, model.MovieTagRel{Mid: v.Mid, TagType: "Year", TagValue: fmt.Sprint(v.Year)})
+			}
+			// Plot (从 class_tag 中拆分)
+			if v.ClassTag != "" {
+				plots := strings.Split(v.ClassTag, ",")
+				for _, p := range plots {
+					p = strings.TrimSpace(p)
+					if p != "" && p != "全部" && p != "其它" {
+						rels = append(rels, model.MovieTagRel{Mid: v.Mid, TagType: "Plot", TagValue: p})
+					}
+				}
+			}
+		}
+
+		if len(rels) > 0 {
+			tx.CreateInBatches(&rels, 500)
+		}
+		return nil
+	})
 }
 
 func SaveSearchInfo(s model.SearchInfo) error {
@@ -140,9 +193,13 @@ func SaveSearchInfo(s model.SearchInfo) error {
 			SourceMid: s.Mid,
 			GlobalMid: info.Mid,
 		})
+		// 同步标签关系表 (规范化)
+		go SyncMovieTagRel([]model.SearchInfo{info})
 	}
 
 	BatchHandleSearchTag(s)
+	// 单条记录更新也需要清除该分类的搜索标签缓存，防止联动数据过时
+	ClearSearchTagsCache(s.Pid)
 	return err
 }
 
@@ -788,13 +845,15 @@ func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 	tagMap := make(map[string]interface{})
 	activeSortList := make([]string, 0)
 
-	// 多维联动逻辑：计算每一行的选项时，锁定其他所有已选中的行
+	// 多维联动逻辑 (Elegant Faceted)：计算每一行的选项时，锁定其他所有已选中的维度的关系映射
 	for _, t := range sortList {
 		var sticky string
 		var activeSet map[string]bool
-		query := db.Mdb.Model(&model.SearchInfo{}).Where("pid = ?", pid)
 
-		// 联动核心：计算当前行时，应用其他维度的已选条件
+		// 基础过滤集：限定在当前大类 (PID) 下
+		query := db.Mdb.Model(&model.SearchInfo{}).Select("mid").Where("pid = ?", pid)
+
+		// 联动核心：计算当前行时，应用除本行外其他维度的已选条件
 		if t != "Category" && st.Cid > 0 {
 			if IsRootCategory(st.Cid) {
 				query = query.Where("pid = ?", st.Cid)
@@ -803,16 +862,16 @@ func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 			}
 		}
 		if t != "Area" && st.Area != "" && st.Area != "全部" && st.Area != "其它" {
-			query = query.Where("area = ?", st.Area)
+			query = query.Where("mid IN (SELECT mid FROM movie_tag_rel WHERE tag_type = 'Area' AND tag_value = ?)", st.Area)
 		}
 		if t != "Language" && st.Language != "" && st.Language != "全部" && st.Language != "其它" {
-			query = query.Where("language = ?", st.Language)
+			query = query.Where("mid IN (SELECT mid FROM movie_tag_rel WHERE tag_type = 'Language' AND tag_value = ?)", st.Language)
 		}
 		if t != "Year" && st.Year != "" && st.Year != "全部" && st.Year != "其它" {
-			query = query.Where("year = ?", st.Year)
+			query = query.Where("mid IN (SELECT mid FROM movie_tag_rel WHERE tag_type = 'Year' AND tag_value = ?)", st.Year)
 		}
 		if t != "Plot" && st.Plot != "" && st.Plot != "全部" && st.Plot != "其它" {
-			query = query.Where("class_tag LIKE ?", fmt.Sprintf("%%%s%%", st.Plot))
+			query = query.Where("mid IN (SELECT mid FROM movie_tag_rel WHERE tag_type = 'Plot' AND tag_value = ?)", st.Plot)
 		}
 
 		switch t {
@@ -822,58 +881,36 @@ func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 				sticky = ""
 			}
 			var vals []int64
-			query.Distinct().Pluck("cid", &vals)
+			// 分类联动依然基于 search_infos 表查分类 ID
+			db.Mdb.Model(&model.SearchInfo{}).Where("mid IN (?)", query).Distinct().Pluck("cid", &vals)
 			activeSet = make(map[string]bool)
 			for _, v := range vals {
 				activeSet[fmt.Sprint(v)] = true
 			}
-		case "Area":
-			sticky = st.Area
+		case "Sort":
+			// 排序行不需要开启联动感知
+		default:
+			// Plot, Area, Language, Year 统一从 movie_tag_rel 表获取联动后的有效标签集
+			switch t {
+			case "Plot":
+				sticky = st.Plot
+			case "Area":
+				sticky = st.Area
+			case "Language":
+				sticky = st.Language
+			case "Year":
+				sticky = st.Year
+			}
+
 			var vals []string
-			query.Distinct().Pluck("area", &vals)
+			db.Mdb.Model(&model.MovieTagRel{}).
+				Where("tag_type = ? AND mid IN (?)", t, query).
+				Distinct().Pluck("tag_value", &vals)
+
 			activeSet = make(map[string]bool)
 			for _, v := range vals {
 				activeSet[v] = true
 			}
-		case "Language":
-			sticky = st.Language
-			var vals []string
-			query.Distinct().Pluck("language", &vals)
-			activeSet = make(map[string]bool)
-			for _, v := range vals {
-				activeSet[v] = true
-			}
-		case "Year":
-			sticky = st.Year
-			var vals []int64
-			query.Distinct().Pluck("year", &vals)
-			activeSet = make(map[string]bool)
-			for _, v := range vals {
-				activeSet[fmt.Sprint(v)] = true
-			}
-		case "Plot":
-			sticky = st.Plot
-			// --- 高性能优化：Batch Processing Plot Linkage ---
-			// 1. 一次性获取当前联动状态下所有不重复的剧情组合字符串
-			var combinations []string
-			query.Distinct().Pluck("class_tag", &combinations)
-
-			// 2. 获取该 PID 下的所有预定义剧情标签
-			var allPlotItems []model.SearchTagItem
-			db.Mdb.Where("pid = ? AND tag_type = 'Plot'", pid).Find(&allPlotItems)
-
-			// 3. 在内存中交叉比对，判定哪些标签“有片子”
-			activeSet = make(map[string]bool)
-			for _, item := range allPlotItems {
-				for _, combo := range combinations {
-					// 字符串包含匹配比起数据库 LIKE 快得多
-					if strings.Contains(combo, item.Value) {
-						activeSet[item.Value] = true
-						break
-					}
-				}
-			}
-			// ----------------------------------------------
 		}
 
 		tags := HandleTagStr(pid, t, GetTagsByTitle(pid, t, activeSet, sticky)...)
@@ -1091,6 +1128,10 @@ func DelFilmSearch(id int64) error {
 		if err := tx.Where("mid = ?", id).Delete(&model.Banner{}).Error; err != nil {
 			return err
 		}
+		// 5. 删除标签关系
+		if err := tx.Where("mid = ?", id).Delete(&model.MovieTagRel{}).Error; err != nil {
+			return err
+		}
 		return nil
 	})
 
@@ -1103,10 +1144,29 @@ func DelFilmSearch(id int64) error {
 }
 
 func ShieldFilmSearch(cid int64) error {
-	if err := db.Mdb.Where("cid = ?", cid).Delete(&model.SearchInfo{}).Error; err != nil {
+	// 获取相关 MID 列表以便从关系表中删除
+	var mids []int64
+	db.Mdb.Model(&model.SearchInfo{}).Where("cid = ?", cid).Pluck("mid", &mids)
+
+	err := db.Mdb.Transaction(func(tx *gorm.DB) error {
+		// 1. 软删除检索信息
+		if err := tx.Where("cid = ?", cid).Delete(&model.SearchInfo{}).Error; err != nil {
+			return err
+		}
+		// 2. 硬删除对应的标签关系 (保持查询结果干净)
+		if len(mids) > 0 {
+			if err := tx.Where("mid IN ?", mids).Delete(&model.MovieTagRel{}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
 		log.Printf("ShieldFilmSearch Error: %v", err)
 		return err
 	}
+
 	// 清除对应 Pid 的搜索标签缓存
 	if pId := GetParentId(cid); pId > 0 {
 		ClearSearchTagsCache(pId)
@@ -1115,10 +1175,26 @@ func ShieldFilmSearch(cid int64) error {
 }
 
 func RecoverFilmSearch(cid int64) error {
-	if err := db.Mdb.Model(&model.SearchInfo{}).Unscoped().Where("cid = ?", cid).Update("deleted_at", nil).Error; err != nil {
+	err := db.Mdb.Transaction(func(tx *gorm.DB) error {
+		// 1. 恢复检索信息
+		if err := tx.Model(&model.SearchInfo{}).Unscoped().Where("cid = ?", cid).Update("deleted_at", nil).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err != nil {
 		log.Printf("RecoverFilmSearch Error: %v", err)
 		return err
 	}
+
+	// 2. 异步重新同步该分类下所有影片的标签关系 (因为 Shield 时被硬删除了)
+	var infos []model.SearchInfo
+	db.Mdb.Where("cid = ?", cid).Find(&infos)
+	if len(infos) > 0 {
+		go SyncMovieTagRel(infos)
+	}
+
 	// 清除对应 Pid 的搜索标签缓存
 	if pId := GetParentId(cid); pId > 0 {
 		ClearSearchTagsCache(pId)
@@ -1160,6 +1236,7 @@ func FilmZero() {
 		model.TableVirtualPicture,
 		model.TableSearchTag,
 		model.TableBanners,
+		model.TableMovieTagRel,
 	}
 	for _, t := range tables {
 		if err := db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", t)).Error; err != nil {
@@ -1184,6 +1261,7 @@ func MasterFilmZero() {
 		model.TableVirtualPicture,
 		model.TableSearchTag,
 		model.TableBanners,
+		model.TableMovieTagRel,
 	}
 	for _, t := range tables {
 		if err := db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", t)).Error; err != nil {

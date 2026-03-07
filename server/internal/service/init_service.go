@@ -43,6 +43,7 @@ func (s *InitService) TableInit() {
 		&model.MovieSourceMapping{},
 		&model.Banner{},
 		&model.CronSourceRel{},
+		&model.MovieTagRel{},
 	)
 	if err != nil {
 		log.Println("Database AutoMigrate Failed:", err)

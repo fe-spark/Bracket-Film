@@ -150,6 +150,19 @@ type SearchTagItem struct {
 	Score   int64  `gorm:"default:0"`                                     // 热度权重，用于排序
 }
 
+// MovieTagRel 影片与标签的关系映射表 (用于高性能联动筛选)
+type MovieTagRel struct {
+	Mid      int64  `gorm:"index:idx_mid_tag;primaryKey"`                          // 影片ID
+	TagType  string `gorm:"index:idx_mid_tag;primaryKey;size:32"`                  // 标签类型 (Plot/Area/Language/Year)
+	TagValue string `gorm:"index:idx_mid_tag;index:idx_value;primaryKey;size:128"` // 标签值
+}
+
+func (MovieTagRel) TableName() string {
+	return "movie_tag_rel"
+}
+
+const TableMovieTagRel = "movie_tag_rel"
+
 // Tag 影片分类标签结构体
 type Tag struct {
 	Name  string      `json:"name"`
