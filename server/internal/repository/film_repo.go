@@ -660,9 +660,7 @@ func GetTagsByTitle(pid int64, tagType string) []string {
 	return tags
 }
 
-func HandleTagStr(title string, tags ...string) map[string]interface{} {
-	res := make(map[string]interface{})
-	res["type"] = strings.ToLower(title)
+func HandleTagStr(title string, tags ...string) []map[string]string {
 	list := make([]map[string]string, 0)
 
 	// 除排序外，默认都有“全部”选项
@@ -676,9 +674,7 @@ func HandleTagStr(title string, tags ...string) map[string]interface{} {
 		}
 	}
 
-	// 移除“其它”硬编码选项，保持列表整洁
-	res["list"] = list
-	return res
+	return list
 }
 
 // GetSearchTag 获取搜索标签 (带分类树)

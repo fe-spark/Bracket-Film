@@ -144,10 +144,12 @@ func (h *IndexHandler) FilmTagSearch(c *gin.Context) {
 	currentStr := c.DefaultQuery("current", "1")
 	current, _ := strconv.Atoi(currentStr)
 	page := dto.Page{PageSize: 49, Current: current}
-	service.IndexSvc.GetFilmsByTags(params, &page)
+
+	list := service.IndexSvc.GetFilmsByTags(params, &page)
+
 	dto.Success(gin.H{
 		"title":  service.IndexSvc.GetPidCategory(params.Pid).Category,
-		"list":   service.IndexSvc.GetFilmsByTags(params, &page),
+		"list":   list,
 		"search": service.IndexSvc.SearchTags(params.Pid),
 		"params": map[string]string{
 			"Pid":      pidStr,
