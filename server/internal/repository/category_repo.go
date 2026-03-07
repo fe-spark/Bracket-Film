@@ -1,9 +1,12 @@
 package repository
 
 import (
+	"encoding/json"
 	"fmt"
+	"server/internal/config"
 	"server/internal/infra/db"
 	"server/internal/model"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -197,13 +200,21 @@ func GetCategoryTree() model.CategoryTree {
 	return buildTreeHelper(all)
 }
 
-// GetActiveCategoryTree 获取仅包含有影视内容的分类树副本 (实时查库)
+// GetActiveCategoryTree 获取仅包含有影视内容的分类树副本 (实时查库 + Redis 缓存)
 func GetActiveCategoryTree() model.CategoryTree {
-	// 1. 获取所有配置显示且未删除的分类
+	// 1. 尝试从 Redis 获取
+	if data, err := db.Rdb.Get(db.Cxt, config.ActiveCategoryTreeKey).Result(); err == nil && data != "" {
+		var tree model.CategoryTree
+		if json.Unmarshal([]byte(data), &tree) == nil {
+			return tree
+		}
+	}
+
+	// 2. 获取所有配置显示且未删除的分类
 	var all []model.Category
 	db.Mdb.Where("`show` = ?", true).Find(&all)
 
-	// 2. 实时查出哪些 Pid 和 Cid 下面真的存有视频记录 (DISTINCT)
+	// 3. 实时查出哪些 Pid 和 Cid 下面真的存有视频记录 (DISTINCT)
 	var activeIds []int64
 	db.Mdb.Raw("SELECT DISTINCT pid FROM search_info UNION SELECT DISTINCT cid FROM search_info").Pluck("pid", &activeIds)
 
@@ -212,7 +223,7 @@ func GetActiveCategoryTree() model.CategoryTree {
 		activeMap[id] = true
 	}
 
-	// 3. 内存构建树
+	// 4. 内存构建树
 	nodes := make(map[int64]*model.CategoryTree)
 	for _, c := range all {
 		item := c
@@ -227,7 +238,7 @@ func GetActiveCategoryTree() model.CategoryTree {
 		Children: make([]*model.CategoryTree, 0),
 	}
 
-	// 4. 第一遍：挂载子类
+	// 5. 第一遍：挂载子类
 	for _, c := range all {
 		if c.Pid != 0 {
 			if parent, ok := nodes[c.Pid]; ok && activeMap[c.Id] {
@@ -236,7 +247,7 @@ func GetActiveCategoryTree() model.CategoryTree {
 		}
 	}
 
-	// 5. 第二遍：挂载有数据或有子类的大类到根部
+	// 6. 第二遍：挂载有数据或有子类的大类到根部
 	for _, c := range all {
 		if c.Pid == 0 {
 			node := nodes[c.Id]
@@ -246,7 +257,27 @@ func GetActiveCategoryTree() model.CategoryTree {
 		}
 	}
 
+	// 7. 写入 Redis 缓存 (1小时)
+	if data, err := json.Marshal(root); err == nil {
+		db.Rdb.Set(db.Cxt, config.ActiveCategoryTreeKey, string(data), time.Hour)
+	}
+
 	return root
+}
+
+// ClearCategoryCache 清除分类相关的所有缓存 (Redis + 内存映射)
+func ClearCategoryCache() {
+	db.Rdb.Del(db.Cxt, config.ActiveCategoryTreeKey)
+	RefreshCategoryCache()
+}
+
+// UpdateCategoryStatus 仅更新分类的显示状态或名称，并清除缓存
+func UpdateCategoryStatus(id int64, updates map[string]interface{}) error {
+	if err := db.Mdb.Model(&model.Category{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return err
+	}
+	ClearCategoryCache()
+	return nil
 }
 
 // ExistsCategoryTree 查询分类信息是否存在

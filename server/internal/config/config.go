@@ -35,6 +35,8 @@ const (
 const (
 	// CategoryTreeKey 分类树 key
 	CategoryTreeKey = "CategoryTree"
+	// ActiveCategoryTreeKey 活跃分类树缓存 key
+	ActiveCategoryTreeKey = "ActiveCategoryTree"
 	// ConfigCacheTTL 管理员写入控制的配置类 key 有效期 (以长 TTL 最大化命中率)
 	ConfigCacheTTL = time.Hour * 24
 
