@@ -298,24 +298,33 @@ func ExistsCategoryTree() bool {
 
 // GetChildrenTree 根据影片Id获取对应分类的子分类信息
 func GetChildrenTree(pid int64) []*model.CategoryTree {
-	var categories []model.Category
-	db.Mdb.Where("pid = ?", pid).Find(&categories)
-
-	res := make([]*model.CategoryTree, 0)
-	for i := range categories {
-		res = append(res, &model.CategoryTree{
-			Category: &categories[i],
-			Children: nil,
-		})
+	val := catCache.Load()
+	if val == nil {
+		RefreshCategoryCache()
+		val = catCache.Load()
 	}
-	return res
+	data := val.(*catCacheData)
+
+	// 查找该 pid 对应的节点，并返回其子分类
+	if pid == 0 {
+		return data.tree.Children
+	}
+
+	for _, c := range data.tree.Children {
+		if c.Id == pid {
+			return c.Children
+		}
+	}
+	return nil
 }
 
 // GetParentId 获取指定分类的父级 ID
 func GetParentId(id int64) int64 {
-	var category model.Category
-	if err := db.Mdb.Where("id = ?", id).First(&category).Error; err != nil {
-		return 0
+	val := catCache.Load()
+	if val == nil {
+		RefreshCategoryCache()
+		val = catCache.Load()
 	}
-	return category.Pid
+	data := val.(*catCacheData)
+	return data.idToPid[id]
 }

@@ -612,9 +612,9 @@ func GetMovieDetailByDBID(mid int64, name string) []model.MoviePlaySource {
 	return mps
 }
 
-func GetTagsByTitle(pid int64, t string) []string {
-	if t == "Category" {
-		var tags []string
+func GetTagsByTitle(pid int64, tagType string) []string {
+	var tags []string
+	if tagType == "Category" {
 		for _, c := range GetChildrenTree(pid) {
 			if c.Show {
 				tags = append(tags, fmt.Sprintf("%s:%d", c.Name, c.Id))
@@ -622,22 +622,26 @@ func GetTagsByTitle(pid int64, t string) []string {
 		}
 		return tags
 	}
-	limits := map[string]int{"Plot": 11, "Area": 12, "Language": 7}
+
 	var items []model.SearchTagItem
-	q := db.Mdb.Where("pid = ? AND tag_type = ?", pid, t).Order("score DESC")
-	if limit, ok := limits[t]; ok {
-		q = q.Limit(limit)
+	// 对于 Plot, Area, Language, 提高展示上限到 30
+	limit := 30
+	if tagType == "Plot" {
+		limit = 11 // 剧情类保持较少
+	} else if tagType == "Area" {
+		limit = 30
+	} else if tagType == "Language" {
+		limit = 30
 	}
-	q.Find(&items)
-	tags := make([]string, 0, len(items))
+
+	db.Mdb.Where("pid = ? AND tag_type = ?", pid, tagType).Order("score DESC").Limit(limit).Find(&items)
 	for _, item := range items {
 		tags = append(tags, fmt.Sprintf("%s:%s", item.Name, item.Value))
 	}
 
 	// 关键修复：如果数据库中缺失静态标签（Year, Sort），自动提供默认值
-	// 确保前端筛选栏始终有基础选项，不会因为采集库为空而导致 UI 残缺
 	if len(tags) == 0 {
-		switch t {
+		switch tagType {
 		case "Year":
 			currentYear := time.Now().Year()
 			for i := 0; i < 12; i++ {
@@ -656,23 +660,28 @@ func GetTagsByTitle(pid int64, t string) []string {
 	return tags
 }
 
-func HandleTagStr(title string, tags ...string) []map[string]string {
-	r := make([]map[string]string, 0)
+func HandleTagStr(title string, tags ...string) map[string]interface{} {
+	res := make(map[string]interface{})
+	res["type"] = strings.ToLower(title)
+	list := make([]map[string]string, 0)
+
+	// 除排序外，默认都有“全部”选项
 	if !strings.EqualFold(title, "Sort") {
-		r = append(r, map[string]string{"Name": "全部", "Value": ""})
+		list = append(list, map[string]string{"Name": "全部", "Value": ""})
 	}
+
 	for _, t := range tags {
-		if sl := strings.Split(t, ":"); len(sl) > 0 {
-			r = append(r, map[string]string{"Name": sl[0], "Value": sl[1]})
+		if sl := strings.Split(t, ":"); len(sl) > 1 {
+			list = append(list, map[string]string{"Name": sl[0], "Value": sl[1]})
 		}
 	}
-	if !strings.EqualFold(title, "Sort") && !strings.EqualFold(title, "Year") && !strings.EqualFold(title, "Category") {
-		r = append(r, map[string]string{"Name": "其它", "Value": "其它"})
-	}
-	return r
+
+	// 移除“其它”硬编码选项，保持列表整洁
+	res["list"] = list
+	return res
 }
 
-// GetSearchTag 获取搜索标签
+// GetSearchTag 获取搜索标签 (带分类树)
 func GetSearchTag(pid int64) map[string]interface{} {
 	res := make(map[string]interface{})
 	sortList := []string{"Category", "Plot", "Area", "Language", "Year", "Sort"}
@@ -706,6 +715,8 @@ func GetSearchPage(s model.SearchVo) []model.SearchInfo {
 	if s.Name != "" {
 		query = query.Where("name LIKE ?", fmt.Sprintf("%%%s%%", s.Name))
 	}
+
+	// 精准分类过滤
 	if s.Cid > 0 {
 		if IsRootCategory(s.Cid) {
 			query = query.Where("pid = ?", s.Cid)
@@ -715,6 +726,7 @@ func GetSearchPage(s model.SearchVo) []model.SearchInfo {
 	} else if s.Pid > 0 {
 		query = query.Where("pid = ?", s.Pid)
 	}
+
 	if s.Plot != "" {
 		query = query.Where("class_tag LIKE ?", fmt.Sprintf("%%%s%%", s.Plot))
 	}
@@ -754,43 +766,67 @@ func GetSearchInfosByTags(st model.SearchTagsVO, page *dto.Page) []model.SearchI
 	qw := db.Mdb.Model(&model.SearchInfo{})
 	t := reflect.TypeOf(st)
 	v := reflect.ValueOf(st)
+
+	// 记录是否已经处理了分类过滤，防止 Pid 和 Cid 产生冲突
+	categoryFiltered := false
+
 	for i := 0; i < t.NumField(); i++ {
 		value := v.Field(i).Interface()
-		k := strings.ToLower(t.Field(i).Name)
+		fieldName := t.Field(i).Name
+		k := strings.ToLower(fieldName)
+
 		if !dto.IsEmpty(value) {
-			var ts []string
-			if v, flag := value.(string); flag && strings.EqualFold(v, "其它") {
-				for _, s := range GetTagsByTitle(st.Pid, t.Field(i).Name) {
-					ts = append(ts, strings.Split(s, ":")[1])
-				}
-			}
 			switch k {
-			case "pid":
-				qw = qw.Where("pid = ?", value)
-			case "cid":
-				qw = qw.Where("cid = ?", value)
+			case "pid", "cid":
+				if categoryFiltered {
+					continue
+				}
+				// 逻辑与 GetSearchPage 保持高度一致
+				targetCid := st.Cid
+				if targetCid > 0 {
+					if IsRootCategory(targetCid) {
+						qw = qw.Where("pid = ?", targetCid)
+					} else {
+						qw = qw.Where("cid = ?", targetCid)
+					}
+				} else if st.Pid > 0 {
+					qw = qw.Where("pid = ?", st.Pid)
+				}
+				categoryFiltered = true
 			case "year":
 				qw = qw.Where(fmt.Sprintf("%s = ?", k), value)
 			case "area", "language":
-				if strings.EqualFold(value.(string), "其它") {
-					qw = qw.Where(fmt.Sprintf("%s NOT IN ?", k), ts)
+				if vStr, ok := value.(string); ok && strings.EqualFold(vStr, "其它") {
+					allTags := GetTagsByTitle(st.Pid, fieldName)
+					var vals []string
+					for _, tag := range allTags {
+						if sl := strings.Split(tag, ":"); len(sl) > 1 {
+							vals = append(vals, sl[1])
+						}
+					}
+					if len(vals) > 0 {
+						qw = qw.Where(fmt.Sprintf("%s NOT IN ?", k), vals)
+					}
 					break
 				}
 				qw = qw.Where(fmt.Sprintf("%s = ?", k), value)
 			case "plot":
-				if strings.EqualFold(value.(string), "其它") {
-					for _, t := range ts {
-						qw = qw.Where("class_tag NOT LIKE ?", fmt.Sprintf("%%%v%%", t))
+				if vStr, ok := value.(string); ok && strings.EqualFold(vStr, "其它") {
+					allTags := GetTagsByTitle(st.Pid, fieldName)
+					for _, tag := range allTags {
+						if sl := strings.Split(tag, ":"); len(sl) > 1 {
+							qw = qw.Where("class_tag NOT LIKE ?", fmt.Sprintf("%%%v%%", sl[1]))
+						}
 					}
 					break
 				}
 				qw = qw.Where("class_tag LIKE ?", fmt.Sprintf("%%%v%%", value))
 			case "sort":
-				if strings.EqualFold(value.(string), "release_stamp") {
-					qw.Order(fmt.Sprintf("year DESC ,%v DESC", value))
-					break
+				if sVal, ok := value.(string); ok && strings.EqualFold(sVal, "release_stamp") {
+					qw.Order("year DESC, release_stamp DESC")
+				} else {
+					qw.Order(fmt.Sprintf("%v DESC", value))
 				}
-				qw.Order(fmt.Sprintf("%v DESC", value))
 			default:
 				break
 			}
