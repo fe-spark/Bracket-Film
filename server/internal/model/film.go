@@ -163,7 +163,7 @@ type SearchTagsVO struct {
 	Plot     string `json:"plot"`
 	Area     string `json:"area"`
 	Language string `json:"language"`
-	Year     int64  `json:"year"`
+	Year     string `json:"year"`
 	Sort     string `json:"sort"`
 }
 

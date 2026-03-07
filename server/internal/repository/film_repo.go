@@ -820,6 +820,19 @@ func GetSearchInfosByTags(st model.SearchTagsVO, page *dto.Page) []model.SearchI
 				}
 				categoryFiltered = true
 			case "year":
+				if vStr, ok := value.(string); ok && strings.EqualFold(vStr, "其它") {
+					allTags := GetTagsByTitle(st.Pid, fieldName)
+					var vals []string
+					for _, tag := range allTags {
+						if sl := strings.Split(tag, ":"); len(sl) > 1 {
+							vals = append(vals, sl[1])
+						}
+					}
+					if len(vals) > 0 {
+						qw = qw.Where(fmt.Sprintf("%s NOT IN ?", k), vals)
+					}
+					break
+				}
 				qw = qw.Where(fmt.Sprintf("%s = ?", k), value)
 			case "area", "language":
 				if vStr, ok := value.(string); ok && strings.EqualFold(vStr, "其它") {

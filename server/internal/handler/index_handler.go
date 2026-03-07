@@ -136,9 +136,8 @@ func (h *IndexHandler) FilmTagSearch(c *gin.Context) {
 	params.Pid, _ = strconv.ParseInt(pidStr, 10, 64)
 	params.Cid, _ = strconv.ParseInt(cidStr, 10, 64)
 	params.Plot = c.DefaultQuery("Plot", "")
-	params.Area = c.DefaultQuery("Area", "")
 	params.Language = c.DefaultQuery("Language", "")
-	params.Year, _ = strconv.ParseInt(yStr, 10, 64)
+	params.Year = yStr
 	params.Sort = c.DefaultQuery("Sort", "update_stamp")
 
 	currentStr := c.DefaultQuery("current", "1")
