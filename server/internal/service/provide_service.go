@@ -94,7 +94,7 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 				Name: c.Name,
 			})
 
-			searchTags := repository.GetSearchTag(c.Id)
+			searchTags := repository.GetSearchTag(model.SearchTagsVO{Pid: c.Id})
 			// Initialize to empty slice to avoid "null" in JSON
 			tvboxFilters := make([]map[string]interface{}, 0)
 
@@ -243,7 +243,7 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 			return q
 		}
 		if curValue == "其它" && pid > 0 {
-			tags := repository.GetTagsByTitle(pid, tagType)
+			tags := repository.GetTagsByTitle(pid, tagType, nil, "")
 			var exclude []string
 			for _, tg := range tags {
 				if sl := strings.Split(tg, ":"); len(sl) > 1 {

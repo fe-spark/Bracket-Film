@@ -147,8 +147,8 @@ func (i *IndexService) RelateMovie(detail model.MovieDetail, page *dto.Page) []m
 }
 
 // SearchTags 整合对应分类的搜索tag
-func (i *IndexService) SearchTags(pid int64) map[string]interface{} {
-	return repository.GetSearchTag(pid)
+func (i *IndexService) SearchTags(st model.SearchTagsVO) map[string]interface{} {
+	return repository.GetSearchTag(st)
 }
 
 func multipleSource(detail *model.MovieDetail) []model.PlayLinkVo {

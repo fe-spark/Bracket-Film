@@ -30,9 +30,9 @@ func (s *FilmService) GetSearchOptions() map[string]any {
 	tagGroup := make(map[int64]map[string]any)
 	if tree.Children != nil {
 		for _, t := range tree.Children {
-			option := repository.GetSearchOptions(t.Id)
+			option := repository.GetSearchOptions(model.SearchTagsVO{Pid: t.Id})
 			if len(option) > 0 {
-				tagGroup[t.Id] = repository.GetSearchOptions(t.Id)
+				tagGroup[t.Id] = repository.GetSearchOptions(model.SearchTagsVO{Pid: t.Id})
 				if v, ok := options["year"].([]map[string]string); !ok || len(v) == 0 {
 					options["year"] = tagGroup[t.Id]["Year"]
 				}

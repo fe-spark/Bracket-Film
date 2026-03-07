@@ -150,7 +150,7 @@ func (h *IndexHandler) FilmTagSearch(c *gin.Context) {
 	dto.Success(gin.H{
 		"title":  service.IndexSvc.GetPidCategory(params.Pid).Category,
 		"list":   list,
-		"search": service.IndexSvc.SearchTags(params.Pid),
+		"search": service.IndexSvc.SearchTags(params),
 		"params": map[string]string{
 			"Pid":      pidStr,
 			"Category": cidStr,
