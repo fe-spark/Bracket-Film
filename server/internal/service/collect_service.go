@@ -36,9 +36,13 @@ func (s *CollectService) UpdateFilmSource(source model.FilmSource) error {
 
 	// 2. 强制单主站机制：如果新等级设为主站，则自动将旧主站降级
 	if source.Grade == model.MasterCollect && old.Grade != model.MasterCollect {
-		log.Printf("[Collect] 站点 %s 提升为主采集站，清理其旧有播放列表数据并降级现有主站...", source.Name)
-		// 清理该站点在作为附属站时期采集的所有播放列表，防止数据冗余
-		_ = repository.DeletePlaylistBySourceId(source.Id)
+		log.Printf("[Collect] 站点 %s 提升为主采集站，后台异步清理其旧有播放列表数据并降级现有主站...", source.Name)
+		// 异步清理该站点在作为附属站时期采集的所有播放列表，防止阻塞 API 几十秒（MySQL DELETE 数据量大时极慢）
+		go func(sid string) {
+			_ = repository.DeletePlaylistBySourceId(sid)
+			log.Printf("[Collect] 站点 %s 的旧有播放列表数据清理完成", sid)
+		}(source.Id)
+
 		if err := repository.DemoteExistingMaster(); err != nil {
 			log.Printf("[Collect] 自动降级旧主站失败: %v", err)
 			return errors.New("主站自动降级失败，请重试")
