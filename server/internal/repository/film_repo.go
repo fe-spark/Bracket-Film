@@ -263,17 +263,22 @@ func BatchHandleSearchTag(infos ...model.SearchInfo) {
 
 	for pid := range pids {
 		ensureStaticTagsForPid(pid)
-		// 确保分类节点同步 (Category 类型)
-		for _, t := range GetChildrenTree(pid) {
-			db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(
-				&model.SearchTagItem{Pid: pid, TagType: "Category", Name: t.Name, Value: fmt.Sprint(t.Id), Score: 0})
-		}
 	}
 
-	// 2. 处理每部影片的动态标签 (Plot, Area, Language)
+	// 2. 处理每部影片的动态标签 (Category, Plot, Area, Language)
 	for _, info := range infos {
 		if info.Pid <= 0 {
 			continue
+		}
+		// 新增：将所属分类 ID 作为一个动态标签，只有该分类下有视频时才会在筛选栏出现
+		if info.Cid > 0 {
+			// 查找分类名称
+			cName := info.CName
+			if cName == "" {
+				// 如果没有 CName (SearchInfo 结构可能未填)，则回退到静态查询或缓存
+				// 这里假设 SearchInfo.CName 是有的
+			}
+			HandleSearchTags(cName, "Category", info.Pid, fmt.Sprint(info.Cid))
 		}
 		HandleSearchTags(info.ClassTag, "Plot", info.Pid)
 		HandleSearchTags(info.Area, "Area", info.Pid)
@@ -321,20 +326,33 @@ func ensureStaticTagsForPid(pid int64) {
 	initializedPids.Store(pid, true)
 }
 
-func HandleSearchTags(preTags string, tagType string, pid int64) {
+func HandleSearchTags(preTags string, tagType string, pid int64, customValues ...string) {
 	preTags = regexp.MustCompile(`[\s\n\r]+`).ReplaceAllString(preTags, "")
-	if preTags == "" || preTags == "其它" {
-		return
-	}
-	upsert := func(v string) {
+
+	upsert := func(v string, customVal ...string) {
 		v = strings.TrimSpace(v)
 		if v == "" || v == "其它" {
 			return
 		}
+
+		val := v
+		if len(customVal) > 0 {
+			val = customVal[0]
+		}
+
 		db.Mdb.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "pid"}, {Name: "tag_type"}, {Name: "value"}},
 			DoUpdates: clause.Assignments(map[string]interface{}{"score": gorm.Expr("score + 1")}),
-		}).Create(&model.SearchTagItem{Pid: pid, TagType: tagType, Name: v, Value: v, Score: 1})
+		}).Create(&model.SearchTagItem{Pid: pid, TagType: tagType, Name: v, Value: val, Score: 1})
+	}
+
+	if tagType == "Category" && len(customValues) > 0 {
+		upsert(preTags, customValues[0])
+		return
+	}
+
+	if preTags == "" || preTags == "其它" {
+		return
 	}
 	var vals []string
 	switch {
@@ -614,24 +632,12 @@ func GetMovieDetailByDBID(mid int64, name string) []model.MoviePlaySource {
 
 func GetTagsByTitle(pid int64, tagType string) []string {
 	var tags []string
-	if tagType == "Category" {
-		for _, c := range GetChildrenTree(pid) {
-			if c.Show {
-				tags = append(tags, fmt.Sprintf("%s:%d", c.Name, c.Id))
-			}
-		}
-		return tags
-	}
 
 	var items []model.SearchTagItem
-	// 对于 Plot, Area, Language, 提高展示上限到 30
+	// 对于 Plot, Area, Language, Category 提高展示上限到 30
 	limit := 30
 	if tagType == "Plot" {
 		limit = 11 // 剧情类保持较少
-	} else if tagType == "Area" {
-		limit = 30
-	} else if tagType == "Language" {
-		limit = 30
 	}
 
 	db.Mdb.Where("pid = ? AND tag_type = ?", pid, tagType).Order("score DESC").Limit(limit).Find(&items)
@@ -712,11 +718,12 @@ func GetSearchPage(s model.SearchVo) []model.SearchInfo {
 		query = query.Where("name LIKE ?", fmt.Sprintf("%%%s%%", s.Name))
 	}
 
-	// 精准分类过滤
+	// 严格精准分类过滤
 	if s.Cid > 0 {
 		if IsRootCategory(s.Cid) {
 			query = query.Where("pid = ?", s.Cid)
 		} else {
+			// 严格匹配子类 ID，不进行任何向下包含或通用记录兼容
 			query = query.Where("cid = ?", s.Cid)
 		}
 	} else if s.Pid > 0 {
@@ -777,12 +784,13 @@ func GetSearchInfosByTags(st model.SearchTagsVO, page *dto.Page) []model.SearchI
 				if categoryFiltered {
 					continue
 				}
-				// 逻辑与 GetSearchPage 保持高度一致
+				// 严格逻辑与 GetSearchPage 保持高度一致
 				targetCid := st.Cid
 				if targetCid > 0 {
 					if IsRootCategory(targetCid) {
 						qw = qw.Where("pid = ?", targetCid)
 					} else {
+						// 严格匹配子分类，去掉通用记录向下包含逻辑
 						qw = qw.Where("cid = ?", targetCid)
 					}
 				} else if st.Pid > 0 {
