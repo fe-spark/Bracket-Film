@@ -77,6 +77,8 @@ func BatchSaveOrUpdate(list []model.SearchInfo) map[string]int64 {
 	for pid := range pidSet {
 		ClearSearchTagsCache(pid)
 	}
+	// 清除首页活跃分类树缓存，防止处于采集早期时前台只能看到空缓存
+	db.Rdb.Del(db.Cxt, config.ActiveCategoryTreeKey)
 
 	// 2. 建立来源映射关系 (获取最终生效的 GlobalMid)
 	var contentKeys []string
@@ -213,6 +215,7 @@ func SaveDetail(id string, detail model.MovieDetail) error {
 
 	if err == nil {
 		ClearSearchTagsCache(detail.Pid)
+		db.Rdb.Del(db.Cxt, config.ActiveCategoryTreeKey)
 	}
 	return err
 }
