@@ -11,40 +11,116 @@ import (
 	"gorm.io/gorm"
 )
 
-// catCache 用于加速分类名到 ID 的查找，避免大规模入库时的频繁 DB 查询
-var catCache atomic.Value // 存储 map[string]int64
+type catCacheData struct {
+	nameToId map[string]int64
+	idToPid  map[int64]int64
+	tree     *model.CategoryTree
+}
+
+// catCache 用于加速分类数据查找
+var catCache atomic.Value // 存储 *catCacheData
 var cacheMu sync.Mutex
 
-func refreshCache() {
+// RefreshCategoryCache 用于重新加载分类缓存到内存
+func RefreshCategoryCache() {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 	var all []model.Category
 	db.Mdb.Find(&all)
-	m := make(map[string]int64)
+
+	data := &catCacheData{
+		nameToId: make(map[string]int64),
+		idToPid:  make(map[int64]int64),
+	}
+
+	nodes := make(map[int64]*model.CategoryTree)
+	root := &model.CategoryTree{
+		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
+		Children: make([]*model.CategoryTree, 0),
+	}
+
 	for _, c := range all {
+		item := c
+		data.idToPid[item.Id] = item.Pid
 		// 子类具有更高的查找优先级 (Pid > 0)
-		if c.Pid > 0 {
-			m[c.Name] = c.Id
-		} else if _, ok := m[c.Name]; !ok {
+		if item.Pid > 0 {
+			data.nameToId[item.Name] = item.Id
+		} else if _, ok := data.nameToId[item.Name]; !ok {
 			// 如果该名称还没存入子类 ID，则存入大类 ID (Pid = 0)
-			m[c.Name] = c.Id
+			data.nameToId[item.Name] = item.Id
+		}
+
+		nodes[item.Id] = &model.CategoryTree{
+			Category: &item,
+			Children: make([]*model.CategoryTree, 0),
 		}
 	}
-	catCache.Store(m)
+
+	for _, c := range all {
+		node := nodes[c.Id]
+		if node.Pid == 0 {
+			root.Children = append(root.Children, node)
+		} else if parent, ok := nodes[node.Pid]; ok {
+			parent.Children = append(parent.Children, node)
+		} else {
+			root.Children = append(root.Children, node)
+		}
+	}
+	data.tree = root
+	catCache.Store(data)
 }
 
 // GetCidByName 根据分类名称查找对应的类 ID (优先从内存缓存中获取)
 func GetCidByName(name string) int64 {
 	val := catCache.Load()
 	if val == nil {
-		refreshCache()
+		RefreshCategoryCache()
 		val = catCache.Load()
 	}
-	m := val.(map[string]int64)
-	if id, ok := m[name]; ok {
+	data := val.(*catCacheData)
+	if id, ok := data.nameToId[name]; ok {
 		return id
 	}
 	return 0
+}
+
+// GetRootId 获取分类的顶级根 ID (通过缓存递归或一次性查出)
+func GetRootId(id int64) int64 {
+	if id == 0 {
+		return 0
+	}
+	val := catCache.Load()
+	if val == nil {
+		RefreshCategoryCache()
+		val = catCache.Load()
+	}
+	data := val.(*catCacheData)
+
+	curr := id
+	// 为防止循环引用死循环，最多查找 5 层 (目前本项目只有 2 层)
+	for i := 0; i < 5; i++ {
+		p, ok := data.idToPid[curr]
+		if !ok || p == 0 {
+			return curr
+		}
+		curr = p
+	}
+	return curr
+}
+
+// IsRootCategory 判断是否为根分类 (Pid 为 0 的大类)
+func IsRootCategory(id int64) bool {
+	if id == 0 {
+		return false
+	}
+	val := catCache.Load()
+	if val == nil {
+		RefreshCategoryCache()
+		val = catCache.Load()
+	}
+	data := val.(*catCacheData)
+	p, ok := data.idToPid[id]
+	return ok && p == 0
 }
 
 // SaveCategoryTree 批量保存并同步分类树 (内存指针对齐 + 二阶段批量入库)
@@ -54,7 +130,7 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 		return nil
 	}
 
-	return db.Mdb.Transaction(func(tx *gorm.DB) error {
+	err := db.Mdb.Transaction(func(tx *gorm.DB) error {
 		// 1. 加载现有全部分类建立唯一性缓存 (Key: Pid_Name -> ID)
 		var total []model.Category
 		tx.Find(&total)
@@ -129,44 +205,38 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 
 		return nil
 	})
+	// 事务提交成功后，从库中重新加载缓存
+	RefreshCategoryCache()
+	return err
 }
 
-// GetCategoryTree 获取完整分类树 (从数据库行重建)
+// GetCategoryTree 获取完整分类树 (从缓存重建，返回副本以防外部修改影响缓存)
 func GetCategoryTree() model.CategoryTree {
-	var categories []model.Category
-	db.Mdb.Order("id ASC").Find(&categories)
+	val := catCache.Load()
+	if val == nil {
+		RefreshCategoryCache()
+		val = catCache.Load()
+	}
+	data := val.(*catCacheData)
 
+	// 简单的树深复制，目前只有 2 层
 	root := model.CategoryTree{
 		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
-		Children: make([]*model.CategoryTree, 0),
+		Children: make([]*model.CategoryTree, 0, len(data.tree.Children)),
 	}
 
-	if len(categories) == 0 {
-		return root
-	}
-
-	// 1. 构建节点 Map
-	nodes := make(map[int64]*model.CategoryTree)
-	for i := range categories {
-		nodes[categories[i].Id] = &model.CategoryTree{
-			Category: &categories[i],
-			Children: make([]*model.CategoryTree, 0),
+	for _, c := range data.tree.Children {
+		node := &model.CategoryTree{
+			Category: c.Category,
+			Children: make([]*model.CategoryTree, 0, len(c.Children)),
 		}
-	}
-
-	// 2. 建立层级关系 (遍历已经排序的切片以保证顺序固定，切勿遍历 map 因为 Go 会打乱 map 的遍历顺序)
-	for i := range categories {
-		node := nodes[categories[i].Id]
-		if node.Pid == 0 {
-			// 一级大类，挂载到统一虚拟根
-			root.Children = append(root.Children, node)
-		} else if parent, ok := nodes[node.Pid]; ok {
-			// 二级子类，挂载到对应的一级大类下
-			parent.Children = append(parent.Children, node)
-		} else {
-			// 如果找不到父级，兜底挂载到虚拟根
-			root.Children = append(root.Children, node)
+		for _, sub := range c.Children {
+			node.Children = append(node.Children, &model.CategoryTree{
+				Category: sub.Category,
+				Children: nil,
+			})
 		}
+		root.Children = append(root.Children, node)
 	}
 
 	return root

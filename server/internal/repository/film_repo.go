@@ -388,7 +388,7 @@ func ConvertSearchInfo(sourceId string, detail model.MovieDetail) model.SearchIn
 
 	// 关键修复 2：根据解析后的 Cid 实时查询正确的 Pid
 	// 这确保了影片能正确归类到“电影”、“电视剧”等智能根分类下，从而让筛选标签正常显示
-	correctPid := GetParentId(resolvedCid)
+	correctPid := GetRootId(resolvedCid)
 
 	return model.SearchInfo{
 		Mid:          detail.Id,
@@ -421,12 +421,12 @@ func ConvertSearchInfo(sourceId string, detail model.MovieDetail) model.SearchIn
 // GetMovieListByPid 获取指定父类 ID 的影片基本信息
 func GetMovieListByPid(pid int64, page *dto.Page) []model.MovieBasicInfo {
 	var count int64
-	db.Mdb.Model(&model.SearchInfo{}).Where("pid = ? OR cid = ?", pid, pid).Count(&count)
+	db.Mdb.Model(&model.SearchInfo{}).Where("pid = ?", pid).Count(&count)
 	page.Total = int(count)
 	page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
 
 	var s []model.SearchInfo
-	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("pid = ? OR cid = ?", pid, pid).Order("update_stamp DESC").Find(&s).Error; err != nil {
+	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("pid = ?", pid).Order("update_stamp DESC").Find(&s).Error; err != nil {
 		log.Printf("GetMovieListByPid Error: %v", err)
 		return nil
 	}
@@ -446,12 +446,12 @@ func GetMovieListByPid(pid int64, page *dto.Page) []model.MovieBasicInfo {
 // GetMovieListByCid 获取指定子类 ID 的影片基本信息
 func GetMovieListByCid(cid int64, page *dto.Page) []model.MovieBasicInfo {
 	var count int64
-	db.Mdb.Model(&model.SearchInfo{}).Where("cid = ? OR pid = ?", cid, cid).Count(&count)
+	db.Mdb.Model(&model.SearchInfo{}).Where("cid = ?", cid).Count(&count)
 	page.Total = int(count)
 	page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
 
 	var s []model.SearchInfo
-	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("cid = ? OR pid = ?", cid, cid).Order("update_stamp DESC").Find(&s).Error; err != nil {
+	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("cid = ?", cid).Order("update_stamp DESC").Find(&s).Error; err != nil {
 		log.Printf("GetMovieListByCid Error: %v", err)
 		return nil
 	}
@@ -707,9 +707,13 @@ func GetSearchPage(s model.SearchVo) []model.SearchInfo {
 		query = query.Where("name LIKE ?", fmt.Sprintf("%%%s%%", s.Name))
 	}
 	if s.Cid > 0 {
-		query = query.Where("cid = ? OR pid = ?", s.Cid, s.Cid)
+		if IsRootCategory(s.Cid) {
+			query = query.Where("pid = ?", s.Cid)
+		} else {
+			query = query.Where("cid = ?", s.Cid)
+		}
 	} else if s.Pid > 0 {
-		query = query.Where("pid = ? OR cid = ?", s.Pid, s.Pid)
+		query = query.Where("pid = ?", s.Pid)
 	}
 	if s.Plot != "" {
 		query = query.Where("class_tag LIKE ?", fmt.Sprintf("%%%s%%", s.Plot))
@@ -752,6 +756,7 @@ func GetSearchInfosByTags(st model.SearchTagsVO, page *dto.Page) []model.SearchI
 	v := reflect.ValueOf(st)
 	for i := 0; i < t.NumField(); i++ {
 		value := v.Field(i).Interface()
+		k := strings.ToLower(t.Field(i).Name)
 		if !dto.IsEmpty(value) {
 			var ts []string
 			if v, flag := value.(string); flag && strings.EqualFold(v, "其它") {
@@ -759,10 +764,11 @@ func GetSearchInfosByTags(st model.SearchTagsVO, page *dto.Page) []model.SearchI
 					ts = append(ts, strings.Split(s, ":")[1])
 				}
 			}
-			k := strings.ToLower(t.Field(i).Name)
 			switch k {
-			case "pid", "cid":
-				qw = qw.Where("pid = ? OR cid = ?", value, value)
+			case "pid":
+				qw = qw.Where("pid = ?", value)
+			case "cid":
+				qw = qw.Where("cid = ?", value)
 			case "year":
 				qw = qw.Where(fmt.Sprintf("%s = ?", k), value)
 			case "area", "language":
@@ -957,7 +963,7 @@ func CleanOrphanPlaylists() int64 {
 func GetHotMovieByPid(pid int64, page *dto.Page) []model.SearchInfo {
 	var s []model.SearchInfo
 	t := time.Now().AddDate(0, -1, 0).Unix()
-	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("(pid=? OR cid=?) AND update_stamp > ?", pid, pid, t).Order(" year DESC, hits DESC").Find(&s).Error; err != nil {
+	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("pid = ? AND update_stamp > ?", pid, t).Order(" year DESC, hits DESC").Find(&s).Error; err != nil {
 		log.Printf("GetHotMovieByPid Error: %v", err)
 		return nil
 	}
@@ -968,7 +974,7 @@ func GetHotMovieByPid(pid int64, page *dto.Page) []model.SearchInfo {
 func GetHotMovieByCid(cid int64, page *dto.Page) []model.SearchInfo {
 	var s []model.SearchInfo
 	t := time.Now().AddDate(0, -1, 0).Unix()
-	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("(cid=? OR pid=?) AND update_stamp > ?", cid, cid, t).Order(" year DESC, hits DESC").Find(&s).Error; err != nil {
+	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("cid = ? AND update_stamp > ?", cid, t).Order(" year DESC, hits DESC").Find(&s).Error; err != nil {
 		log.Printf("GetHotMovieByCid Error: %v", err)
 		return nil
 	}

@@ -215,8 +215,13 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 
 	var pid int64
 	if t > 0 {
-		query = query.Where("cid = ? OR pid = ?", t, t)
-		pid = repository.GetParentId(int64(t))
+		if repository.IsRootCategory(int64(t)) {
+			query = query.Where("pid = ?", t)
+			pid = int64(t)
+		} else {
+			query = query.Where("cid = ?", t)
+			pid = repository.GetRootId(int64(t))
+		}
 	}
 
 	if wd != "" {
