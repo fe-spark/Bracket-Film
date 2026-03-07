@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"server/internal/config"
 	"server/internal/infra/db"
 	"server/internal/model"
 	"server/internal/model/dto"
@@ -66,6 +67,15 @@ func BatchSaveOrUpdate(list []model.SearchInfo) map[string]int64 {
 	}).CreateInBatches(&list, 200).Error; err != nil {
 		log.Printf("BatchSaveOrUpdate upsert 失败: %v\n", err)
 		return nil
+	}
+
+	// 清除相关分类的搜索标签缓存
+	pidSet := make(map[int64]struct{})
+	for _, v := range list {
+		pidSet[v.Pid] = struct{}{}
+	}
+	for pid := range pidSet {
+		ClearSearchTagsCache(pid)
 	}
 
 	// 2. 建立来源映射关系 (获取最终生效的 GlobalMid)
@@ -196,10 +206,15 @@ func SaveDetail(id string, detail model.MovieDetail) error {
 
 	detail.Id = globalMid
 	data, _ := json.Marshal(detail)
-	return db.Mdb.Clauses(clause.OnConflict{
+	err := db.Mdb.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "mid"}},
 		DoUpdates: clause.AssignmentColumns([]string{"source_id", "content", "updated_at"}),
 	}).Create(&model.MovieDetailInfo{Mid: globalMid, SourceId: id, Content: string(data)}).Error
+
+	if err == nil {
+		ClearSearchTagsCache(detail.Pid)
+	}
+	return err
 }
 
 func SaveSitePlayList(id string, list []model.MovieDetail) error {
@@ -715,6 +730,15 @@ func HandleTagStr(pid int64, title string, tags ...string) []map[string]string {
 
 // GetSearchTag 获取搜索标签 (带分类树)
 func GetSearchTag(pid int64) map[string]interface{} {
+	// 1. 尝试从 Redis 获取
+	cacheKey := fmt.Sprintf(config.SearchTagsKey, pid)
+	if data, err := db.Rdb.Get(db.Cxt, cacheKey).Result(); err == nil && data != "" {
+		var res map[string]interface{}
+		if json.Unmarshal([]byte(data), &res) == nil {
+			return res
+		}
+	}
+
 	res := make(map[string]interface{})
 	sortList := []string{"Category", "Plot", "Area", "Language", "Year", "Sort"}
 	res["sortList"] = sortList
@@ -731,10 +755,28 @@ func GetSearchTag(pid int64) map[string]interface{} {
 		tagMap[t] = HandleTagStr(pid, t, GetTagsByTitle(pid, t)...)
 	}
 	res["tags"] = tagMap
+
+	// 2. 写入 Redis 缓存 (24小时)
+	if data, err := json.Marshal(res); err == nil {
+		db.Rdb.Set(db.Cxt, cacheKey, string(data), time.Hour*24)
+	}
+
 	return res
 }
 
 func GetSearchOptions(pid int64) map[string]interface{} {
+	// 复用 GetSearchTag 的缓存逻辑（提取 tags 部分）
+	full := GetSearchTag(pid)
+	if tags, ok := full["tags"].(map[string]interface{}); ok {
+		// 返回业务需要的四个核心维度
+		res := make(map[string]interface{})
+		for _, t := range []string{"Plot", "Area", "Language", "Year"} {
+			res[t] = tags[t]
+		}
+		return res
+	}
+
+	// 回退逻辑
 	tagMap := make(map[string]interface{})
 	for _, t := range []string{"Plot", "Area", "Language", "Year"} {
 		tagMap[t] = HandleTagStr(pid, t, GetTagsByTitle(pid, t)...)
@@ -899,8 +941,11 @@ func GetSearchInfoById(id int64) *model.SearchInfo {
 }
 
 func DelFilmSearch(id int64) error {
+	// 获取记录所在分类，以便后续清除缓存
+	info := GetSearchInfoById(id)
+
 	// 开启事务保证清理的一致性
-	return db.Mdb.Transaction(func(tx *gorm.DB) error {
+	err := db.Mdb.Transaction(func(tx *gorm.DB) error {
 		// 1. 删除检索信息
 		if err := tx.Where("mid = ?", id).Delete(&model.SearchInfo{}).Error; err != nil {
 			return err
@@ -919,12 +964,23 @@ func DelFilmSearch(id int64) error {
 		}
 		return nil
 	})
+
+	// 清除对应分类的搜索标签缓存
+	if err == nil && info != nil {
+		ClearSearchTagsCache(info.Pid)
+	}
+
+	return err
 }
 
 func ShieldFilmSearch(cid int64) error {
 	if err := db.Mdb.Where("cid = ?", cid).Delete(&model.SearchInfo{}).Error; err != nil {
 		log.Printf("ShieldFilmSearch Error: %v", err)
 		return err
+	}
+	// 清除对应 Pid 的搜索标签缓存
+	if pId := GetParentId(cid); pId > 0 {
+		ClearSearchTagsCache(pId)
 	}
 	return nil
 }
@@ -934,7 +990,16 @@ func RecoverFilmSearch(cid int64) error {
 		log.Printf("RecoverFilmSearch Error: %v", err)
 		return err
 	}
+	// 清除对应 Pid 的搜索标签缓存
+	if pId := GetParentId(cid); pId > 0 {
+		ClearSearchTagsCache(pId)
+	}
 	return nil
+}
+
+// ClearSearchTagsCache 清除特定分类的搜索标签缓存
+func ClearSearchTagsCache(pid int64) {
+	db.Rdb.Del(db.Cxt, fmt.Sprintf(config.SearchTagsKey, pid))
 }
 
 // FilmZero 删除所有库存数据 (包含 MySQL 持久化表)
@@ -957,6 +1022,9 @@ func FilmZero() {
 
 	// 3. 同步清理采集失败记录，确保彻底清空
 	TruncateRecordTable()
+
+	// 4. 清除所有 Redis 缓存
+	ClearCategoryCache()
 }
 
 // MasterFilmZero 仅清理主站相关数据 (search_infos / movie_detail_infos / category)
@@ -975,6 +1043,9 @@ func MasterFilmZero() {
 			log.Printf("TRUNCATE TABLE %s Error: %v\n", t, err)
 		}
 	}
+
+	// 清除所有 Redis 缓存
+	ClearCategoryCache()
 }
 
 // CleanEmptyFilms 清理所有片名为空的无效记录
@@ -987,6 +1058,7 @@ func CleanEmptyFilms() int64 {
 	for _, info := range infos {
 		_ = DelFilmSearch(info.Mid)
 	}
+	// DelFilmSearch 内部会精确清除对应的 Pid 缓存
 	return int64(len(infos))
 }
 

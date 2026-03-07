@@ -40,6 +40,9 @@ const (
 	// ConfigCacheTTL 管理员写入控制的配置类 key 有效期 (以长 TTL 最大化命中率)
 	ConfigCacheTTL = time.Hour * 24
 
+	// SearchTagsKey 搜索分类标签缓存 key (带 Pid)
+	SearchTagsKey = "SearchTags:%d"
+
 	// VirtualPictureKey 待同步图片临时存储 key
 	VirtualPictureKey = "VirtualPicture"
 	// MaxScanCount redis Scan 操作每次扫描的数据量, 每次最多扫描300条数据
