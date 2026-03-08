@@ -1,6 +1,7 @@
 ﻿package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"server/internal/config"
 	"server/internal/infra/db"
 	"server/internal/model"
 	"server/internal/model/dto"
@@ -81,6 +83,18 @@ func (p *ProvideService) GetVodDirectBySource(sourceId, ac string, t int, pg int
 
 // GetClassList 获取格式化的分类列表和筛选条件
 func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[string]interface{}) {
+	// 1. 尝试从 Redis 获取缓存 (TVBox 配置缓存 5 分钟)
+	cacheKey := config.TVBoxConfigCacheKey
+	if data, err := db.Rdb.Get(db.Cxt, cacheKey).Result(); err == nil && data != "" {
+		var res struct {
+			ClassList []model.FilmClass
+			Filters   map[string][]map[string]interface{}
+		}
+		if json.Unmarshal([]byte(data), &res) == nil {
+			return res.ClassList, res.Filters
+		}
+	}
+
 	var classList []model.FilmClass
 	filters := make(map[string][]map[string]interface{})
 
@@ -199,6 +213,16 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 			filters[strconv.FormatInt(c.Id, 10)] = tvboxFilters
 		}
 	}
+
+	// 写入 Redis 缓存 (5 分钟)
+	res := struct {
+		ClassList []model.FilmClass
+		Filters   map[string][]map[string]interface{}
+	}{classList, filters}
+	if data, err := json.Marshal(res); err == nil {
+		db.Rdb.Set(db.Cxt, cacheKey, string(data), time.Minute*5)
+	}
+
 	return classList, filters
 }
 

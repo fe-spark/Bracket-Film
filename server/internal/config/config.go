@@ -42,6 +42,8 @@ const (
 
 	// SearchTagsKey 搜索分类标签缓存 key (带 Pid)
 	SearchTagsKey = "SearchTags:%d"
+	// TVBoxConfigCacheKey TVBox 分类及筛选配置缓存 key
+	TVBoxConfigCacheKey = "TVBox:Config:ClassList"
 
 	// VirtualPictureKey 待同步图片临时存储 key
 	VirtualPictureKey = "VirtualPicture"

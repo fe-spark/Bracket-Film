@@ -796,7 +796,7 @@ func GetTopTagValues(pid int64, tagType string) []string {
 	return vals
 }
 
-func HandleTagStr(pid int64, title string, subQuery *gorm.DB, stickyValue string, tags ...string) []map[string]string {
+func HandleTagStr(pid int64, title string, activeValues map[string]bool, stickyValue string, tags ...string) []map[string]string {
 	list := make([]map[string]string, 0)
 
 	// 除排序外，默认都有“全部”选项
@@ -805,49 +805,35 @@ func HandleTagStr(pid int64, title string, subQuery *gorm.DB, stickyValue string
 		list = append(list, map[string]string{"Name": "全部", "Value": ""})
 	}
 
+	hotValueMap := make(map[string]bool)
 	for _, t := range tags {
 		if sl := strings.Split(t, ":"); len(sl) > 1 {
 			list = append(list, map[string]string{"Name": sl[0], "Value": sl[1]})
+			hotValueMap[sl[1]] = true
 		}
 	}
 
-	// 针对特定类型，恢复显示“其它”选项，方便过滤不属于列表的数据
+	// 针对特定类型，恢复显示“其它”选项
 	if strings.EqualFold(title, "Plot") || strings.EqualFold(title, "Area") ||
 		strings.EqualFold(title, "Language") || strings.EqualFold(title, "Year") {
 
 		// 粘性逻辑：如果当前选中的就是“其它”，必须强制显示
 		if stickyValue == "其它" {
 			list = append(list, map[string]string{"Name": "其它", "Value": "其它"})
+		} else if activeValues == nil {
+			// 如果没有联动上下文（如初次加载或兜底），默认显示“其它”以保证入口存在
+			list = append(list, map[string]string{"Name": "其它", "Value": "其它"})
 		} else {
-			// 否则，动态检查当前联动上下文（subQuery）中是否确实存在“其它”数据
-			topVals := GetTopTagValues(pid, title)
-			var count int64
-			query := db.Mdb.Model(&model.SearchInfo{}).Where("pid = ?", pid)
-			field := strings.ToLower(title)
-
-			if title == "Plot" {
-				field = "class_tag"
-				for _, v := range topVals {
-					query = query.Where("class_tag NOT LIKE ?", fmt.Sprintf("%%%s%%", v))
-				}
-				if len(topVals) == 0 {
-					query = query.Where("class_tag != ''")
-				}
-			} else {
-				if len(topVals) > 0 {
-					query = query.Where(fmt.Sprintf("%s NOT IN ?", field), topVals)
-				} else {
-					query = query.Where(fmt.Sprintf("%s != '' AND %s IS NOT NULL", field, field))
+			// 【性能优化】在联动上下文中，不再执行 Count 语句
+			// 逻辑：如果当前维度的有效值集 (activeValues) 中包含不在热门列表 (hotValueMap) 里的值，就显示“其它”
+			hasOthers := false
+			for val := range activeValues {
+				if !hotValueMap[val] {
+					hasOthers = true
+					break
 				}
 			}
-
-			// 联动核心：如果处于联动查询上下文，应用当前过滤集
-			if subQuery != nil {
-				query = query.Where("mid IN (?)", subQuery)
-			}
-
-			query.Limit(1).Count(&count)
-			if count > 0 {
+			if hasOthers {
 				list = append(list, map[string]string{"Name": "其它", "Value": "其它"})
 			}
 		}
@@ -986,7 +972,7 @@ func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 			}
 		}
 
-		tags := HandleTagStr(pid, t, query, sticky, GetTagsByTitle(pid, t, activeSet, sticky)...)
+		tags := HandleTagStr(pid, t, activeSet, sticky, GetTagsByTitle(pid, t, activeSet, sticky)...)
 		if t == "Sort" || len(tags) > 1 || (sticky != "" && sticky != "全部") {
 			tagMap[t] = tags
 			activeSortList = append(activeSortList, t)
@@ -1274,6 +1260,11 @@ func ClearSearchTagsCache(pid int64) {
 	db.Rdb.Del(ctx, fmt.Sprintf(config.SearchTagsKey, pid))
 }
 
+// ClearTVBoxConfigCache 清除 TVBox 配置缓存
+func ClearTVBoxConfigCache() {
+	db.Rdb.Del(db.Cxt, config.TVBoxConfigCacheKey)
+}
+
 // ClearAllSearchTagsCache 清除所有分类的搜索标签缓存 (扫描清理)
 func ClearAllSearchTagsCache() {
 	// 基于 config 里的模板生成通配符，防止硬编码 prefix 不一致
@@ -1282,6 +1273,7 @@ func ClearAllSearchTagsCache() {
 	if err == nil && len(keys) > 0 {
 		db.Rdb.Del(db.Cxt, keys...)
 	}
+	ClearTVBoxConfigCache()
 }
 
 // FilmZero 删除所有库存数据 (包含 MySQL 持久化表)
