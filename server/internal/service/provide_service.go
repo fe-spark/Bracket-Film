@@ -248,13 +248,24 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 			continue
 		}
 		if val == "其它" && pid > 0 {
-			var definedValues []string
-			db.Mdb.Model(&model.SearchTagItem{}).Where("pid = ? AND tag_type = ?", pid, dimType).Pluck("value", &definedValues)
-			if len(definedValues) > 0 {
-				query = query.Where("mid IN (SELECT mid FROM movie_tag_rel WHERE tag_type = ? AND tag_value IN ?)", dimType, definedValues)
+			topVals := repository.GetTopTagValues(pid, dimType)
+			if len(topVals) > 0 {
+				if dimType == "Plot" {
+					for _, v := range topVals {
+						query = query.Where("class_tag NOT LIKE ?", fmt.Sprintf("%%%s%%", v))
+					}
+				} else {
+					k := strings.ToLower(dimType)
+					query = query.Where(fmt.Sprintf("%s NOT IN ?", k), topVals)
+				}
 			}
 		} else {
-			query = query.Where("mid IN (SELECT mid FROM movie_tag_rel WHERE tag_type = ? AND tag_value = ?)", dimType, val)
+			if dimType == "Plot" {
+				query = query.Where("class_tag LIKE ?", fmt.Sprintf("%%%s%%", val))
+			} else {
+				k := strings.ToLower(dimType)
+				query = query.Where(fmt.Sprintf("%s = ?", k), val)
+			}
 		}
 	}
 
