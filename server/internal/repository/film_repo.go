@@ -796,7 +796,7 @@ func GetTopTagValues(pid int64, tagType string) []string {
 	return vals
 }
 
-func HandleTagStr(pid int64, title string, subQuery *gorm.DB, tags ...string) []map[string]string {
+func HandleTagStr(pid int64, title string, subQuery *gorm.DB, stickyValue string, tags ...string) []map[string]string {
 	list := make([]map[string]string, 0)
 
 	// 除排序外，默认都有“全部”选项
@@ -805,31 +805,40 @@ func HandleTagStr(pid int64, title string, subQuery *gorm.DB, tags ...string) []
 		list = append(list, map[string]string{"Name": "全部", "Value": ""})
 	}
 
-	displayedValues := make([]string, 0)
 	for _, t := range tags {
 		if sl := strings.Split(t, ":"); len(sl) > 1 {
 			list = append(list, map[string]string{"Name": sl[0], "Value": sl[1]})
-			displayedValues = append(displayedValues, sl[1])
 		}
 	}
 
 	// 针对特定类型，恢复显示“其它”选项，方便过滤不属于列表的数据
-	// 核心修复：只有当数据库中确实存在“其它”数据时（NotIn 已显示的标签），才显示“其它”
 	if strings.EqualFold(title, "Plot") || strings.EqualFold(title, "Area") ||
 		strings.EqualFold(title, "Language") || strings.EqualFold(title, "Year") {
 
-		if len(displayedValues) > 0 {
+		// 粘性逻辑：如果当前选中的就是“其它”，必须强制显示
+		if stickyValue == "其它" {
+			list = append(list, map[string]string{"Name": "其它", "Value": "其它"})
+		} else {
+			// 否则，动态检查当前联动上下文（subQuery）中是否确实存在“其它”数据
+			topVals := GetTopTagValues(pid, title)
 			var count int64
 			query := db.Mdb.Model(&model.SearchInfo{}).Where("pid = ?", pid)
 			field := strings.ToLower(title)
 
 			if title == "Plot" {
 				field = "class_tag"
-				for _, v := range displayedValues {
+				for _, v := range topVals {
 					query = query.Where("class_tag NOT LIKE ?", fmt.Sprintf("%%%s%%", v))
 				}
+				if len(topVals) == 0 {
+					query = query.Where("class_tag != ''")
+				}
 			} else {
-				query = query.Where(fmt.Sprintf("%s NOT IN ?", field), displayedValues)
+				if len(topVals) > 0 {
+					query = query.Where(fmt.Sprintf("%s NOT IN ?", field), topVals)
+				} else {
+					query = query.Where(fmt.Sprintf("%s != '' AND %s IS NOT NULL", field, field))
+				}
 			}
 
 			// 联动核心：如果处于联动查询上下文，应用当前过滤集
@@ -837,7 +846,7 @@ func HandleTagStr(pid int64, title string, subQuery *gorm.DB, tags ...string) []
 				query = query.Where("mid IN (?)", subQuery)
 			}
 
-			query.Count(&count)
+			query.Limit(1).Count(&count)
 			if count > 0 {
 				list = append(list, map[string]string{"Name": "其它", "Value": "其它"})
 			}
@@ -977,7 +986,7 @@ func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 			}
 		}
 
-		tags := HandleTagStr(pid, t, query, GetTagsByTitle(pid, t, activeSet, sticky)...)
+		tags := HandleTagStr(pid, t, query, sticky, GetTagsByTitle(pid, t, activeSet, sticky)...)
 		if t == "Sort" || len(tags) > 1 || (sticky != "" && sticky != "全部") {
 			tagMap[t] = tags
 			activeSortList = append(activeSortList, t)
@@ -1009,7 +1018,7 @@ func GetSearchOptions(st model.SearchTagsVO) map[string]interface{} {
 	// 回退逻辑 (兜底)
 	tagMap := make(map[string]interface{})
 	for _, t := range []string{"Plot", "Area", "Language", "Year"} {
-		tagMap[t] = HandleTagStr(st.Pid, t, nil, GetTagsByTitle(st.Pid, t, nil, "")...)
+		tagMap[t] = HandleTagStr(st.Pid, t, nil, "", GetTagsByTitle(st.Pid, t, nil, "")...)
 	}
 	return tagMap
 }
