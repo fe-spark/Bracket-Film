@@ -364,6 +364,9 @@ func BatchHandleSearchTag(infos ...model.SearchInfo) {
 			HandleSearchTags(fmt.Sprint(info.Year), "Year", info.Pid)
 		}
 	}
+
+	// 新增：自动清空搜索标签缓存，确保新入库的影片能实时在筛选联动中体现
+	ClearAllSearchTagsCache()
 }
 
 func SaveSearchTag(search model.SearchInfo) {
