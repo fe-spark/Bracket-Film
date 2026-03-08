@@ -775,6 +775,27 @@ func GetTagsByTitle(pid int64, tagType string, activeValues map[string]bool, sti
 	return tags
 }
 
+// GetTopTagValues 获取某个维度的“热门/展示”值集，用于“其它”逻辑的排除参考
+func GetTopTagValues(pid int64, tagType string) []string {
+	var items []model.SearchTagItem
+	limit := 30
+	if tagType == "Plot" {
+		limit = 11
+	}
+
+	query := db.Mdb.Where("pid = ? AND tag_type = ?", pid, tagType)
+	if tagType == "Category" {
+		query = query.Where("value != ?", fmt.Sprint(pid))
+	}
+	query.Order("score DESC").Limit(limit).Find(&items)
+
+	var vals []string
+	for _, item := range items {
+		vals = append(vals, item.Value)
+	}
+	return vals
+}
+
 func HandleTagStr(pid int64, title string, subQuery *gorm.DB, tags ...string) []map[string]string {
 	list := make([]map[string]string, 0)
 
@@ -876,17 +897,45 @@ func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 				query = query.Where("search_info.cid = ?", st.Cid)
 			}
 		}
-		if t != "Area" && st.Area != "" && st.Area != "全部" && st.Area != "其它" {
-			query = query.Joins("JOIN movie_tag_rel r_area ON r_area.mid = search_info.mid AND r_area.tag_type = 'Area' AND r_area.tag_value = ?", st.Area)
+		if t != "Area" && st.Area != "" && st.Area != "全部" {
+			if st.Area == "其它" {
+				topVals := GetTopTagValues(pid, "Area")
+				if len(topVals) > 0 {
+					query = query.Where("search_info.area NOT IN ?", topVals)
+				}
+			} else {
+				query = query.Joins("JOIN movie_tag_rel r_area ON r_area.mid = search_info.mid AND r_area.tag_type = 'Area' AND r_area.tag_value = ?", st.Area)
+			}
 		}
-		if t != "Language" && st.Language != "" && st.Language != "全部" && st.Language != "其它" {
-			query = query.Joins("JOIN movie_tag_rel r_lang ON r_lang.mid = search_info.mid AND r_lang.tag_type = 'Language' AND r_lang.tag_value = ?", st.Language)
+		if t != "Language" && st.Language != "" && st.Language != "全部" {
+			if st.Language == "其它" {
+				topVals := GetTopTagValues(pid, "Language")
+				if len(topVals) > 0 {
+					query = query.Where("search_info.language NOT IN ?", topVals)
+				}
+			} else {
+				query = query.Joins("JOIN movie_tag_rel r_lang ON r_lang.mid = search_info.mid AND r_lang.tag_type = 'Language' AND r_lang.tag_value = ?", st.Language)
+			}
 		}
-		if t != "Year" && st.Year != "" && st.Year != "全部" && st.Year != "其它" {
-			query = query.Joins("JOIN movie_tag_rel r_year ON r_year.mid = search_info.mid AND r_year.tag_type = 'Year' AND r_year.tag_value = ?", st.Year)
+		if t != "Year" && st.Year != "" && st.Year != "全部" {
+			if st.Year == "其它" {
+				topVals := GetTopTagValues(pid, "Year")
+				if len(topVals) > 0 {
+					query = query.Where("search_info.year NOT IN ?", topVals)
+				}
+			} else {
+				query = query.Joins("JOIN movie_tag_rel r_year ON r_year.mid = search_info.mid AND r_year.tag_type = 'Year' AND r_year.tag_value = ?", st.Year)
+			}
 		}
-		if t != "Plot" && st.Plot != "" && st.Plot != "全部" && st.Plot != "其它" {
-			query = query.Joins("JOIN movie_tag_rel r_plot ON r_plot.mid = search_info.mid AND r_plot.tag_type = 'Plot' AND r_plot.tag_value = ?", st.Plot)
+		if t != "Plot" && st.Plot != "" && st.Plot != "全部" {
+			if st.Plot == "其它" {
+				topVals := GetTopTagValues(pid, "Plot")
+				for _, v := range topVals {
+					query = query.Where("search_info.class_tag NOT LIKE ?", fmt.Sprintf("%%%s%%", v))
+				}
+			} else {
+				query = query.Joins("JOIN movie_tag_rel r_plot ON r_plot.mid = search_info.mid AND r_plot.tag_type = 'Plot' AND r_plot.tag_value = ?", st.Plot)
+			}
 		}
 
 		switch t {
@@ -1052,41 +1101,27 @@ func GetSearchInfosByTags(st model.SearchTagsVO, page *dto.Page) []model.SearchI
 				categoryFiltered = true
 			case "year":
 				if vStr, ok := value.(string); ok && strings.EqualFold(vStr, "其它") {
-					allTags := GetTagsByTitle(st.Pid, fieldName, nil, "")
-					var vals []string
-					for _, tag := range allTags {
-						if sl := strings.Split(tag, ":"); len(sl) > 1 {
-							vals = append(vals, sl[1])
-						}
-					}
-					if len(vals) > 0 {
-						qw = qw.Where(fmt.Sprintf("%s NOT IN ?", k), vals)
+					topVals := GetTopTagValues(st.Pid, fieldName)
+					if len(topVals) > 0 {
+						qw = qw.Where(fmt.Sprintf("%s NOT IN ?", k), topVals)
 					}
 					break
 				}
 				qw = qw.Where(fmt.Sprintf("%s = ?", k), value)
 			case "area", "language":
 				if vStr, ok := value.(string); ok && strings.EqualFold(vStr, "其它") {
-					allTags := GetTagsByTitle(st.Pid, fieldName, nil, "")
-					var vals []string
-					for _, tag := range allTags {
-						if sl := strings.Split(tag, ":"); len(sl) > 1 {
-							vals = append(vals, sl[1])
-						}
-					}
-					if len(vals) > 0 {
-						qw = qw.Where(fmt.Sprintf("%s NOT IN ?", k), vals)
+					topVals := GetTopTagValues(st.Pid, fieldName)
+					if len(topVals) > 0 {
+						qw = qw.Where(fmt.Sprintf("%s NOT IN ?", k), topVals)
 					}
 					break
 				}
 				qw = qw.Where(fmt.Sprintf("%s = ?", k), value)
 			case "plot":
 				if vStr, ok := value.(string); ok && strings.EqualFold(vStr, "其它") {
-					allTags := GetTagsByTitle(st.Pid, fieldName, nil, "")
-					for _, tag := range allTags {
-						if sl := strings.Split(tag, ":"); len(sl) > 1 {
-							qw = qw.Where("class_tag NOT LIKE ?", fmt.Sprintf("%%%v%%", sl[1]))
-						}
+					topVals := GetTopTagValues(st.Pid, fieldName)
+					for _, v := range topVals {
+						qw = qw.Where("class_tag NOT LIKE ?", fmt.Sprintf("%%%v%%", v))
 					}
 					break
 				}
