@@ -346,7 +346,8 @@ func BatchHandleSearchTag(infos ...model.SearchInfo) {
 			continue
 		}
 		// 新增：将所属分类 ID 作为一个动态标签，只有该分类下有视频时才会在筛选栏出现
-		if info.Cid > 0 {
+		// 注意：如果 Cid == Pid，说明是直接关联到大类的异常数据，这种情况下不生成 Category 标签，避免大类名称出现在筛选子项中
+		if info.Cid > 0 && info.Cid != info.Pid {
 			// 查找分类名称
 			cName := info.CName
 			if cName == "" {
@@ -722,7 +723,12 @@ func GetTagsByTitle(pid int64, tagType string, activeValues map[string]bool, sti
 		limit = 11 // 剧情类保持较少
 	}
 
-	db.Mdb.Where("pid = ? AND tag_type = ?", pid, tagType).Order("score DESC").Limit(limit).Find(&items)
+	query := db.Mdb.Where("pid = ? AND tag_type = ?", pid, tagType)
+	if tagType == "Category" {
+		// 排除大类本身 (Value 等于 Pid 的项)
+		query = query.Where("value != ?", fmt.Sprint(pid))
+	}
+	query.Order("score DESC").Limit(limit).Find(&items)
 
 	// 核心逻辑：即时存在性校验 (Result-Driven)
 	for _, item := range items {
@@ -766,7 +772,7 @@ func GetTagsByTitle(pid int64, tagType string, activeValues map[string]bool, sti
 	return tags
 }
 
-func HandleTagStr(pid int64, title string, tags ...string) []map[string]string {
+func HandleTagStr(pid int64, title string, subQuery *gorm.DB, tags ...string) []map[string]string {
 	list := make([]map[string]string, 0)
 
 	// 除排序外，默认都有“全部”选项
@@ -800,6 +806,11 @@ func HandleTagStr(pid int64, title string, tags ...string) []map[string]string {
 				}
 			} else {
 				query = query.Where(fmt.Sprintf("%s NOT IN ?", field), displayedValues)
+			}
+
+			// 联动核心：如果处于联动查询上下文，应用当前过滤集
+			if subQuery != nil {
+				query = query.Where("mid IN (?)", subQuery)
 			}
 
 			query.Count(&count)
@@ -851,27 +862,28 @@ func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 		var activeSet map[string]bool
 
 		// 基础过滤集：限定在当前大类 (PID) 下
-		query := db.Mdb.Model(&model.SearchInfo{}).Select("mid").Where("pid = ?", pid)
+		// 使用 search_info 开启主查询，通过 Joins 联动其他维度
+		query := db.Mdb.Table("search_info").Select("search_info.mid").Where("search_info.pid = ?", pid)
 
 		// 联动核心：计算当前行时，应用除本行外其他维度的已选条件
 		if t != "Category" && st.Cid > 0 {
 			if IsRootCategory(st.Cid) {
-				query = query.Where("pid = ?", st.Cid)
+				query = query.Where("search_info.pid = ?", st.Cid)
 			} else {
-				query = query.Where("cid = ?", st.Cid)
+				query = query.Where("search_info.cid = ?", st.Cid)
 			}
 		}
 		if t != "Area" && st.Area != "" && st.Area != "全部" && st.Area != "其它" {
-			query = query.Where("mid IN (SELECT mid FROM movie_tag_rel WHERE tag_type = 'Area' AND tag_value = ?)", st.Area)
+			query = query.Joins("JOIN movie_tag_rel r_area ON r_area.mid = search_info.mid AND r_area.tag_type = 'Area' AND r_area.tag_value = ?", st.Area)
 		}
 		if t != "Language" && st.Language != "" && st.Language != "全部" && st.Language != "其它" {
-			query = query.Where("mid IN (SELECT mid FROM movie_tag_rel WHERE tag_type = 'Language' AND tag_value = ?)", st.Language)
+			query = query.Joins("JOIN movie_tag_rel r_lang ON r_lang.mid = search_info.mid AND r_lang.tag_type = 'Language' AND r_lang.tag_value = ?", st.Language)
 		}
 		if t != "Year" && st.Year != "" && st.Year != "全部" && st.Year != "其它" {
-			query = query.Where("mid IN (SELECT mid FROM movie_tag_rel WHERE tag_type = 'Year' AND tag_value = ?)", st.Year)
+			query = query.Joins("JOIN movie_tag_rel r_year ON r_year.mid = search_info.mid AND r_year.tag_type = 'Year' AND r_year.tag_value = ?", st.Year)
 		}
 		if t != "Plot" && st.Plot != "" && st.Plot != "全部" && st.Plot != "其它" {
-			query = query.Where("mid IN (SELECT mid FROM movie_tag_rel WHERE tag_type = 'Plot' AND tag_value = ?)", st.Plot)
+			query = query.Joins("JOIN movie_tag_rel r_plot ON r_plot.mid = search_info.mid AND r_plot.tag_type = 'Plot' AND r_plot.tag_value = ?", st.Plot)
 		}
 
 		switch t {
@@ -913,7 +925,7 @@ func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 			}
 		}
 
-		tags := HandleTagStr(pid, t, GetTagsByTitle(pid, t, activeSet, sticky)...)
+		tags := HandleTagStr(pid, t, query, GetTagsByTitle(pid, t, activeSet, sticky)...)
 		if t == "Sort" || len(tags) > 1 || (sticky != "" && sticky != "全部") {
 			tagMap[t] = tags
 			activeSortList = append(activeSortList, t)
@@ -945,7 +957,7 @@ func GetSearchOptions(st model.SearchTagsVO) map[string]interface{} {
 	// 回退逻辑 (兜底)
 	tagMap := make(map[string]interface{})
 	for _, t := range []string{"Plot", "Area", "Language", "Year"} {
-		tagMap[t] = HandleTagStr(st.Pid, t, GetTagsByTitle(st.Pid, t, nil, "")...)
+		tagMap[t] = HandleTagStr(st.Pid, t, nil, GetTagsByTitle(st.Pid, t, nil, "")...)
 	}
 	return tagMap
 }

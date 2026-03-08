@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"errors"
@@ -13,15 +13,13 @@ import (
 	"server/internal/model/dto"
 	"server/internal/repository"
 	"server/internal/utils"
-
-	"gorm.io/gorm"
 )
 
 type ProvideService struct{}
 
 var ProvideSvc = new(ProvideService)
 
-// GetVodDirectBySource 指定采集站直连获取原始数据（MacCMS 兼容）
+// GetVodDirectBySource 获取指定采集站直连原始数据(MacCMS 兼容)
 func (p *ProvideService) GetVodDirectBySource(sourceId, ac string, t int, pg int, wd string, h int, ids string, year int, area, lang, plot, sort string) ([]byte, error) {
 	if sourceId == "" {
 		return nil, errors.New("source is required")
@@ -238,38 +236,27 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 	}
 
 	// 统一处理“其它”逻辑
-	handleOther := func(curValue, tagType string, q *gorm.DB) *gorm.DB {
-		if curValue == "" || curValue == "全部" {
-			return q
-		}
-		if curValue == "其它" && pid > 0 {
-			tags := repository.GetTagsByTitle(pid, tagType, nil, "")
-			var exclude []string
-			for _, tg := range tags {
-				if sl := strings.Split(tg, ":"); len(sl) > 1 {
-					exclude = append(exclude, sl[1])
-				}
-			}
-			if len(exclude) > 0 {
-				col := strings.ToLower(tagType)
-				if tagType == "Plot" {
-					for _, ex := range exclude {
-						q = q.Where("class_tag NOT LIKE ?", "%"+ex+"%")
-					}
-					return q
-				}
-				return q.Where(fmt.Sprintf("%s NOT IN ?", col), exclude)
-			}
-		}
-		if tagType == "Plot" {
-			return q.Where("class_tag LIKE ?", "%"+curValue+"%")
-		}
-		return q.Where(fmt.Sprintf("%s = ?", strings.ToLower(tagType)), curValue)
+	// 2. 处理规范化维度 (Area, Language, Plot) - 全部切换到 MovieTagRel 索引查询
+	dims := map[string]string{
+		"Area":     area,
+		"Language": lang,
+		"Plot":     plot,
 	}
 
-	query = handleOther(area, "Area", query)
-	query = handleOther(lang, "Language", query)
-	query = handleOther(plot, "Plot", query)
+	for dimType, val := range dims {
+		if val == "" || val == "全部" {
+			continue
+		}
+		if val == "其它" && pid > 0 {
+			var definedValues []string
+			db.Mdb.Model(&model.SearchTagItem{}).Where("pid = ? AND tag_type = ?", pid, dimType).Pluck("value", &definedValues)
+			if len(definedValues) > 0 {
+				query = query.Where("mid IN (SELECT mid FROM movie_tag_rel WHERE tag_type = ? AND tag_value IN ?)", dimType, definedValues)
+			}
+		} else {
+			query = query.Where("mid IN (SELECT mid FROM movie_tag_rel WHERE tag_type = ? AND tag_value = ?)", dimType, val)
+		}
+	}
 
 	var count int64
 	query.Count(&count)
@@ -277,15 +264,13 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 	page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
 
 	orderBy := "update_stamp DESC"
-	if sort != "" {
-		switch sort {
-		case "hits":
-			orderBy = "hits DESC"
-		case "score":
-			orderBy = "score DESC"
-		case "release_stamp":
-			orderBy = "release_stamp DESC"
-		}
+	switch sort {
+	case "hits":
+		orderBy = "hits DESC"
+	case "score":
+		orderBy = "score DESC"
+	case "release_stamp":
+		orderBy = "release_stamp DESC"
 	}
 
 	var sl []model.SearchInfo

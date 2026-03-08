@@ -1,104 +1,128 @@
-# Bracket-Film
+# 🎥 Bracket-Film 聚合影视系统
 
-**Bracket-Film** 是一个前后端分离的影视聚合系统，当前仓库由 Go 后端（`server`）与 Next.js 前端（`web`）组成。
+[![Go Version](https://img.shields.io/badge/Go-1.24-00ADD8?style=flat&logo=go)](https://golang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat&logo=next.js)](https://nextjs.org/)
+[![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?style=flat&logo=mysql)](https://www.mysql.com/)
+[![Redis](https://img.shields.io/badge/Redis-7.0-DC382D?style=flat&logo=redis)](https://redis.io/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+**Bracket-Film** 是一款极致追求性能与体验的前后端分离影视聚合系统。它采用 **Master-Slave (主从)** 动态对齐架构，支持内容级指纹去重、多维联动筛选（Faceted Search）以及全局 ID 归算，为用户提供稳定且丝滑的观影体验。
 
 > [!WARNING]
 > **免责声明**：本项目仅供学习与技术交流使用，作者不存储、不上传任何影视资源。请在使用前阅读 [DISCLAIMER.md](./DISCLAIMER.md)。
 
-## 核心特性
+---
 
-- Go + Next.js 全栈架构，支持 SSR 与管理后台。
-- **采集链路去重**：基于 `ContentKey` (内容指纹) 的全局归一化存储，杜绝重复数据。
-- **主从动态对齐**：强制单主站隔离，支持主站无感切换与分类名称自动智能对齐。
-- **Global ID 映射**：全站 ID 归约，确保主站切换后播放历史与书签的持久稳定性。
-- 视频播放器支持、定时任务、失败重试与孤儿数据清理。
+## 🏗️ 系统架构
 
-## 目录结构
+本项目采用 **Golang (Gin)** 作为高性能 API 引擎，**Next.js (App Router)** 驱动极速前端响应。
 
-- `server`：Go API 服务（Gin + GORM + Redis + Cron）
-- `web`：Next.js 16 前端（前台 + 管理后台）
-- `docker-compose.yml`：容器编排
-- `README-Docker.md`：Docker 部署说明
-- `README-FAQ.md`：常见问题与排障
+```mermaid
+graph TD
+    User((用户/TVBox)) <--> Web[Next.js Frontend]
+    Web <--> API[Go Gin API Server]
+    API <--> MySQL[(MySQL 8.0)]
+    API <--> Redis[(Redis Cache)]
+    
+    subgraph "Ingestion Layer (Master-Slave)"
+        API <--> Spider[Spider Engine]
+        Spider -- "Main Metadata" --> Master[Master Source]
+        Spider -- "Playlists" --> Slave[Slave Sources]
+    end
+    
+    subgraph "Core Logic"
+        API --> Faceted[Faceted Search Engine]
+        API --> Dedupe[Deduplication Logic]
+        API --> Mapping[Global ID Mapper]
+    end
+```
 
-## 技术栈
+---
 
-### 前端（`web`）
+## ✨ 核心特性
 
-- Next.js 16
-- React 19
-- Ant Design 6
-- TypeScript
+- 🚀 **极速响应**：基于关系索引与 Redis 组合缓存的多维联动筛选，50w+ 关系数据毫秒级响应。
+- 🎯 **多维联动 (Faceted Search)**：筛选选项随已选条件动态联动，实现“所选即所得”。
+- 🛡️ **主从动态对齐**：业界首创的单主站强制隔离逻辑，支持主站无感切换与分类名称智能对齐。
+- 🔍 **内容级去重**：基于 `ContentKey` (豆瓣 ID 或内容指纹) 的全局归一化存储，物理杜绝冗余数据。
+- 🔗 **Global ID 映射**：全站 ID 归约技术，确保主站切换后播放历史、书签与 API 接口的持久稳定性。
+- 📺 **全平台兼容**：完美适配 Web 端、原生播放器及 TVBox/MacCMS 系列标准接口。
 
-### 后端（`server`）
+---
 
-- Go 1.24
-- Gin
-- GORM + MySQL
-- go-redis
-- robfig/cron
-- gocolly
+## 📂 目录结构
 
-## 本地开发
+- `server/`：Go API 服务（Gin + GORM + Redis + Cron）
+- `web/`：Next.js 15 前端（前台 + 管理后台）
+- `docker-compose.yml`：容器化一键编排脚本
+- `README-FAQ.md`：核心原理、主从机制与排障手册
+- `README-Docker.md`：生产环境 Docker 快速部署指南
 
-### 1) 启动后端
+---
 
-进入 `server` 目录，配置环境变量后启动：
+## 🛠️ 技术栈
 
+### 后端（Server）
+- **Go 1.24**：高性能后端运行时
+- **Gin**：极速 Web 路由框架
+- **GORM**：完善的 ORM 映射与自动迁移
+- **MySQL 8.0**：核心持久化层
+- **Redis**：多级缓存与并发锁
+- **Robfig/Cron**：精准定时任务管理
+
+### 前端（Web）
+- **Next.js 15**：React 框架（支持 SSR & App Router）
+- **React 19**：新一代 UI 开发库
+- **Ant Design 6**：现代企业级 UI 组件库
+- **TypeScript**：类型安全保障
+
+---
+
+## 🚦 快速开始
+
+### 1. 本地开发 (Local Development)
+
+#### 启动后端 (Server)
 ```bash
 cd server
+# 修改 .env 配置文件
 go run ./cmd/server
 ```
 
-关键环境变量：
-
-- `PORT` 或 `LISTENER_PORT`（服务端口）
-- `MYSQL_HOST` `MYSQL_PORT` `MYSQL_USER` `MYSQL_PASSWORD` `MYSQL_DBNAME`
-- `REDIS_HOST` `REDIS_PORT` `REDIS_PASSWORD` `REDIS_DB`
-
-### 2) 启动前端
-
+#### 启动前端 (Web)
 ```bash
 cd web
 npm install
 npm run dev
 ```
 
-默认访问地址：
-
-- 前台：`http://localhost:3000`
-- 后台：`http://localhost:3000/manage`
-
-## Docker 部署
-
+### 2. 容器化部署 (Docker Deployment)
 ```bash
 docker compose up --build -d
 ```
+默认访问：`http://localhost:3000` (前台) | `http://localhost:3000/manage` (后台)
 
-默认端口：Web `3000`，API `3601`。详细说明见 [README-Docker.md](./README-Docker.md)。
+---
 
-## 默认管理员
+## 🔑 默认管理员
 
-首次启动会初始化管理员账号：
-
-- 用户名：`admin`
-- 密码：`admin`
+- **账号**：`admin`
+- **密码**：`admin`
 
 > [!IMPORTANT]
-> 请首次登录后立即修改默认密码。
+> 首次部署成功后，请务必进入后台修改默认密码以保障安全性。
 
-## TVBox / MacCMS
+---
 
-- 配置接口：`http://<server_ip>:3601/api/provide/config`
-- 数据接口：`http://<server_ip>:3601/api/provide/vod`
+## 📖 文档导航
 
-## 文档索引
+- [常见问题与主从机制 (FAQ)](./README-FAQ.md)
+- [Docker 部署手册](./README-Docker.md)
+- [后端开发指南](./server/README.md)
+- [前端开发指南](./web/README.md)
 
-- Docker 说明：[README-Docker.md](./README-Docker.md)
-- 常见问题：[README-FAQ.md](./README-FAQ.md)
-- 后端文档：[server/README.md](./server/README.md)
-- 前端文档：[web/README.md](./web/README.md)
+---
 
-## License
+## 📜 许可证
 
-MIT License
+本项目遵循 [MIT License](./LICENSE) 协议。
