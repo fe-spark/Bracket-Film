@@ -1,5 +1,10 @@
 # 🎥 Bracket-Film 聚合影视系统
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fe-spark/Bracket-Film/main/logo.png" width="200" alt="Bracket-Film Logo">
+</p>
+
+
 [![Go Version](https://img.shields.io/badge/Go-1.24-00ADD8?style=flat&logo=go)](https://golang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat&logo=next.js)](https://nextjs.org/)
 [![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?style=flat&logo=mysql)](https://www.mysql.com/)

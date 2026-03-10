@@ -64,7 +64,7 @@ func (s *InitService) BasicConfigInit() {
 	bc := model.BasicConfig{
 		SiteName: "Bracket",
 		Domain:   "http://127.0.0.1:3600",
-		Logo:     "https://s2.loli.net/2023/12/05/O2SEiUcMx5aWlv4.jpg",
+		Logo:     "https://raw.githubusercontent.com/fe-spark/Bracket-Film/main/logo.png",
 		Keyword:  "在线视频, 免费观影",
 		Describe: "自动采集, 多播放源集成,在线观影网站",
 		State:    true,
