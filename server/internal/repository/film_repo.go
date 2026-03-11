@@ -647,26 +647,43 @@ func GetRelateMovieBasicInfo(search model.SearchInfo, page *dto.Page) []model.Mo
 		condition = condition.Or("class_tag LIKE ?", fmt.Sprintf("%%%s%%", tag))
 	}
 
-	// 3. 执行带高阶权重的动态 SQL 排序查询
+	// 3. 执行带高阶权重的原生 SQL 排序查询 (彻底解决 Gorm 链式参数错位 Bug)
 	var list []model.SearchInfo
-	query := db.Mdb.Model(&model.SearchInfo{}).
-		Where("pid = ? AND mid != ?", search.Pid, search.Mid).
-		Where(condition)
+	args := []interface{}{search.Pid, search.Mid}
 
-	// 利用 MySQL 的布尔比较结果 (1/0) 进行极致加权排序
-	// 为了彻底避免参数错位和被 Find 误识别为 ID 过滤，使用 gorm.Expr 将参数直接绑定到 Order 子句中：
-	query = query.Order(gorm.Expr("(name = ?) DESC", coreToken)).
-		Order(gorm.Expr("(name LIKE ?) DESC", prefixLike)).
-		Order(gorm.Expr("(name LIKE ?) DESC", nameLike)).
-		Order(gorm.Expr("(cid = ?) DESC", search.Cid)).
-		Order("update_stamp DESC")
+	// 构建 WHERE 子句
+	whereSQL := "WHERE pid = ? AND mid != ? AND deleted_at IS NULL"
+	whereSQL += " AND ((name LIKE ? OR sub_title LIKE ?)"
+	args = append(args, nameLike, nameLike)
 
-	if err := query.Offset(offset).Limit(page.PageSize).Find(&list).Error; err != nil {
-		log.Println("GetRelateMovieBasicInfo Error:", err)
+	tags := strings.Split(search.ClassTag, ",")
+	for _, t := range tags {
+		if tag := strings.TrimSpace(t); tag != "" {
+			whereSQL += " OR class_tag LIKE ?"
+			args = append(args, "%"+tag+"%")
+		}
+	}
+	whereSQL += ")"
+
+	// 构建 ORDER BY 子句
+	sortSQL := `ORDER BY 
+		(name = ?) DESC, 
+		(name LIKE ?) DESC, 
+		(name LIKE ?) DESC, 
+		(cid = ?) DESC, 
+		update_stamp DESC`
+	args = append(args, coreToken, prefixLike, nameLike, search.Cid)
+
+	// 最终 SQL 组装 (不使用 Gorm Builder 而是手动注入参数列表)
+	finalSQL := fmt.Sprintf("SELECT * FROM search_info %s %s LIMIT ? OFFSET ?", whereSQL, sortSQL)
+	args = append(args, page.PageSize, offset)
+
+	if err := db.Mdb.Raw(finalSQL, args...).Scan(&list).Error; err != nil {
+		log.Println("GetRelateMovieBasicInfo Raw SQL Error:", err)
 		return make([]model.MovieBasicInfo, 0)
 	}
 
-	// 4. 重大兜底机制：如果没有精确匹配到任何结果，根据所属分类 (Cid) 推荐同类的最新影片
+	// 4. 重大兜底机制：如果没有匹配到任何相关结果 (Cid/Name/Tags 全落空)，推荐同二级分类的最新影片
 	if len(list) == 0 {
 		db.Mdb.Model(&model.SearchInfo{}).
 			Where("cid = ? AND mid != ?", search.Cid, search.Mid).
