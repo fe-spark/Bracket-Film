@@ -151,8 +151,8 @@ func SyncMovieTagRel(list []model.SearchInfo) {
 			}
 			// Plot (从 class_tag 中拆分)
 			if v.ClassTag != "" {
-				plots := strings.Split(v.ClassTag, ",")
-				for _, p := range plots {
+				plots := strings.SplitSeq(v.ClassTag, ",")
+				for p := range plots {
 					p = strings.TrimSpace(p)
 					if p != "" && p != "全部" && p != "其它" {
 						rels = append(rels, model.MovieTagRel{Mid: v.Mid, TagType: "Plot", TagValue: p})
@@ -416,13 +416,13 @@ func HandleSearchTags(preTags string, tagType string, pid int64, customValues ..
 		}
 
 		score := int64(1)
-		doUpdates := clause.Assignments(map[string]interface{}{"score": gorm.Expr("score + 1")})
+		doUpdates := clause.Assignments(map[string]any{"score": gorm.Expr("score + 1")})
 
 		// 年份特殊处理：分值即年份，确保按年份倒序排列
 		if tagType == "Year" {
 			y, _ := strconv.Atoi(v)
 			score = int64(y)
-			doUpdates = clause.Assignments(map[string]interface{}{"score": score}) // 年份分数固定为年份值
+			doUpdates = clause.Assignments(map[string]any{"score": score}) // 年份分数固定为年份值
 		}
 
 		db.Mdb.Clauses(clause.OnConflict{
@@ -591,10 +591,43 @@ func GetRelateMovieBasicInfo(search model.SearchInfo, page *dto.Page) []model.Mo
 	} else {
 		offset = (offset - 1) * page.PageSize
 	}
-	name := regexp.MustCompile(`(第.{1,3}季.*)|([0-9]{1,3})|(剧场版)|(\s\S*$)|(之.*)|([\p{P}\p{S}].*)`).ReplaceAllString(search.Name, "")
-	nameLike := fmt.Sprintf("%%%s%%", name)
-	// 进一步优化：除了名称和标签，所属分类 (Cid) 相同也视为相关，增加推荐广度
-	condition := db.Mdb.Where("cid = ? OR name LIKE ? OR sub_title LIKE ?", search.Cid, nameLike, nameLike)
+	// 1. 基于分词 (Tokenization) 的核心特征字提取
+	rawName := search.Name
+	// 定义常用切割符 (如遇到冒号、破折号、空格、括号、特定关键字等，即认为其前部为核心标题)
+	delimiters := []string{"：", ":", "·", " - ", "—", " ", "（", "(", "[", "【", "第", "剧场版", "部", "季", "之"}
+	coreToken := rawName
+
+	// 寻找最早出现的切割符位置
+	minIdx := len(rawName)
+	for _, d := range delimiters {
+		if idx := strings.Index(rawName, d); idx > 0 && idx < minIdx {
+			minIdx = idx
+		}
+	}
+
+	if minIdx < len(rawName) {
+		coreToken = rawName[:minIdx]
+	}
+
+	coreToken = strings.TrimSpace(coreToken)
+
+	// 最小长度保障：若因连续符号导致拆分后无词，回退到原名前4个字符
+	if len([]rune(coreToken)) < 1 && len([]rune(rawName)) > 2 {
+		coreToken = string([]rune(rawName)[:4])
+	}
+
+	// 如果拆分出来的 coreToken 只有 1 个字符（例如中文单字），可能区分度不够，
+	// 回退到至少取两个字符（如果有的话）。
+	if len([]rune(coreToken)) == 1 && len([]rune(rawName)) > 1 {
+		coreToken = string([]rune(rawName)[:2])
+	}
+
+	nameLike := fmt.Sprintf("%%%s%%", coreToken)
+	prefixLike := fmt.Sprintf("%s%%", coreToken)
+
+	// 2. 构造查询条件
+	// 基础池：扩大候选集（名称包含核心词，或者标签相似）
+	condition := db.Mdb.Where("name LIKE ? OR sub_title LIKE ?", nameLike, nameLike)
 
 	search.ClassTag = strings.ReplaceAll(search.ClassTag, " ", "")
 	classTags := make([]string, 0)
@@ -614,15 +647,33 @@ func GetRelateMovieBasicInfo(search model.SearchInfo, page *dto.Page) []model.Mo
 		condition = condition.Or("class_tag LIKE ?", fmt.Sprintf("%%%s%%", tag))
 	}
 
-	// 关键修复：将分类限制 (Pid) 与内容匹配条件 (condition) 进行显式分组
-	// 这样生成的 SQL 会是: WHERE (pid = ?) AND (name LIKE ? OR class_tag LIKE ...)
-	// 从而保证必须在同一大类下进行匹配
+	// 3. 执行带高阶权重的动态 SQL 排序查询
 	var list []model.SearchInfo
-	if err := db.Mdb.Model(&model.SearchInfo{}).Where("pid = ? AND mid != ?", search.Pid, search.Mid).
-		Where(condition).
-		Order("update_stamp DESC").Offset(offset).Limit(page.PageSize).Find(&list).Error; err != nil {
+	query := db.Mdb.Model(&model.SearchInfo{}).
+		Where("pid = ? AND mid != ?", search.Pid, search.Mid).
+		Where(condition)
+
+	// 利用 MySQL 的布尔比较结果 (1/0) 进行极致加权排序：
+	// 1. (name = coreToken) : 名字完全一致（满分）
+	// 2. (name LIKE prefixLike) : 名字以核心词开头（高度相关，如“复联第二季”）
+	// 3. (name LIKE nameLike) : 名字包含核心词（中度相关）
+	// 4. (cid = search.Cid) : 同属于一个具体的子分类 (二级分类优先)
+	sortExpr := "(name = ?) DESC, (name LIKE ?) DESC, (name LIKE ?) DESC, (cid = ?) DESC, update_stamp DESC"
+
+	if err := query.Order(sortExpr).
+		Offset(offset).Limit(page.PageSize).
+		Find(&list, coreToken, prefixLike, nameLike, search.Cid).Error; err != nil {
 		log.Println("GetRelateMovieBasicInfo Error:", err)
 		return nil
+	}
+
+	// 4. 重大兜底机制：如果没有精确匹配到任何结果，根据所属分类 (Cid) 推荐同类的最新影片
+	if len(list) == 0 {
+		db.Mdb.Model(&model.SearchInfo{}).
+			Where("cid = ? AND mid != ?", search.Cid, search.Mid).
+			Order("update_stamp DESC").
+			Offset(offset).Limit(page.PageSize).
+			Find(&list)
 	}
 
 	var basicList []model.MovieBasicInfo
@@ -841,7 +892,7 @@ func HandleTagStr(pid int64, title string, activeValues map[string]bool, stickyV
 }
 
 // GetSearchTag 获取搜索标签 (带联动感知与复合 Redis 缓存)
-func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
+func GetSearchTag(st model.SearchTagsVO) map[string]any {
 	pid := st.Pid
 	// 1. 生成复合缓存 Key (含所有筛选维度)
 	// 格式: SearchTags:{pid}:{cid}:{area}:{language}:{year}:{plot}
@@ -853,13 +904,13 @@ func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 
 	// 2. 尝试从 Redis 获取缓存
 	if data, err := db.Rdb.Get(db.Cxt, cacheKey).Result(); err == nil && data != "" {
-		var res map[string]interface{}
+		var res map[string]any
 		if json.Unmarshal([]byte(data), &res) == nil {
 			return res
 		}
 	}
 
-	res := make(map[string]interface{})
+	res := make(map[string]any)
 	sortList := []string{"Category", "Plot", "Area", "Language", "Year", "Sort"}
 	res["titles"] = map[string]string{
 		"Category": "类型",
@@ -870,7 +921,7 @@ func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 		"Sort":     "排序",
 	}
 
-	tagMap := make(map[string]interface{})
+	tagMap := make(map[string]any)
 	activeSortList := make([]string, 0)
 
 	// 多维联动逻辑 (Elegant Faceted)：计算每一行的选项时，锁定其他所有已选中的维度的关系映射
@@ -987,12 +1038,12 @@ func GetSearchTag(st model.SearchTagsVO) map[string]interface{} {
 	return res
 }
 
-func GetSearchOptions(st model.SearchTagsVO) map[string]interface{} {
+func GetSearchOptions(st model.SearchTagsVO) map[string]any {
 	// 复用 GetSearchTag 的逻辑
 	full := GetSearchTag(st)
-	if tags, ok := full["tags"].(map[string]interface{}); ok {
+	if tags, ok := full["tags"].(map[string]any); ok {
 		// 返回业务需要的四个核心维度
-		res := make(map[string]interface{})
+		res := make(map[string]any)
 		for _, t := range []string{"Plot", "Area", "Language", "Year"} {
 			res[t] = tags[t]
 		}
@@ -1000,7 +1051,7 @@ func GetSearchOptions(st model.SearchTagsVO) map[string]interface{} {
 	}
 
 	// 回退逻辑 (兜底)
-	tagMap := make(map[string]interface{})
+	tagMap := make(map[string]any)
 	for _, t := range []string{"Plot", "Area", "Language", "Year"} {
 		tagMap[t] = HandleTagStr(st.Pid, t, nil, "", GetTagsByTitle(st.Pid, t, nil, "")...)
 	}
@@ -1042,7 +1093,7 @@ func GetSearchPage(s model.SearchVo) []model.SearchInfo {
 		query = query.Where("remarks IN ?", []string{"完结", "HD"})
 	case "":
 	default:
-		query = query.Not(map[string]interface{}{"remarks": []string{"完结", "HD"}})
+		query = query.Not(map[string]any{"remarks": []string{"完结", "HD"}})
 	}
 	if s.BeginTime > 0 {
 		query = query.Where("update_stamp >= ? ", s.BeginTime)
@@ -1062,7 +1113,7 @@ func GetSearchPage(s model.SearchVo) []model.SearchInfo {
 
 func GetSearchInfosByTags(st model.SearchTagsVO, page *dto.Page) []model.SearchInfo {
 	qw := db.Mdb.Model(&model.SearchInfo{})
-	t := reflect.TypeOf(st)
+	t := reflect.TypeFor[model.SearchTagsVO]()
 	v := reflect.ValueOf(st)
 
 	// 记录是否已经处理了分类过滤，防止 Pid 和 Cid 产生冲突

@@ -100,7 +100,7 @@ func (s *FilmService) GetFilmClassById(id int64) *model.CategoryTree {
 
 // UpdateClass 更新分类信息
 func (s *FilmService) UpdateClass(class model.CategoryTree) error {
-	updates := make(map[string]interface{})
+	updates := make(map[string]any)
 	if class.Name != "" {
 		updates["name"] = class.Name
 	}
@@ -145,7 +145,7 @@ func (s *FilmService) UpdateClass(class model.CategoryTree) error {
 // DelClass 删除分类信息
 func (s *FilmService) DelClass(id int64) error {
 	// 简单的删除逻辑，删除后清除缓存
-	if err := repository.UpdateCategoryStatus(id, map[string]interface{}{"deleted_at": time.Now()}); err != nil {
+	if err := repository.UpdateCategoryStatus(id, map[string]any{"deleted_at": time.Now()}); err != nil {
 		return err
 	}
 	return nil

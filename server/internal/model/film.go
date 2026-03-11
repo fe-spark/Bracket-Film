@@ -165,8 +165,8 @@ const TableMovieTagRel = "movie_tag_rel"
 
 // Tag 影片分类标签结构体
 type Tag struct {
-	Name  string      `json:"name"`
-	Value interface{} `json:"value"`
+	Name  string `json:"name"`
+	Value any    `json:"value"`
 }
 
 // SearchTagsVO 搜索标签请求参数

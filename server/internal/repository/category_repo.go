@@ -57,7 +57,7 @@ func GetRootId(id int64) int64 {
 
 	curr := id
 	// 为防止循环引用死循环，最多查找 5 层 (目前本项目只有 2 层)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		p, ok := idToPid[curr]
 		if !ok || p == 0 {
 			return curr
@@ -273,7 +273,7 @@ func ClearCategoryCache() {
 }
 
 // UpdateCategoryStatus 仅更新分类的显示状态或名称，并清除缓存
-func UpdateCategoryStatus(id int64, updates map[string]interface{}) error {
+func UpdateCategoryStatus(id int64, updates map[string]any) error {
 	if err := db.Mdb.Model(&model.Category{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return err
 	}
