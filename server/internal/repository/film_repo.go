@@ -654,18 +654,14 @@ func GetRelateMovieBasicInfo(search model.SearchInfo, page *dto.Page) []model.Mo
 		Where(condition)
 
 	// 利用 MySQL 的布尔比较结果 (1/0) 进行极致加权排序
-	// 使用 GORM clause.OrderBy 来规范化带变量的加权排序，保证参数安全且位置正确
-	query = query.Clauses(clause.OrderBy{
-		Columns: []clause.OrderByColumn{
-			{Column: clause.Column{Raw: true, Name: "(name = ?)"}, Desc: true},
-			{Column: clause.Column{Raw: true, Name: "(name LIKE ?)"}, Desc: true},
-			{Column: clause.Column{Raw: true, Name: "(name LIKE ?)"}, Desc: true},
-			{Column: clause.Column{Raw: true, Name: "(cid = ?)"}, Desc: true},
-			{Column: clause.Column{Name: "update_stamp"}, Desc: true},
-		},
-	})
+	// 为了彻底避免参数错位和被 Find 误识别为 ID 过滤，使用 gorm.Expr 将参数直接绑定到 Order 子句中：
+	query = query.Order(gorm.Expr("(name = ?) DESC", coreToken)).
+		Order(gorm.Expr("(name LIKE ?) DESC", prefixLike)).
+		Order(gorm.Expr("(name LIKE ?) DESC", nameLike)).
+		Order(gorm.Expr("(cid = ?) DESC", search.Cid)).
+		Order("update_stamp DESC")
 
-	if err := query.Offset(offset).Limit(page.PageSize).Find(&list, coreToken, prefixLike, nameLike, search.Cid).Error; err != nil {
+	if err := query.Offset(offset).Limit(page.PageSize).Find(&list).Error; err != nil {
 		log.Println("GetRelateMovieBasicInfo Error:", err)
 		return make([]model.MovieBasicInfo, 0)
 	}
