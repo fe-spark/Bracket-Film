@@ -653,18 +653,17 @@ func GetRelateMovieBasicInfo(search model.SearchInfo, page *dto.Page) []model.Mo
 		Where("pid = ? AND mid != ?", search.Pid, search.Mid).
 		Where(condition)
 
-	// 利用 MySQL 的布尔比较结果 (1/0) 进行极致加权排序：
-	// 1. (name = coreToken) : 名字完全一致（满分）
-	// 2. (name LIKE prefixLike) : 名字以核心词开头（高度相关，如“复联第二季”）
-	// 3. (name LIKE nameLike) : 名字包含核心词（中度相关）
-	// 4. (cid = search.Cid) : 同属于一个具体的子分类 (二级分类优先)
-	sortExpr := "(name = ?) DESC, (name LIKE ?) DESC, (name LIKE ?) DESC, (cid = ?) DESC, update_stamp DESC"
+	// 利用 MySQL 的布尔比较结果 (1/0) 进行极致加权排序
+	// 为了安全隔离 Where 和 Order 的参数占位符，防止出现 argument mismatch 错误，使用 gorm.Expr：
+	query = query.Order(gorm.Expr("(name = ?) DESC", coreToken))
+	query = query.Order(gorm.Expr("(name LIKE ?) DESC", prefixLike))
+	query = query.Order(gorm.Expr("(name LIKE ?) DESC", nameLike))
+	query = query.Order(gorm.Expr("(cid = ?) DESC", search.Cid))
+	query = query.Order("update_stamp DESC")
 
-	if err := query.Order(sortExpr).
-		Offset(offset).Limit(page.PageSize).
-		Find(&list, coreToken, prefixLike, nameLike, search.Cid).Error; err != nil {
+	if err := query.Offset(offset).Limit(page.PageSize).Find(&list).Error; err != nil {
 		log.Println("GetRelateMovieBasicInfo Error:", err)
-		return nil
+		return make([]model.MovieBasicInfo, 0)
 	}
 
 	// 4. 重大兜底机制：如果没有精确匹配到任何结果，根据所属分类 (Cid) 推荐同类的最新影片
@@ -676,7 +675,7 @@ func GetRelateMovieBasicInfo(search model.SearchInfo, page *dto.Page) []model.Mo
 			Find(&list)
 	}
 
-	var basicList []model.MovieBasicInfo
+	basicList := make([]model.MovieBasicInfo, 0)
 	for _, s := range list {
 		basicList = append(basicList, GetBasicInfoByKey(s.Cid, s.Mid))
 	}
