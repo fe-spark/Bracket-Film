@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -593,15 +592,9 @@ func GetRelateMovieBasicInfo(search model.SearchInfo, page *dto.Page) []model.Mo
 		offset = (offset - 1) * page.PageSize
 	}
 	name := regexp.MustCompile(`(第.{1,3}季.*)|([0-9]{1,3})|(剧场版)|(\s\S*$)|(之.*)|([\p{P}\p{S}].*)`).ReplaceAllString(search.Name, "")
-	if len(name) == len(search.Name) && len(name) > 10 {
-		name = name[:int(math.Ceil(float64(len(name))/5)*3)]
-	}
-	base := db.Mdb.Model(&model.SearchInfo{}).
-		Where("cid = ?", search.Cid).
-		Where("deleted_at IS NULL")
-
 	nameLike := fmt.Sprintf("%%%s%%", name)
-	condition := db.Mdb.Where("name LIKE ? OR sub_title LIKE ?", nameLike, nameLike)
+	// 进一步优化：除了名称和标签，所属分类 (Cid) 相同也视为相关，增加推荐广度
+	condition := db.Mdb.Where("cid = ? OR name LIKE ? OR sub_title LIKE ?", search.Cid, nameLike, nameLike)
 
 	search.ClassTag = strings.ReplaceAll(search.ClassTag, " ", "")
 	classTags := make([]string, 0)
@@ -621,8 +614,13 @@ func GetRelateMovieBasicInfo(search model.SearchInfo, page *dto.Page) []model.Mo
 		condition = condition.Or("class_tag LIKE ?", fmt.Sprintf("%%%s%%", tag))
 	}
 
+	// 关键修复：将分类限制 (Pid) 与内容匹配条件 (condition) 进行显式分组
+	// 这样生成的 SQL 会是: WHERE (pid = ?) AND (name LIKE ? OR class_tag LIKE ...)
+	// 从而保证必须在同一大类下进行匹配
 	var list []model.SearchInfo
-	if err := base.Where(condition).Order("update_stamp DESC").Offset(offset).Limit(page.PageSize).Find(&list).Error; err != nil {
+	if err := db.Mdb.Model(&model.SearchInfo{}).Where("pid = ? AND mid != ?", search.Pid, search.Mid).
+		Where(condition).
+		Order("update_stamp DESC").Offset(offset).Limit(page.PageSize).Find(&list).Error; err != nil {
 		log.Println("GetRelateMovieBasicInfo Error:", err)
 		return nil
 	}
