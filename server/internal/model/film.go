@@ -1,6 +1,9 @@
 package model
 
 import (
+	"context"
+	"server/internal/config"
+	"server/internal/infra/db"
 	"server/internal/model/dto"
 
 	"gorm.io/gorm"
@@ -138,6 +141,22 @@ type SearchInfo struct {
 	Actor        string  `json:"actor"`                                                                                            // 主演
 	Director     string  `json:"director"`                                                                                         // 导演
 	Blurb        string  `json:"blurb"`                                                                                            // 简介, 不完整
+}
+
+// AfterSave GORM 钩子：在数据保存/更新后自动清理缓存，确保首页数据实时性
+func (s *SearchInfo) AfterSave(tx *gorm.DB) (err error) {
+	// 1. 清理首页全量缓存
+	db.Rdb.Del(context.Background(), config.IndexPageCacheKey)
+
+	// 2. 清理 TVBox 列表第一页缓存 (由于涉及多种 Sort/Pid/Limit 组合，使用模糊匹配清理)
+	// 注意：此处使用 Keys 操作在数据量极大时可能有性能影响，但考虑到采集频率可控且主要是首页缓存，是合理的
+	pattern := config.TVBoxList + ":*"
+	iter := db.Rdb.Scan(context.Background(), 0, pattern, 100).Iterator()
+	for iter.Next(context.Background()) {
+		db.Rdb.Del(context.Background(), iter.Val())
+	}
+
+	return
 }
 
 // SearchTagItem 影片检索标签持久化模型 (MySQL)

@@ -903,9 +903,10 @@ func HandleTagStr(pid int64, title string, activeValues map[string]bool, stickyV
 func GetSearchTag(st model.SearchTagsVO) map[string]any {
 	pid := st.Pid
 	// 1. 生成复合缓存 Key (含所有筛选维度)
-	// 格式: SearchTags:{pid}:{cid}:{area}:{language}:{year}:{plot}
+	// 格式: {Search:Tags}:{pid}:{cid}:{area}:{language}:{year}:{plot}
 	// 这里直接使用原值拼接（或简单清理），比 GenerateHashKey 更快且更直观
-	cacheKey := fmt.Sprintf("SearchTags:%d:%d:%s:%s:%s:%s",
+	cacheKey := fmt.Sprintf("%s:%d:%d:%s:%s:%s:%s",
+		config.SearchTags,
 		pid, st.Cid,
 		st.Area, st.Language, st.Year, st.Plot,
 	)
@@ -1306,15 +1307,15 @@ func RecoverFilmSearch(cid int64) error {
 
 // ClearSearchTagsCache 清除特定分类的所有复合搜索标签缓存
 func ClearSearchTagsCache(pid int64) {
-	// 使用通配符前缀：SearchTags:{pid}:*
-	pattern := fmt.Sprintf("SearchTags:%d:*", pid)
+	// 使用通配符前缀：{Search:Tags}:{pid}:*
+	pattern := fmt.Sprintf("%s:%d:*", config.SearchTags, pid)
 	ctx := db.Cxt
 	iter := db.Rdb.Scan(ctx, 0, pattern, config.MaxScanCount).Iterator()
 	for iter.Next(ctx) {
 		db.Rdb.Del(ctx, iter.Val())
 	}
-	// 同时兼容旧版/基础版 key: SearchTags:{pid}
-	db.Rdb.Del(ctx, fmt.Sprintf(config.SearchTagsKey, pid))
+	// 同时兼容旧版/基础版 key: {Search:Tags}:{pid}
+	db.Rdb.Del(ctx, fmt.Sprintf("%s:%d", config.SearchTags, pid))
 }
 
 // ClearTVBoxConfigCache 清除 TVBox 配置缓存
@@ -1325,7 +1326,7 @@ func ClearTVBoxConfigCache() {
 // ClearAllSearchTagsCache 清除所有分类的搜索标签缓存 (扫描清理)
 func ClearAllSearchTagsCache() {
 	// 基于 config 里的模板生成通配符，防止硬编码 prefix 不一致
-	pattern := strings.Replace(config.SearchTagsKey, "%d", "*", 1)
+	pattern := config.SearchTags + ":*"
 	keys, err := db.Rdb.Keys(db.Cxt, pattern).Result()
 	if err == nil && len(keys) > 0 {
 		db.Rdb.Del(db.Cxt, keys...)

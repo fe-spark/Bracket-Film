@@ -231,6 +231,23 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 	if limit <= 0 {
 		limit = 20
 	}
+	// 1. 针对第一页的首页请求尝试 Redis 缓存 (依赖主动失效，TTL 设为 12 小时作为兜底)
+	cacheKey := ""
+	if pg <= 1 && wd == "" && h == 0 && year == 0 && area == "" && lang == "" && plot == "" {
+		cacheKey = fmt.Sprintf("%s:%d:S%s:L%d", config.TVBoxList, t, sort, limit)
+		if data, err := db.Rdb.Get(db.Cxt, cacheKey).Result(); err == nil && data != "" {
+			var res struct {
+				Current   int
+				PageCount int
+				Total     int
+				VodList   []model.FilmList
+			}
+			if json.Unmarshal([]byte(data), &res) == nil {
+				return res.Current, res.PageCount, res.Total, res.VodList
+			}
+		}
+	}
+
 	page := dto.Page{PageSize: limit, Current: pg}
 	if page.Current <= 0 {
 		page.Current = 1
@@ -324,6 +341,19 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 			VodPlayFrom: "bracket",
 			VodPic:      s.Picture,
 		})
+	}
+
+	// 2. 写入 Redis 缓存
+	if cacheKey != "" {
+		res := struct {
+			Current   int
+			PageCount int
+			Total     int
+			VodList   []model.FilmList
+		}{page.Current, page.PageCount, page.Total, vodList}
+		if data, err := json.Marshal(res); err == nil {
+			db.Rdb.Set(db.Cxt, cacheKey, string(data), time.Hour*12)
+		}
 	}
 
 	return page.Current, page.PageCount, page.Total, vodList

@@ -34,19 +34,23 @@ const (
 // -------------------------redis key-----------------------------------
 const (
 	// CategoryTreeKey 分类树 key
-	CategoryTreeKey = "CategoryTree"
+	CategoryTreeKey = "Category:Tree"
 	// ActiveCategoryTreeKey 活跃分类树缓存 key
-	ActiveCategoryTreeKey = "ActiveCategoryTree"
+	ActiveCategoryTreeKey = "Category:ActiveTree"
 	// ConfigCacheTTL 管理员写入控制的配置类 key 有效期 (以长 TTL 最大化命中率)
 	ConfigCacheTTL = time.Hour * 24
 
-	// SearchTagsKey 搜索分类标签缓存 key (带 Pid)
-	SearchTagsKey = "SearchTags:%d"
+	// SearchTags 搜索分类标签缓存 key (前缀)
+	SearchTags = "Search:Tags"
 	// TVBoxConfigCacheKey TVBox 分类及筛选配置缓存 key
-	TVBoxConfigCacheKey = "TVBox:Config:ClassList"
+	TVBoxConfigCacheKey = "TVBox:Config"
+	// IndexPageCacheKey 首页数据缓存 key
+	IndexPageCacheKey = "Index:Page"
+	// TVBoxList TVBox 列表页缓存前缀
+	TVBoxList = "TVBox:List"
 
 	// VirtualPictureKey 待同步图片临时存储 key
-	VirtualPictureKey = "VirtualPicture"
+	VirtualPictureKey = "Gallery:VirtualPicture"
 	// MaxScanCount redis Scan 操作每次扫描的数据量, 每次最多扫描300条数据
 	MaxScanCount = 300
 )
@@ -58,9 +62,9 @@ const (
 // -------------------------manage 管理后台相关key----------------------------------
 const (
 	// SiteConfigBasic 网站参数配置
-	SiteConfigBasic = "SystemConfig:SiteConfig:Basic"
+	SiteConfigBasic = "Config:Site:Basic"
 	// BannersKey 轮播组件key
-	BannersKey = "SystemConfig:Banners"
+	BannersKey = "Config:Banners"
 
 	// DefaultUpdateSpec 每20分钟执行一次
 	DefaultUpdateSpec = "0 */20 * * * ?"

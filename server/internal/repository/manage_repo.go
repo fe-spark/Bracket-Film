@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"sort"
@@ -39,8 +40,12 @@ func SaveSiteBasic(c model.BasicConfig) error {
 	}
 	// write-through
 	data, _ := json.Marshal(c)
-	_ = db.Rdb.Set(db.Cxt, config.SiteConfigBasic, data, config.ConfigCacheTTL).Err()
-	return nil
+	err := db.Rdb.Set(db.Cxt, config.SiteConfigBasic, data, config.ConfigCacheTTL).Err()
+	if err == nil {
+		// 主动同步清理首页缓存
+		db.Rdb.Del(context.Background(), config.IndexPageCacheKey)
+	}
+	return err
 }
 
 // GetSiteBasic 获取网站基本配置信息 (Redis 缓存优先，MySQL 兜底)
@@ -108,7 +113,11 @@ func SaveBanners(bl model.Banners) error {
 		}
 		// write-through cache
 		data, _ := json.Marshal(bl)
-		_ = db.Rdb.Set(db.Cxt, config.BannersKey, data, config.ConfigCacheTTL).Err()
-		return nil
+		err := db.Rdb.Set(db.Cxt, config.BannersKey, data, config.ConfigCacheTTL).Err()
+		if err == nil {
+			// Banner 变动也刷新首页
+			db.Rdb.Del(context.Background(), config.IndexPageCacheKey)
+		}
+		return err
 	})
 }

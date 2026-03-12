@@ -1,13 +1,16 @@
 package service
 
 import (
+	"encoding/json"
 	"regexp"
-	"strings"
-
+	"server/internal/config"
+	"server/internal/infra/db"
 	"server/internal/model"
 	"server/internal/model/dto"
 	"server/internal/repository"
 	"server/internal/utils"
+	"strings"
+	"time"
 )
 
 type IndexService struct{}
@@ -16,6 +19,15 @@ var IndexSvc = new(IndexService)
 
 // IndexPage 首页数据处理
 func (i *IndexService) IndexPage() map[string]any {
+	// 1. 尝试从 Redis 获取缓存
+	cacheKey := config.IndexPageCacheKey
+	if data, err := db.Rdb.Get(db.Cxt, cacheKey).Result(); err == nil && data != "" {
+		res := make(map[string]any)
+		if json.Unmarshal([]byte(data), &res) == nil {
+			return res
+		}
+	}
+
 	Info := make(map[string]any)
 	tree := model.CategoryTree{Category: &model.Category{Id: 0, Name: "分类信息"}}
 	sysTree := repository.GetActiveCategoryTree()
@@ -51,6 +63,11 @@ func (i *IndexService) IndexPage() map[string]any {
 		banners = make(model.Banners, 0)
 	}
 	Info["banners"] = banners
+
+	// 2. 写入 Redis 缓存 (设置长 TTL，但依靠 AfterSave 钩子主动刷新)
+	if data, err := json.Marshal(Info); err == nil {
+		db.Rdb.Set(db.Cxt, cacheKey, string(data), time.Hour*24)
+	}
 
 	return Info
 }
