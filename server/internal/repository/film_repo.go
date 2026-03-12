@@ -528,22 +528,18 @@ func GetMovieListByPid(pid int64, page *dto.Page) []model.MovieBasicInfo {
 	page.Total = int(count)
 	page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
 
+	return GetMovieListByPidLimit(pid, page.PageSize, (page.Current-1)*page.PageSize)
+}
+
+// GetMovieListByPidLimit 轻量级获取指定父类 ID 列表 (无 Count)
+func GetMovieListByPidLimit(pid int64, limit, offset int) []model.MovieBasicInfo {
 	var s []model.SearchInfo
-	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("pid = ?", pid).Order("update_stamp DESC").Find(&s).Error; err != nil {
-		log.Printf("GetMovieListByPid Error: %v", err)
+	if err := db.Mdb.Limit(limit).Offset(offset).Where("pid = ?", pid).Order("update_stamp DESC").Find(&s).Error; err != nil {
+		log.Printf("GetMovieListByPidLimit Error: %v", err)
 		return nil
 	}
 
-	var list []model.MovieBasicInfo
-	for _, v := range s {
-		list = append(list, model.MovieBasicInfo{
-			Id: v.Mid, Cid: v.Cid, Pid: v.Pid, Name: v.Name, SubTitle: v.SubTitle,
-			CName: v.CName, State: v.State, Picture: v.Picture, Actor: v.Actor,
-			Director: v.Director, Blurb: v.Blurb, Remarks: v.Remarks,
-			Area: v.Area, Year: fmt.Sprint(v.Year),
-		})
-	}
-	return list
+	return GetBasicInfoBySearchInfos(s...)
 }
 
 // GetMovieListByCid 获取指定子类 ID 的影片基本信息
@@ -553,22 +549,18 @@ func GetMovieListByCid(cid int64, page *dto.Page) []model.MovieBasicInfo {
 	page.Total = int(count)
 	page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
 
+	return GetMovieListByCidLimit(cid, page.PageSize, (page.Current-1)*page.PageSize)
+}
+
+// GetMovieListByCidLimit 轻量级获取指定子类 ID 列表 (无 Count)
+func GetMovieListByCidLimit(cid int64, limit, offset int) []model.MovieBasicInfo {
 	var s []model.SearchInfo
-	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("cid = ?", cid).Order("update_stamp DESC").Find(&s).Error; err != nil {
-		log.Printf("GetMovieListByCid Error: %v", err)
+	if err := db.Mdb.Limit(limit).Offset(offset).Where("cid = ?", cid).Order("update_stamp DESC").Find(&s).Error; err != nil {
+		log.Printf("GetMovieListByCidLimit Error: %v", err)
 		return nil
 	}
 
-	var list []model.MovieBasicInfo
-	for _, v := range s {
-		list = append(list, model.MovieBasicInfo{
-			Id: v.Mid, Cid: v.Cid, Pid: v.Pid, Name: v.Name, SubTitle: v.SubTitle,
-			CName: v.CName, State: v.State, Picture: v.Picture, Actor: v.Actor,
-			Director: v.Director, Blurb: v.Blurb, Remarks: v.Remarks,
-			Area: v.Area, Year: fmt.Sprint(v.Year),
-		})
-	}
-	return list
+	return GetBasicInfoBySearchInfos(s...)
 }
 
 func SearchFilmKeyword(keyword string, page *dto.Page) []model.SearchInfo {
@@ -1458,10 +1450,15 @@ func CleanOrphanPlaylists() int64 {
 
 // GetHotMovieByPid 获取当前级分类下的热门影片
 func GetHotMovieByPid(pid int64, page *dto.Page) []model.SearchInfo {
+	return GetHotMovieByPidLimit(pid, page.PageSize, (page.Current-1)*page.PageSize)
+}
+
+// GetHotMovieByPidLimit 轻量级获取热门影片
+func GetHotMovieByPidLimit(pid int64, limit, offset int) []model.SearchInfo {
 	var s []model.SearchInfo
 	t := time.Now().AddDate(0, -1, 0).Unix()
-	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("pid = ? AND update_stamp > ?", pid, t).Order(" year DESC, hits DESC").Find(&s).Error; err != nil {
-		log.Printf("GetHotMovieByPid Error: %v", err)
+	if err := db.Mdb.Limit(limit).Offset(offset).Where("pid = ? AND update_stamp > ?", pid, t).Order(" year DESC, hits DESC").Find(&s).Error; err != nil {
+		log.Printf("GetHotMovieByPidLimit Error: %v", err)
 		return nil
 	}
 	return s
@@ -1469,10 +1466,15 @@ func GetHotMovieByPid(pid int64, page *dto.Page) []model.SearchInfo {
 
 // GetHotMovieByCid 获取当前分类下的热门影片
 func GetHotMovieByCid(cid int64, page *dto.Page) []model.SearchInfo {
+	return GetHotMovieByCidLimit(cid, page.PageSize, (page.Current-1)*page.PageSize)
+}
+
+// GetHotMovieByCidLimit 轻量级获取热门影片
+func GetHotMovieByCidLimit(cid int64, limit, offset int) []model.SearchInfo {
 	var s []model.SearchInfo
 	t := time.Now().AddDate(0, -1, 0).Unix()
-	if err := db.Mdb.Limit(page.PageSize).Offset((page.Current-1)*page.PageSize).Where("cid = ? AND update_stamp > ?", cid, t).Order(" year DESC, hits DESC").Find(&s).Error; err != nil {
-		log.Printf("GetHotMovieByCid Error: %v", err)
+	if err := db.Mdb.Limit(limit).Offset(offset).Where("cid = ? AND update_stamp > ?", cid, t).Order(" year DESC, hits DESC").Find(&s).Error; err != nil {
+		log.Printf("GetHotMovieByCidLimit Error: %v", err)
 		return nil
 	}
 	return s

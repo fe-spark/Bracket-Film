@@ -27,15 +27,14 @@ func (i *IndexService) IndexPage() map[string]any {
 	Info["category"] = tree
 	list := make([]map[string]any, 0)
 	for _, c := range tree.Children {
-		page := dto.Page{PageSize: 14, Current: 1}
 		var movies []model.MovieBasicInfo
 		var hotMovies []model.SearchInfo
 		if c.Children != nil {
-			movies = repository.GetMovieListByPid(c.Id, &page)
-			hotMovies = repository.GetHotMovieByPid(c.Id, &page)
+			movies = repository.GetMovieListByPidLimit(c.Id, 14, 0)
+			hotMovies = repository.GetHotMovieByPidLimit(c.Id, 14, 0)
 		} else {
-			movies = repository.GetMovieListByCid(c.Id, &page)
-			hotMovies = repository.GetHotMovieByCid(c.Id, &page)
+			movies = repository.GetMovieListByCidLimit(c.Id, 14, 0)
+			hotMovies = repository.GetHotMovieByCidLimit(c.Id, 14, 0)
 		}
 		if movies == nil {
 			movies = make([]model.MovieBasicInfo, 0)
@@ -52,6 +51,7 @@ func (i *IndexService) IndexPage() map[string]any {
 		banners = make(model.Banners, 0)
 	}
 	Info["banners"] = banners
+
 	return Info
 }
 
