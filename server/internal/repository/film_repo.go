@@ -137,13 +137,25 @@ func SyncMovieTagRel(list []model.SearchInfo) {
 		// 2. 构造新的关系集合
 		var rels []model.MovieTagRel
 		for _, v := range list {
-			// Area
-			if v.Area != "" && v.Area != "全部" && v.Area != "其它" {
-				rels = append(rels, model.MovieTagRel{Mid: v.Mid, TagType: "Area", TagValue: v.Area})
+			// Area (处理多值)
+			if v.Area != "" {
+				as := strings.Split(v.Area, ",")
+				for _, a := range as {
+					a = strings.TrimSpace(a)
+					if a != "" && a != "全部" && a != "其它" {
+						rels = append(rels, model.MovieTagRel{Mid: v.Mid, TagType: "Area", TagValue: a})
+					}
+				}
 			}
-			// Language
-			if v.Language != "" && v.Language != "全部" && v.Language != "其它" {
-				rels = append(rels, model.MovieTagRel{Mid: v.Mid, TagType: "Language", TagValue: v.Language})
+			// Language (处理多值)
+			if v.Language != "" {
+				ls := strings.Split(v.Language, ",")
+				for _, l := range ls {
+					l = strings.TrimSpace(l)
+					if l != "" && l != "全部" && l != "其它" {
+						rels = append(rels, model.MovieTagRel{Mid: v.Mid, TagType: "Language", TagValue: l})
+					}
+				}
 			}
 			// Year
 			if v.Year > 0 {
@@ -151,8 +163,8 @@ func SyncMovieTagRel(list []model.SearchInfo) {
 			}
 			// Plot (从 class_tag 中拆分)
 			if v.ClassTag != "" {
-				plots := strings.SplitSeq(v.ClassTag, ",")
-				for p := range plots {
+				ps := strings.Split(v.ClassTag, ",")
+				for _, p := range ps {
 					p = strings.TrimSpace(p)
 					if p != "" && p != "全部" && p != "其它" {
 						rels = append(rels, model.MovieTagRel{Mid: v.Mid, TagType: "Plot", TagValue: p})
@@ -493,6 +505,61 @@ func ConvertSearchInfo(sourceId string, detail model.MovieDetail) model.SearchIn
 	// 这确保了影片能正确归类到“电影”、“电视剧”等智能根分类下，从而让筛选标签正常显示
 	correctPid := GetRootId(resolvedCid)
 
+	// 关键修复 3：采集即归类 (Normalization)
+	// 处理地区 (Area) - 支持多值拆分
+	var areaStr string
+	if detail.Area != "" {
+		tags := strings.FieldsFunc(detail.Area, func(r rune) bool {
+			return r == ',' || r == '/' || r == ' ' || r == '，' || r == '、'
+		})
+		uniqueAreas := make(map[string]bool)
+		var areas []string
+		for _, t := range tags {
+			normalized := NormalizeTagValue(correctPid, "Area", t)
+			if normalized != "" && !uniqueAreas[normalized] {
+				uniqueAreas[normalized] = true
+				areas = append(areas, normalized)
+			}
+		}
+		areaStr = strings.Join(areas, ",")
+	}
+
+	// 处理语言 (Language) - 支持多值拆分
+	var langStr string
+	if detail.Language != "" {
+		tags := strings.FieldsFunc(detail.Language, func(r rune) bool {
+			return r == ',' || r == '/' || r == ' ' || r == '，' || r == '、'
+		})
+		uniqueLangs := make(map[string]bool)
+		var langs []string
+		for _, t := range tags {
+			normalized := NormalizeTagValue(correctPid, "Language", t)
+			if normalized != "" && !uniqueLangs[normalized] {
+				uniqueLangs[normalized] = true
+				langs = append(langs, normalized)
+			}
+		}
+		langStr = strings.Join(langs, ",")
+	}
+
+	// 处理剧情标签 (Plot)
+	var plotStr string
+	if detail.ClassTag != "" {
+		tags := strings.FieldsFunc(detail.ClassTag, func(r rune) bool {
+			return r == ',' || r == '/' || r == ' ' || r == '，' || r == '、'
+		})
+		uniquePlots := make(map[string]bool)
+		var plots []string
+		for _, t := range tags {
+			normalized := NormalizeTagValue(correctPid, "Plot", t)
+			if normalized != "" && !uniquePlots[normalized] {
+				uniquePlots[normalized] = true
+				plots = append(plots, normalized)
+			}
+		}
+		plotStr = strings.Join(plots, ",")
+	}
+
 	return model.SearchInfo{
 		Mid:          detail.Id,
 		ContentKey:   contentKey,
@@ -502,9 +569,9 @@ func ConvertSearchInfo(sourceId string, detail model.MovieDetail) model.SearchIn
 		Name:         detail.Name,
 		SubTitle:     detail.SubTitle,
 		CName:        detail.CName,
-		ClassTag:     detail.ClassTag,
-		Area:         detail.Area,
-		Language:     detail.Language,
+		ClassTag:     plotStr,
+		Area:         areaStr,
+		Language:     langStr,
 		Year:         year,
 		Initial:      detail.Initial,
 		Score:        score,
@@ -832,19 +899,102 @@ func GetTagsByTitle(pid int64, tagType string, activeValues map[string]bool, sti
 	return tags
 }
 
-// GetTopTagValues 获取某个维度的“热门/展示”值集，用于“其它”逻辑的排除参考
-func GetTopTagValues(pid int64, tagType string) []string {
-	var items []model.SearchTagItem
-	limit := 30
-	if tagType == "Plot" {
-		limit = 11
+// GetTagAliasMap 核心标签映射表 (用于基本区域和语言的标准化对齐)
+func GetTagAliasMap() map[string]string {
+	return map[string]string{
+		"内地": "中国大陆", "大陆": "中国大陆", "国产": "中国大陆", "中陆": "中国大陆",
+		"港台": "香港", "港澳": "香港", "外语": "其它", "海外": "其它",
+		"普通话": "国语", "中文": "国语", "华语": "国语",
+		"英语": "英语", "英文": "英语", "美语": "英语",
+		"日语": "日语", "日文": "日语", "韩语": "韩语", "韩文": "韩语", "朝鲜语": "韩语",
+		"粤语": "粤语", "广州话": "粤语", "广东话": "粤语",
+		"动作片": "动作", "喜剧片": "喜剧", "爱情片": "爱情", "科幻片": "科幻",
+		"恐怖片": "恐怖", "战争片": "战争", "纪录片": "纪录", "剧情片": "剧情",
+		"热血动漫": "热血", "奇幻动漫": "奇幻", "冒险动漫": "冒险",
+	}
+}
+
+// NormalizeTagValue 标签标准化：将原始值归约为标准大类或“其它”
+func NormalizeTagValue(pid int64, tagType string, val string) string {
+	val = strings.TrimSpace(val)
+	if val == "" || val == "全部" {
+		return ""
 	}
 
-	query := db.Mdb.Where("pid = ? AND tag_type = ?", pid, tagType)
-	if tagType == "Category" {
-		query = query.Where("value != ?", fmt.Sprint(pid))
+	// 1. 黑名单/干扰词过滤
+	blacklist := []string{"其它", "其他", "测试", "暂无", "HD", "1080P", "4K", "BD", "蓝光", "高清", "中字", "字幕", "极清", "内嵌"}
+	upperVal := strings.ToUpper(val)
+	for _, b := range blacklist {
+		if strings.Contains(upperVal, strings.ToUpper(b)) {
+			if upperVal == strings.ToUpper(b) {
+				return ""
+			}
+		}
 	}
-	query.Order("score DESC").Limit(limit).Find(&items)
+
+	// 2. 同义词映射 (Alias Mapping)
+	aliasMap := GetTagAliasMap()
+	if mapped, ok := aliasMap[val]; ok {
+		return mapped
+	}
+
+	// 3. 标准库匹配 (采用最长优先，避免误伤)
+	standard := GetMajorTags(pid, tagType)
+	if len(standard) == 0 {
+		return val
+	}
+
+	var bestMatch string
+	for _, s := range standard {
+		if strings.Contains(val, s) {
+			if len(s) > len(bestMatch) {
+				bestMatch = s
+			}
+		}
+	}
+
+	if bestMatch != "" {
+		return bestMatch
+	}
+
+	return "其它"
+}
+
+// GetMajorTags 获取各维度的“核心大类”列表 (行业标准库)
+func GetMajorTags(pid int64, tagType string) []string {
+	switch tagType {
+	case "Plot":
+		// 根据 Pid (主频道) 不同，提供行业共识的剧情筛选维度
+		if pid == 4 || pid == 36 { // 动漫
+			return []string{"热血", "奇幻", "恋爱", "校园", "冒险", "少女", "战斗", "竞技", "治愈", "搞笑", "悬疑", "推理", "后宫", "机战", "萌系", "励志"}
+		}
+		// 电影/电视剧通用剧情维度
+		return []string{"动作", "喜剧", "爱情", "科幻", "悬疑", "惊悚", "战争", "犯罪", "恐怖", "奇幻", "剧情", "冒险", "灾难", "武侠", "古装", "历史", "纪录"}
+
+	case "Area":
+		if pid == 4 || pid == 36 {
+			return []string{"日本", "中国大陆", "美国", "香港", "台湾", "韩国"}
+		}
+		return []string{"中国大陆", "美国", "香港", "台湾", "韩国", "日本", "英国", "法国", "德国", "泰国", "印度", "欧洲", "加拿大"}
+
+	case "Language":
+		return []string{"国语", "英语", "粤语", "日语", "韩语", "法语", "德语", "俄语"}
+	}
+
+	return nil
+}
+
+// GetTopTagValues 获取某个维度的“核心大类”值集，用于“其它”逻辑的排除参考
+func GetTopTagValues(pid int64, tagType string) []string {
+	// 关键改动：不再从数据库动态取 Top N，而是使用手工定义的核心大类
+	if major := GetMajorTags(pid, tagType); len(major) > 0 {
+		return major
+	}
+
+	// 兜底：如果没定义大类，回退到数据库高分查询 (保留一点点灵活性)
+	var items []model.SearchTagItem
+	limit := 15
+	db.Mdb.Where("pid = ? AND tag_type = ?", pid, tagType).Order("score DESC").Limit(limit).Find(&items)
 
 	var vals []string
 	for _, item := range items {
@@ -983,24 +1133,10 @@ func GetSearchTag(st model.SearchTagsVO) map[string]any {
 				}
 			}
 			if t != "Area" && st.Area != "" && st.Area != "全部" {
-				if st.Area == "其它" {
-					topVals := GetTopTagValues(pid, "Area")
-					if len(topVals) > 0 {
-						query = query.Where("search_info.area NOT IN ?", topVals)
-					}
-				} else {
-					query = query.Joins("JOIN movie_tag_rel r_area ON r_area.mid = search_info.mid AND r_area.tag_type = 'Area' AND r_area.tag_value = ?", st.Area)
-				}
+				query = query.Where("search_info.area LIKE ?", fmt.Sprintf("%%%s%%", st.Area))
 			}
 			if t != "Language" && st.Language != "" && st.Language != "全部" {
-				if st.Language == "其它" {
-					topVals := GetTopTagValues(pid, "Language")
-					if len(topVals) > 0 {
-						query = query.Where("search_info.language NOT IN ?", topVals)
-					}
-				} else {
-					query = query.Joins("JOIN movie_tag_rel r_lang ON r_lang.mid = search_info.mid AND r_lang.tag_type = 'Language' AND r_lang.tag_value = ?", st.Language)
-				}
+				query = query.Where("search_info.language LIKE ?", fmt.Sprintf("%%%s%%", st.Language))
 			}
 			if t != "Year" && st.Year != "" && st.Year != "全部" {
 				if st.Year == "其它" {
@@ -1013,14 +1149,7 @@ func GetSearchTag(st model.SearchTagsVO) map[string]any {
 				}
 			}
 			if t != "Plot" && st.Plot != "" && st.Plot != "全部" {
-				if st.Plot == "其它" {
-					topVals := GetTopTagValues(pid, "Plot")
-					for _, v := range topVals {
-						query = query.Where("search_info.class_tag NOT LIKE ?", fmt.Sprintf("%%%s%%", v))
-					}
-				} else {
-					query = query.Joins("JOIN movie_tag_rel r_plot ON r_plot.mid = search_info.mid AND r_plot.tag_type = 'Plot' AND r_plot.tag_value = ?", st.Plot)
-				}
+				query = query.Where("search_info.class_tag LIKE ?", fmt.Sprintf("%%%s%%", st.Plot))
 			}
 
 			if t == "Category" {
@@ -1057,15 +1186,26 @@ func GetSearchTag(st model.SearchTagsVO) map[string]any {
 			sticky = st.Year
 		}
 
-		// 构建 Tag 列表
+		// 构建 Tag 列表 (大类汇总逻辑)
 		candidateItems := itemsByType[t]
+		majorTags := GetMajorTags(pid, t)
+		majorMap := make(map[string]bool)
+		for _, mt := range majorTags {
+			majorMap[mt] = true
+		}
+
 		tagStrs := make([]string, 0)
 		for _, item := range candidateItems {
-			if sticky != "" && item.Value == sticky {
-				tagStrs = append(tagStrs, fmt.Sprintf("%s:%s", item.Name, item.Value))
+			// 1. 如果是标准大类，只要 active 就显示
+			if majorMap[item.Value] {
+				if activeSet == nil || activeSet[item.Value] {
+					tagStrs = append(tagStrs, fmt.Sprintf("%s:%s", item.Name, item.Value))
+				}
 				continue
 			}
-			if activeSet == nil || activeSet[item.Value] {
+
+			// 2. 粘性逻辑：如果当前选中的就是这个非标标签，强制显示以便用户取消
+			if sticky != "" && item.Value == sticky {
 				tagStrs = append(tagStrs, fmt.Sprintf("%s:%s", item.Name, item.Value))
 			}
 		}
