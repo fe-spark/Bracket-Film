@@ -9,7 +9,31 @@
   line-height: 1.8;
   border-top: 1px solid var(--public-border-1);
 
-  p {
+  .footerInfo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 12px;
+
+    .footerLogo {
+      height: 24px;
+      object-fit: contain;
+    }
+
+    .footerSiteName {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--public-text-2);
+    }
+  }
+
+  .copyright {
+    margin-bottom: 8px;
+    font-size: 12px;
+  }
+
+  .disclaimer {
     max-width: 800px;
     margin: 0 auto;
     font-weight: 500;

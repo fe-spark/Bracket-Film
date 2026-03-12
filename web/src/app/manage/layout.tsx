@@ -27,6 +27,7 @@ import { ApiGet } from "@/lib/api";
 import { clearAuthToken } from "@/lib/auth";
 import { cookieUtil } from "@/lib/cookie";
 import styles from "./layout.module.less";
+import { useSiteConfig } from "@/components/common/SiteGuard";
 
 const { Sider, Header, Content } = Layout;
 
@@ -80,20 +81,13 @@ export default function ManageLayout({
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [siteName, setSiteName] = useState("Bracket");
-  const [logo, setLogo] = useState("");
+  const { config: siteInfo } = useSiteConfig();
   const [userInfo, setUserInfo] = useState<any>(null);
 
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    ApiGet("/manage/config/basic").then((resp) => {
-      if (resp.code === 0) {
-        setSiteName(resp.data.siteName || "Bracket");
-        setLogo(resp.data.logo || "");
-      }
-    });
     ApiGet("/manage/user/info").then((resp) => {
       if (resp.code === 0) {
         setUserInfo(resp.data);
@@ -136,8 +130,8 @@ export default function ManageLayout({
             className={styles.logoWrap}
             onClick={() => window.open("/", "_blank")}
           >
-            {logo && <Avatar src={logo} size={30} />}
-            {!collapsed && <span className={styles.siteName}>{siteName}</span>}
+            {siteInfo?.logo && <Avatar src={siteInfo.logo} size={30} />}
+            {!collapsed && <span className={styles.siteName}>{siteInfo?.siteName || "Bracket"}</span>}
           </div>
           <Menu
             mode="inline"

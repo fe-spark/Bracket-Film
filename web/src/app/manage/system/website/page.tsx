@@ -100,6 +100,11 @@ export default function SiteConfigPage() {
                   <Switch checkedChildren="开启" unCheckedChildren="关闭" />
                 </Form.Item>
               </Col>
+              <Col xs={24} lg={12} xl={8}>
+                <Form.Item name="isVideoProxy" label="视频播放代理" valuePropName="checked">
+                  <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+                </Form.Item>
+              </Col>
               <Col xs={24} lg={12} xl={16}>
                 <Form.Item name="logo" label="网站Logo">
                   <Input placeholder="请输入完整的 Logo 图片 URL 地址" />

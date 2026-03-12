@@ -21,6 +21,7 @@ import VideoPlayer from "@/components/public/VideoPlayer";
 import AppLoading from "@/components/public/Loading";
 import styles from "./page.module.less";
 import { useAppMessage } from "@/lib/useAppMessage";
+import { useSiteConfig } from "@/components/common/SiteGuard";
 
 function PlayerContent() {
   const router = useRouter();
@@ -42,6 +43,9 @@ function PlayerContent() {
   const activeTabRef = useRef<HTMLDivElement>(null);
   const sourceTabsRef = useRef<HTMLDivElement>(null);
   const episodeListRef = useRef<HTMLDivElement>(null);
+
+  const { config: siteConfig } = useSiteConfig();
+
 
   // 1. 数据加载与状态同步
   useEffect(() => {
@@ -174,7 +178,7 @@ function PlayerContent() {
           <div className={`${styles.playerWrapper} ${playerError ? styles.isPlayerError : ""}`}>
             {current?.link && (
               <VideoPlayer
-                useProxy={false}
+                useProxy={siteConfig?.isVideoProxy}
                 key={current.link}
                 src={current.link}
                 initialTime={initialTime ? parseFloat(initialTime) : 0}

@@ -42,6 +42,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return generated;
 }
 
+import SiteGuard from "@/components/common/SiteGuard";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -52,7 +54,9 @@ export default function RootLayout({
       <body className={outfit.className}>
         <AntdRegistry>
           <GlobalThemeProvider fontFamily={outfit.style.fontFamily}>
-            {children}
+            <SiteGuard>
+              {children}
+            </SiteGuard>
           </GlobalThemeProvider>
         </AntdRegistry>
       </body>

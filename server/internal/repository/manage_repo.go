@@ -33,6 +33,7 @@ func SaveSiteBasic(c model.BasicConfig) error {
 	rec := model.SiteConfigRecord{
 		SiteName: c.SiteName, Domain: c.Domain, Logo: c.Logo,
 		Keyword: c.Keyword, Describe: c.Describe, State: c.State, Hint: c.Hint,
+		IsVideoProxy: c.IsVideoProxy,
 	}
 	db.Mdb.Clauses(clause.OnConflict{UpdateAll: true}).Where("id > 0").Delete(&model.SiteConfigRecord{})
 	if err := db.Mdb.Create(&rec).Error; err != nil {
@@ -65,6 +66,7 @@ func GetSiteBasic() model.BasicConfig {
 	c = model.BasicConfig{
 		SiteName: rec.SiteName, Domain: rec.Domain, Logo: rec.Logo,
 		Keyword: rec.Keyword, Describe: rec.Describe, State: rec.State, Hint: rec.Hint,
+		IsVideoProxy: rec.IsVideoProxy,
 	}
 	// 回填缓存
 	data, _ := json.Marshal(c)

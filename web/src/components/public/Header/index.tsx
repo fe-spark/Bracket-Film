@@ -15,6 +15,7 @@ import { ApiGet } from "@/lib/api";
 import { cookieUtil, COOKIE_KEY_MAP } from "@/lib/cookie";
 import styles from "./index.module.less";
 import { useAppMessage } from "@/lib/useAppMessage";
+import { useSiteConfig } from "@/components/common/SiteGuard";
 
 interface NavItem {
   id: string;
@@ -32,7 +33,7 @@ interface HistoryItem {
 export default function Header() {
   const [keyword, setKeyword] = useState("");
   const [navList, setNavList] = useState<NavItem[]>([]);
-  const [siteInfo, setSiteInfo] = useState<any>({});
+  const { config: siteInfo } = useSiteConfig();
   const [historyList, setHistoryList] = useState<HistoryItem[]>([]);
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuVisible, setMobileMenuVisible] = useState(false);
@@ -59,9 +60,6 @@ export default function Header() {
   useEffect(() => {
     ApiGet("/navCategory").then((resp) => {
       if (resp.code === 0) setNavList(resp.data || []);
-    });
-    ApiGet("/config/basic").then((resp) => {
-      if (resp.code === 0) setSiteInfo(resp.data || {});
     });
   }, []);
 
@@ -165,8 +163,9 @@ export default function Header() {
             <MenuOutlined />
           </div>
           
-          {siteInfo.siteName && (
+          {siteInfo?.siteName && (
             <div className={styles.siteName} onClick={() => router.push("/")}>
+              {siteInfo.logo && <img src={siteInfo.logo} alt="logo" className={styles.logoImg} />}
               <span className={styles.logoText}>{siteInfo.siteName}</span>
             </div>
           )}
@@ -224,7 +223,7 @@ export default function Header() {
       </div>
 
       <Drawer
-        title={<div className={styles.drawerTitle}>{siteInfo.siteName || "Menu"}</div>}
+        title={<div className={styles.drawerTitle}>{siteInfo?.siteName || "Menu"}</div>}
         placement="left"
         onClose={() => setMobileMenuVisible(false)}
         open={mobileMenuVisible}

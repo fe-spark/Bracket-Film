@@ -10,7 +10,8 @@ type BasicConfig struct {
 	Keyword  string `json:"keyword"`  // seo关键字
 	Describe string `json:"describe"` // 网站描述信息
 	State    bool   `json:"state"`    // 网站状态 开启 || 关闭
-	Hint     string `json:"hint"`     // 网站关闭提示
+	Hint         string `json:"hint"`         // 网站关闭提示
+	IsVideoProxy bool   `json:"isVideoProxy"` // 是否启用视频播放代理 (服务器中转)
 }
 
 // Banner 首页横幅信息
@@ -48,4 +49,5 @@ type SiteConfigRecord struct {
 	Describe string `gorm:"size:512"`
 	State    bool
 	Hint     string `gorm:"size:512"`
+	IsVideoProxy bool // 是否启用视频播放代理
 }
