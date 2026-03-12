@@ -172,18 +172,19 @@ export default function Header() {
       if (containerWidth <= 0) return;
 
       const homeWidth = homeRef.current?.getBoundingClientRect().width || 64;
-      const gap = 32;
-      const moreBtnBuffer = 80; // "更多" + icon + gap
+      // Get the actual gap from computed style if possible, or use a reasonable estimate
+      const computedGap = window.getComputedStyle(containerRef.current).gap;
+      const gap = parseInt(computedGap) || 24; 
+      const moreBtnBuffer = 100; // More button + icon + padding
       
       let currentWidth = homeWidth;
       let count = 0;
 
       for (let i = 0; i < navList.length; i++) {
         const itemWidth = itemsRef.current[i]?.getBoundingClientRect().width || 0;
-        if (itemWidth === 0) continue; // Skip items not yet measured
+        if (itemWidth === 0) continue;
 
         const isLast = i === navList.length - 1;
-        // Need space for item + gap + (if not last, also space for "More" button)
         const spaceNeeded = gap + itemWidth + (isLast ? 0 : moreBtnBuffer);
 
         if (currentWidth + spaceNeeded > containerWidth) {
@@ -198,7 +199,6 @@ export default function Header() {
     });
 
     observer.observe(containerRef.current);
-    // Initial measurement
     return () => observer.disconnect();
   }, [navList.length]);
 
@@ -238,7 +238,7 @@ export default function Header() {
             </a>
             
             {/* Hidden items for width measurement */}
-            <div style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', display: 'flex', gap: 32, opacity: 0 }}>
+            <div style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', display: 'flex', gap: '24px', opacity: 0 }}>
               {navList.map((nav, i) => (
                 <a 
                   key={`measure-${nav.id}`} 
