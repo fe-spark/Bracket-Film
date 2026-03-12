@@ -231,8 +231,8 @@ export default function Header() {
         </div>
 
         {/* Navigation Area - Dynamic & Flexible */}
-        <div className={styles.navArea}>
-          <nav className={styles.navLinks} ref={containerRef}>
+        <div className={styles.navArea} ref={containerRef}>
+          <nav className={styles.navLinks}>
             <a onClick={() => router.push("/")} className={styles.navItem} ref={homeRef}>
               首页
             </a>
