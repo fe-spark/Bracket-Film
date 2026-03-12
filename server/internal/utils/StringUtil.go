@@ -51,9 +51,9 @@ func GenerateSalt() (uuid string) {
 
 // PasswordEncrypt 密码加密 , (password+salt) md5 * 3
 func PasswordEncrypt(password, salt string) string {
-	b := []byte(fmt.Sprint(password, salt)) // 将字符串转换为字节切片
+	b := fmt.Append(nil, password, salt) // 将字符串转换为字节切片
 	var r [16]byte
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		r = md5.Sum(b) // 调用md5.Sum()函数进行加密
 		b = []byte(hex.EncodeToString(r[:]))
 	}

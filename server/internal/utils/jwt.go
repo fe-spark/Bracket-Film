@@ -39,7 +39,7 @@ func GenToken(userId uint, userName string) (string, error) {
 
 // ParseToken 解析token
 func ParseToken(tokenStr string) (*UserClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &UserClaims{}, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &UserClaims{}, func(token *jwt.Token) (any, error) {
 		pub, err := ParsePubKeyBytes([]byte(config.PublicKey))
 		if err != nil {
 			return nil, err

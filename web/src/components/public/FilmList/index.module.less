@@ -30,6 +30,7 @@
     flex: 0 0 20% !important;
     max-width: 20% !important;
   }
+
   @media (min-width: 1440px) {
     flex: 0 0 16.6666% !important;
     max-width: 16.6666% !important;
@@ -122,19 +123,17 @@
 }
 
 .loadingBg {
-  animation: posterPulse 1.5s ease-in-out infinite;
+  // 关键修复：移除 posterPulse 呼吸动画，保留扫光 shimer
 
   &::before {
     content: "";
     position: absolute;
     inset: 0;
     z-index: 0;
-    background: linear-gradient(
-      100deg,
-      transparent 10%,
-      rgba(255, 255, 255, 0.08) 45%,
-      transparent 80%
-    );
+    background: linear-gradient(100deg,
+        transparent 10%,
+        rgba(255, 255, 255, 0.08) 45%,
+        transparent 80%);
     transform: translateX(-120%);
     animation: posterShimmer 1.7s ease-in-out infinite;
     pointer-events: none;
@@ -162,11 +161,14 @@
   bottom: 0;
   left: 0;
   width: 100%;
-  padding: 8px; /* Slightly tighter base padding */
+  padding: 8px;
+  /* Slightly tighter base padding */
   display: flex;
-  flex-wrap: nowrap; /* FORCE NO WRAP */
+  flex-wrap: nowrap;
+  /* FORCE NO WRAP */
   overflow: hidden;
-  gap: 4px; /* Reduced gap for more space */
+  gap: 4px;
+  /* Reduced gap for more space */
   z-index: 2;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent);
   transition: opacity 0.3s ease;
@@ -176,7 +178,8 @@
     backdrop-filter: blur(8px);
     color: var(--film-tag-text);
     padding: 2px 6px;
-    border-radius: 4px; /* Slightly smaller radius for more content space */
+    border-radius: 4px;
+    /* Slightly smaller radius for more content space */
     font-size: 10px;
     font-weight: 700;
     border: 1px solid var(--film-tag-border);
@@ -184,11 +187,14 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    flex-shrink: 1; /* Allow to shrink if container is too small */
-    min-width: 0; /* Enable shrinking below content size */
+    flex-shrink: 1;
+    /* Allow to shrink if container is too small */
+    min-width: 0;
+    /* Enable shrinking below content size */
 
     &:first-child {
-      flex-shrink: 0; /* Year shouldn't shrink usually */
+      flex-shrink: 0;
+      /* Year shouldn't shrink usually */
     }
   }
 }
@@ -198,13 +204,13 @@
   .tagGroup {
     padding: 6px;
     gap: 3px;
-    
+
     .tag {
       font-size: 9px;
       padding: 1px 4px;
     }
   }
-  
+
   .remark {
     top: 6px;
     right: 6px;
@@ -351,20 +357,12 @@
   }
 }
 
-@keyframes posterPulse {
-  0%,
-  100% {
-    filter: brightness(0.98);
-  }
-  50% {
-    filter: brightness(1.06);
-  }
-}
 
 @keyframes posterShimmer {
   0% {
     transform: translateX(-120%);
   }
+
   100% {
     transform: translateX(120%);
   }

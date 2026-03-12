@@ -82,13 +82,13 @@ func (p *ProvideService) GetVodDirectBySource(sourceId, ac string, t int, pg int
 }
 
 // GetClassList 获取格式化的分类列表和筛选条件
-func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[string]interface{}) {
+func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[string]any) {
 	// 1. 尝试从 Redis 获取缓存 (TVBox 配置缓存 5 分钟)
 	cacheKey := config.TVBoxConfigCacheKey
 	if data, err := db.Rdb.Get(db.Cxt, cacheKey).Result(); err == nil && data != "" {
 		var res struct {
 			ClassList []model.FilmClass
-			Filters   map[string][]map[string]interface{}
+			Filters   map[string][]map[string]any
 		}
 		if json.Unmarshal([]byte(data), &res) == nil {
 			return res.ClassList, res.Filters
@@ -96,7 +96,7 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 	}
 
 	var classList []model.FilmClass
-	filters := make(map[string][]map[string]interface{})
+	filters := make(map[string][]map[string]any)
 
 	tree := repository.GetActiveCategoryTree()
 	for _, c := range tree.Children {
@@ -108,13 +108,13 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 
 			searchTags := repository.GetSearchTag(model.SearchTagsVO{Pid: c.Id})
 			// Initialize to empty slice to avoid "null" in JSON
-			tvboxFilters := make([]map[string]interface{}, 0)
+			tvboxFilters := make([]map[string]any, 0)
 
 			// Robustly get titles
 			titles := make(map[string]string)
 			if tIf, ok := searchTags["titles"]; ok {
 				switch t := tIf.(type) {
-				case map[string]interface{}:
+				case map[string]any:
 					for k, v := range t {
 						if vStr, ok := v.(string); ok {
 							titles[k] = vStr
@@ -129,7 +129,7 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 			var sortList []string
 			if sIf, ok := searchTags["sortList"]; ok {
 				switch s := sIf.(type) {
-				case []interface{}:
+				case []any:
 					for _, v := range s {
 						if vStr, ok := v.(string); ok {
 							sortList = append(sortList, vStr)
@@ -141,8 +141,8 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 			}
 
 			// Robustly get tags
-			var tags map[string]interface{}
-			if tMap, ok := searchTags["tags"].(map[string]interface{}); ok {
+			var tags map[string]any
+			if tMap, ok := searchTags["tags"].(map[string]any); ok {
 				tags = tMap
 			}
 
@@ -171,9 +171,9 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 							"v": v,
 						})
 					}
-				case []interface{}:
+				case []any:
 					for _, item := range td {
-						if m, ok := item.(map[string]interface{}); ok {
+						if m, ok := item.(map[string]any); ok {
 							nStr, _ := m["Name"].(string)
 							vStr, _ := m["Value"].(string)
 							v := vStr
@@ -203,7 +203,7 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 						tvboxKey = "tid"
 					}
 
-					tvboxFilters = append(tvboxFilters, map[string]interface{}{
+					tvboxFilters = append(tvboxFilters, map[string]any{
 						"key":   tvboxKey,
 						"name":  name,
 						"value": values,
@@ -217,7 +217,7 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 	// 写入 Redis 缓存 (5 分钟)
 	res := struct {
 		ClassList []model.FilmClass
-		Filters   map[string][]map[string]interface{}
+		Filters   map[string][]map[string]any
 	}{classList, filters}
 	if data, err := json.Marshal(res); err == nil {
 		db.Rdb.Set(db.Cxt, cacheKey, string(data), time.Minute*5)

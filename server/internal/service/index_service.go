@@ -15,8 +15,8 @@ type IndexService struct{}
 var IndexSvc = new(IndexService)
 
 // IndexPage 首页数据处理
-func (i *IndexService) IndexPage() map[string]interface{} {
-	Info := make(map[string]interface{})
+func (i *IndexService) IndexPage() map[string]any {
+	Info := make(map[string]any)
 	tree := model.CategoryTree{Category: &model.Category{Id: 0, Name: "分类信息"}}
 	sysTree := repository.GetActiveCategoryTree()
 	for _, c := range sysTree.Children {
@@ -25,7 +25,7 @@ func (i *IndexService) IndexPage() map[string]interface{} {
 		}
 	}
 	Info["category"] = tree
-	list := make([]map[string]interface{}, 0)
+	list := make([]map[string]any, 0)
 	for _, c := range tree.Children {
 		page := dto.Page{PageSize: 14, Current: 1}
 		var movies []model.MovieBasicInfo
@@ -43,7 +43,7 @@ func (i *IndexService) IndexPage() map[string]interface{} {
 		if hotMovies == nil {
 			hotMovies = make([]model.SearchInfo, 0)
 		}
-		item := map[string]interface{}{"nav": c, "movies": movies, "hot": hotMovies}
+		item := map[string]any{"nav": c, "movies": movies, "hot": hotMovies}
 		list = append(list, item)
 	}
 	Info["content"] = list
@@ -136,18 +136,24 @@ func (i *IndexService) GetPidCategory(pid int64) *model.CategoryTree {
 
 // RelateMovie 根据当前影片信息匹配相关的影片
 func (i *IndexService) RelateMovie(detail model.MovieDetail, page *dto.Page) []model.MovieBasicInfo {
-	search := model.SearchInfo{
-		Cid:      detail.Cid,
-		Name:     detail.Name,
-		ClassTag: detail.ClassTag,
-		Area:     detail.Area,
-		Language: detail.Language,
+	// 关键修复：从数据库获取规范化后的 SearchInfo，而不是直接使用 detail 中不可信的 Cid/Pid
+	search := repository.GetSearchInfoById(detail.Id)
+	if search == nil {
+		// 备选方案：如果 SearchInfo 暂无，则构造一个简易的
+		search = &model.SearchInfo{
+			Cid:      detail.Cid,
+			Pid:      detail.Pid,
+			Name:     detail.Name,
+			ClassTag: detail.ClassTag,
+			Area:     detail.Area,
+			Language: detail.Language,
+		}
 	}
-	return repository.GetRelateMovieBasicInfo(search, page)
+	return repository.GetRelateMovieBasicInfo(*search, page)
 }
 
 // SearchTags 整合对应分类的搜索tag
-func (i *IndexService) SearchTags(st model.SearchTagsVO) map[string]interface{} {
+func (i *IndexService) SearchTags(st model.SearchTagsVO) map[string]any {
 	return repository.GetSearchTag(st)
 }
 
@@ -170,12 +176,12 @@ func multipleSource(detail *model.MovieDetail) []model.PlayLinkVo {
 	names[utils.GenerateHashKey(regexp.MustCompile(`第一季$`).ReplaceAllString(detail.Name, ""))] = 0
 
 	if len(detail.SubTitle) > 0 && strings.Contains(detail.SubTitle, ",") {
-		for _, v := range strings.Split(detail.SubTitle, ",") {
+		for v := range strings.SplitSeq(detail.SubTitle, ",") {
 			names[utils.GenerateHashKey(v)] = 0
 		}
 	}
 	if len(detail.SubTitle) > 0 && strings.Contains(detail.SubTitle, "/") {
-		for _, v := range strings.Split(detail.SubTitle, "/") {
+		for v := range strings.SplitSeq(detail.SubTitle, "/") {
 			names[utils.GenerateHashKey(v)] = 0
 		}
 	}
@@ -200,8 +206,8 @@ func (i *IndexService) GetFilmsByTags(st model.SearchTagsVO, page *dto.Page) []m
 }
 
 // GetFilmClassify 通过Pid返回当前所属分类下的首页展示数据
-func (i *IndexService) GetFilmClassify(pid int64, page *dto.Page) map[string]interface{} {
-	res := make(map[string]interface{})
+func (i *IndexService) GetFilmClassify(pid int64, page *dto.Page) map[string]any {
+	res := make(map[string]any)
 	res["news"] = repository.GetMovieListBySort(0, pid, page)
 	res["top"] = repository.GetMovieListBySort(1, pid, page)
 	res["recent"] = repository.GetMovieListBySort(2, pid, page)

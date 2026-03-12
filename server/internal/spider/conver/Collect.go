@@ -228,7 +228,7 @@ func GenFilmPlayList(playUrl, separator string) [][]model.MovieUrlInfo {
 	var res [][]model.MovieUrlInfo
 	if separator != "" {
 		// 1. 通过分隔符切分播放源地址
-		for _, l := range strings.Split(playUrl, separator) {
+		for l := range strings.SplitSeq(playUrl, separator) {
 			// 只保留解析出有效链接的播放源
 			if pl := ConvertPlayUrl(l); len(pl) > 0 {
 				res = append(res, pl)
@@ -247,7 +247,7 @@ func GenAllFilmPlayList(playUrl, separator string) [][]model.MovieUrlInfo {
 	var res [][]model.MovieUrlInfo
 	if separator != "" {
 		// 1. 通过分隔符切分播放源地址
-		for _, l := range strings.Split(playUrl, separator) {
+		for l := range strings.SplitSeq(playUrl, separator) {
 			if pl := ConvertPlayUrl(l); len(pl) > 0 {
 				res = append(res, pl)
 			}
@@ -293,7 +293,7 @@ func isVideoURL(link string) bool {
 // 片段格式：集名$URL，多集以 # 分隔
 func ConvertPlayUrl(playUrl string) []model.MovieUrlInfo {
 	var result []model.MovieUrlInfo
-	for _, seg := range strings.Split(playUrl, "#") {
+	for seg := range strings.SplitSeq(playUrl, "#") {
 		episode, link, ok := parseEpisode(strings.TrimSpace(seg))
 		if !ok || !isVideoURL(link) {
 			continue

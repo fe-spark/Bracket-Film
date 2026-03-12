@@ -339,10 +339,7 @@ func ConcurrentPageSpider(ctx context.Context, capacity int, s *model.FilmSource
 		ch <- i
 	}
 	close(ch)
-	GoroutineNum := config.MAXGoroutine
-	if capacity < GoroutineNum {
-		GoroutineNum = capacity
-	}
+	GoroutineNum := min(capacity, config.MAXGoroutine)
 	// waitCh 必须带缓冲(容量=GoroutineNum)：ctx 取消时等待循环提前退出，
 	// worker 仍会执行 waitCh<-0，无缓冲则永久阻塞导致 goroutine 泄漏
 	waitCh := make(chan int, GoroutineNum)

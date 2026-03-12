@@ -60,7 +60,6 @@ function ClassifyContent() {
       <FilmList
         list={list}
         loading={loading}
-        skeletonCount={7}
         className={styles.classifyGrid}
       />
     </div>
