@@ -216,7 +216,8 @@ export default function Header() {
   return (
     <header className={`${styles.headerWrap} ${scrolled ? styles.scrolled : ""}`}>
       <div className={styles.headerInner}>
-        <div className={styles.left}>
+        {/* LOGO Area */}
+        <div className={styles.logoArea}>
           <div className={styles.mobileMenuTrigger} onClick={() => setMobileMenuVisible(true)}>
             <MenuOutlined />
           </div>
@@ -227,11 +228,15 @@ export default function Header() {
               <span className={styles.logoText}>{siteInfo.siteName}</span>
             </div>
           )}
+        </div>
 
+        {/* Navigation Area - Dynamic & Flexible */}
+        <div className={styles.navArea}>
           <nav className={styles.navLinks} ref={containerRef}>
             <a onClick={() => router.push("/")} className={styles.navItem} ref={homeRef}>
               首页
             </a>
+            
             {/* Hidden items for width measurement */}
             <div style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', display: 'flex', gap: 32, opacity: 0 }}>
               {navList.map((nav, i) => (
@@ -265,9 +270,9 @@ export default function Header() {
           </nav>
         </div>
 
-        <div className={styles.right}>
+        {/* Action Area - Search & Actions */}
+        <div className={styles.actionArea}>
           <div className={styles.searchGroup}>
-            {/* <SearchOutlined className={styles.searchIcon} /> */}
             <Input
               placeholder="搜索影片、动漫..."
               value={keyword}
