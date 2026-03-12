@@ -52,7 +52,10 @@ function PlayerContent() {
     if (!id) return;
 
     const load = async () => {
-      setLoading(true);
+      // Only show full-screen loading on initial load (when data is null)
+      if (!data) {
+        setLoading(true);
+      }
       try {
         const resp = await ApiGet("/filmPlayInfo", {
           id,
@@ -73,6 +76,7 @@ function PlayerContent() {
     };
 
     void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, sourceId, episodeIdx, message]);
 
   // 计算衍生数据，减少冗余逻辑
@@ -98,7 +102,7 @@ function PlayerContent() {
 
   const handlePlayNext = useCallback(() => {
     if (hasNext) {
-      router.replace(`/play?id=${id}&source=${currentTabId}&episode=${current.index + 1}`);
+      router.replace(`/play?id=${id}&source=${currentTabId}&episode=${current.index + 1}`, { scroll: false });
     } else {
       message.info("已经是最后一集了");
     }
@@ -209,7 +213,10 @@ function PlayerContent() {
                     key={item.id}
                     ref={isActive ? activeTabRef : null}
                     className={`${styles.tab} ${isActive ? styles.active : ""}`}
-                    onClick={() => setCurrentTabId(item.id)}
+                    onClick={() => {
+                      if (currentTabId === item.id) return;
+                      router.replace(`/play?id=${id}&source=${item.id}&episode=0`, { scroll: false });
+                    }}
                   >
                     {item.name}
                   </div>
@@ -226,7 +233,10 @@ function PlayerContent() {
                     ref={isActive ? activeEpRef : undefined}
                     className={`${styles.epItem} ${isActive ? styles.active : ""}`}
                     title={v.episode}
-                    onClick={() => router.replace(`/play?id=${id}&source=${currentTabId}&episode=${i}`)}
+                    onClick={() => {
+                      if (current?.index === i) return;
+                      router.replace(`/play?id=${id}&source=${currentTabId}&episode=${i}`, { scroll: false });
+                    }}
                     onMouseEnter={(e) => {
                       const span = e.currentTarget.querySelector<HTMLSpanElement>(`.${styles.epText}`);
                       if (span && span.scrollWidth > span.clientWidth) {
