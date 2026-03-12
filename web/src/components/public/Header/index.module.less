@@ -36,6 +36,8 @@
   align-items: center;
   gap: 48px;
   flex: 1;
+  min-width: 0; /* Important: allow shrinking */
+  overflow: hidden;
 }
 
 .siteName {
@@ -84,6 +86,7 @@
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     white-space: nowrap;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    flex-shrink: 0; /* Don't shrink individual items */
 
     &::after {
       content: "";

@@ -166,35 +166,39 @@ export default function Header() {
     if (!containerRef.current || navList.length === 0) return;
 
     const observer = new ResizeObserver((entries) => {
-      const containerWidth = entries[0].contentRect.width;
+      const entry = entries[0];
+      const containerWidth = entry.contentRect.width;
+      
       if (containerWidth <= 0) return;
 
-      // Measure "Home" width or fallback to 64
-      const homeWidth = homeRef.current?.offsetWidth || 64;
-      let totalWidth = homeWidth; 
+      const homeWidth = homeRef.current?.getBoundingClientRect().width || 64;
+      const gap = 32;
+      const moreBtnBuffer = 80; // "更多" + icon + gap
+      
+      let currentWidth = homeWidth;
       let count = 0;
 
-      const gap = 32;
-      const moreBtnBuffer = 60; // Approximate width for "更多" button
-
       for (let i = 0; i < navList.length; i++) {
-        const itemWidth = itemsRef.current[i]?.offsetWidth || 80;
-        
-        // If this is the last item, we don't need the "More" buffer if it fits
-        const isLastOne = i === navList.length - 1;
-        const widthNeeded = itemWidth + gap + (isLastOne ? 0 : moreBtnBuffer);
+        const itemWidth = itemsRef.current[i]?.getBoundingClientRect().width || 0;
+        if (itemWidth === 0) continue; // Skip items not yet measured
 
-        if (totalWidth + widthNeeded > containerWidth) {
+        const isLast = i === navList.length - 1;
+        // Need space for item + gap + (if not last, also space for "More" button)
+        const spaceNeeded = gap + itemWidth + (isLast ? 0 : moreBtnBuffer);
+
+        if (currentWidth + spaceNeeded > containerWidth) {
           break;
         }
         
-        totalWidth += itemWidth + gap;
+        currentWidth += itemWidth + gap;
         count++;
       }
+      
       setVisibleCount(count);
     });
 
     observer.observe(containerRef.current);
+    // Initial measurement
     return () => observer.disconnect();
   }, [navList.length]);
 
