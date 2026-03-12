@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"server/internal/model"
+	"server/internal/model/dto"
 	"server/internal/service"
 	"server/internal/spider"
-	"server/internal/model/dto"
 
 	"github.com/gin-gonic/gin"
 )

@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"server/internal/model"
+	"server/internal/model/dto"
 	"server/internal/service"
 	"server/internal/spider"
-	"server/internal/model/dto"
 
 	"github.com/gin-gonic/gin"
 )
@@ -198,7 +198,6 @@ func (h *CollectHandler) GetNormalFilmSource(c *gin.Context) {
 
 func (h *CollectHandler) FailureRecordList(c *gin.Context) {
 	params := model.RecordRequestVo{Paging: &dto.Page{}}
-	var err error
 	params.OriginId = c.DefaultQuery("originId", "")
 	params.Hour, _ = strconv.Atoi(c.DefaultQuery("hour", "0"))
 	params.Status, _ = strconv.Atoi(c.DefaultQuery("status", "-1"))
@@ -222,15 +221,7 @@ func (h *CollectHandler) FailureRecordList(c *gin.Context) {
 		params.EndTime = endTime
 	}
 
-	params.Paging.Current, _ = strconv.Atoi(c.DefaultQuery("current", "1"))
-	params.Paging.PageSize, err = strconv.Atoi(c.DefaultQuery("pageSize", "10"))
-	if err != nil {
-		dto.Failed("影片分页数据获取失败, 分页参数异常", c)
-		return
-	}
-	if params.Paging.PageSize <= 0 || params.Paging.PageSize > 500 {
-		params.Paging.PageSize = 10
-	}
+	params.Paging = dto.GetPageParams(c)
 
 	options := service.CollectSvc.GetRecordOptions()
 	list := service.CollectSvc.GetRecordList(params)

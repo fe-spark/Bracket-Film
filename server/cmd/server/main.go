@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"server/internal/config"
+	"server/internal/infra/db"
 	"server/internal/router"
 	"server/internal/service"
-	"server/internal/infra/db"
 )
 
 func init() {

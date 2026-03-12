@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"server/internal/config"
-	"server/internal/repository"
 	"server/internal/model/dto"
+	"server/internal/repository"
 	"server/internal/utils"
 
 	"github.com/gin-gonic/gin"

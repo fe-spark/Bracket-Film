@@ -70,14 +70,13 @@ func (h *UserHandler) UserInfo(c *gin.Context) {
 
 // UserListPage 用户列表分页
 func (h *UserHandler) UserListPage(c *gin.Context) {
-	current, _ := strconv.Atoi(c.DefaultQuery("current", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	paging := dto.GetPageParams(c)
 	userName := c.DefaultQuery("userName", "")
 
-	total, list := service.UserSvc.GetUserPage(current, pageSize, userName)
+	list := service.UserSvc.GetUserPage(paging, userName)
 	dto.Success(gin.H{
 		"list":  list,
-		"total": total,
+		"total": paging.Total,
 	}, "用户列表获取成功", c)
 }
 

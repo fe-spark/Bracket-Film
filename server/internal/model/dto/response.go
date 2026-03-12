@@ -2,6 +2,7 @@ package dto
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -80,10 +81,40 @@ func ExceptionResult(statusCode int, message string, c *gin.Context) {
 	CustomResult(statusCode, SUCCESS, nil, message, c)
 }
 
-// GetPage 获取分页相关数据
+// GetPage 获取分页相关数据 (Safe: uses Session to avoid state pollution)
 func GetPage(db *gorm.DB, page *Page) {
+	if page.PageSize <= 0 {
+		page.PageSize = 20
+	}
 	var count int64
-	db.Count(&count)
+	db.Session(&gorm.Session{}).Count(&count)
 	page.Total = int(count)
 	page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
+	if page.PageCount <= 0 {
+		page.PageCount = 1
+	}
+}
+
+// GetPageParams 从 Gin 上下文中提取通用的分页参数
+func GetPageParams(c *gin.Context) *Page {
+	// 针对 Current: page, pg, current
+	currentStr := c.DefaultQuery("current", c.DefaultQuery("page", c.DefaultQuery("pg", "1")))
+	current, _ := strconv.Atoi(currentStr)
+	if current <= 0 {
+		current = 1
+	}
+
+	// 针对 PageSize: pageSize, pagesize, limit
+	pageSizeStr := c.DefaultQuery("pageSize", c.DefaultQuery("pagesize", c.DefaultQuery("limit", "20")))
+	pageSize, _ := strconv.Atoi(pageSizeStr)
+	if pageSize <= 0 {
+		pageSize = 20
+	} else if pageSize > 500 {
+		pageSize = 500
+	}
+
+	return &Page{
+		Current:  current,
+		PageSize: pageSize,
+	}
 }

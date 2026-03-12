@@ -4,6 +4,7 @@ import (
 	"errors"
 	"server/internal/config"
 	"server/internal/model"
+	"server/internal/model/dto"
 	"server/internal/repository"
 	"server/internal/utils"
 )
@@ -70,8 +71,8 @@ func (s *UserService) VerifyUserPassword(id uint, password string) bool {
 }
 
 // GetUserPage 用户分页
-func (s *UserService) GetUserPage(current, pageSize int, userName string) (int64, []model.UserInfoVo) {
-	total, list := repository.GetUserPage(current, pageSize, userName)
+func (s *UserService) GetUserPage(page *dto.Page, userName string) []model.UserInfoVo {
+	list := repository.GetUserPage(page, userName)
 	var voList []model.UserInfoVo
 	for _, u := range list {
 		voList = append(voList, model.UserInfoVo{
@@ -85,7 +86,7 @@ func (s *UserService) GetUserPage(current, pageSize int, userName string) (int64
 			IsAdmin:  u.ID == config.UserIdInitialVal,
 		})
 	}
-	return total, voList
+	return voList
 }
 
 // AddUser 添加用户

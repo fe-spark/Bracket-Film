@@ -2,8 +2,9 @@ package repository
 
 import (
 	"log"
-	"server/internal/model"
 	"server/internal/infra/db"
+	"server/internal/model"
+	"server/internal/model/dto"
 	"server/internal/utils"
 
 	"gorm.io/gorm"
@@ -61,16 +62,15 @@ func UpdateUserInfo(u model.User) {
 }
 
 // GetUserPage 分页获取用户信息
-func GetUserPage(current, pageSize int, userName string) (int64, []model.User) {
+func GetUserPage(page *dto.Page, userName string) []model.User {
 	var list []model.User
-	var total int64
 	query := db.Mdb.Model(&model.User{})
 	if userName != "" {
 		query = query.Where("user_name LIKE ?", "%"+userName+"%")
 	}
-	query.Count(&total)
-	query.Offset((current - 1) * pageSize).Limit(pageSize).Find(&list)
-	return total, list
+	dto.GetPage(query, page)
+	query.Offset((page.Current - 1) * page.PageSize).Limit(page.PageSize).Find(&list)
+	return list
 }
 
 // AddUser 添加新用户

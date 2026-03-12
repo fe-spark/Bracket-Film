@@ -111,10 +111,9 @@ func (h *IndexHandler) FilmPlayInfo(c *gin.Context) {
 // SearchFilm 通过片名模糊匹配库存中的信息
 func (h *IndexHandler) SearchFilm(c *gin.Context) {
 	keyword := c.DefaultQuery("keyword", "")
-	currStr := c.DefaultQuery("current", "1")
-	current, _ := strconv.Atoi(currStr)
-	page := dto.Page{PageSize: 10, Current: current}
-	bl := service.IndexSvc.SearchFilmInfo(strings.TrimSpace(keyword), &page)
+	page := dto.GetPageParams(c)
+	page.PageSize = 10
+	bl := service.IndexSvc.SearchFilmInfo(strings.TrimSpace(keyword), page)
 	if page.Total <= 0 {
 		dto.Failed("暂无相关影片信息", c)
 		return
@@ -141,11 +140,10 @@ func (h *IndexHandler) FilmTagSearch(c *gin.Context) {
 	params.Year = yStr
 	params.Sort = c.DefaultQuery("Sort", "update_stamp")
 
-	currentStr := c.DefaultQuery("current", "1")
-	current, _ := strconv.Atoi(currentStr)
-	page := dto.Page{PageSize: 49, Current: current}
+	page := dto.GetPageParams(c)
+	page.PageSize = 49
 
-	list := service.IndexSvc.GetFilmsByTags(params, &page)
+	list := service.IndexSvc.GetFilmsByTags(params, page)
 
 	dto.Success(gin.H{
 		"title":  service.IndexSvc.GetPidCategory(params.Pid).Category,
@@ -173,9 +171,10 @@ func (h *IndexHandler) FilmClassify(c *gin.Context) {
 	}
 	pid, _ := strconv.ParseInt(pidStr, 10, 64)
 	title := service.IndexSvc.GetPidCategory(pid)
-	page := dto.Page{PageSize: 21, Current: 1}
+	page := dto.GetPageParams(c)
+	page.PageSize = 21
 	dto.Success(gin.H{
 		"title":   title,
-		"content": service.IndexSvc.GetFilmClassify(pid, &page),
+		"content": service.IndexSvc.GetFilmClassify(pid, page),
 	}, "分类影片信息获取成功", c)
 }

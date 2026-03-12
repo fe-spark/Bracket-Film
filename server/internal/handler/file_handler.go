@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	"server/internal/config"
-	"server/internal/service"
 	"server/internal/model/dto"
+	"server/internal/service"
 	"server/internal/utils"
 
 	"github.com/gin-gonic/gin"
@@ -87,12 +87,8 @@ func (h *FileHandler) DelFile(c *gin.Context) {
 
 // PhotoWall 照片墙数据
 func (h *FileHandler) PhotoWall(c *gin.Context) {
-	current, err := strconv.Atoi(c.DefaultQuery("current", "1"))
-	if err != nil {
-		dto.Failed("图片分页数据获取失败, 分页参数异常", c)
-		return
-	}
-	page := dto.Page{PageSize: 39, Current: current}
-	pl := service.FileSvc.GetPhotoPage(&page)
+	page := dto.GetPageParams(c)
+	page.PageSize = 39
+	pl := service.FileSvc.GetPhotoPage(page)
 	dto.Success(gin.H{"list": pl, "page": page}, "图片分页数据获取成功", c)
 }

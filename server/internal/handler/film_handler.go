@@ -70,15 +70,7 @@ func (h *FilmHandler) FilmSearchPage(c *gin.Context) {
 		s.EndTime = endTime.Unix()
 	}
 
-	s.Paging.Current, _ = strconv.Atoi(c.DefaultQuery("current", "1"))
-	s.Paging.PageSize, err = strconv.Atoi(c.DefaultQuery("pageSize", "10"))
-	if s.Paging.PageSize <= 0 || s.Paging.PageSize > 500 {
-		s.Paging.PageSize = 10
-	}
-	if err != nil {
-		dto.Failed("影片分页数据获取失败, 请求参数异常", c)
-		return
-	}
+	s.Paging = dto.GetPageParams(c)
 	options := service.FilmSvc.GetSearchOptions()
 	sl := service.FilmSvc.GetFilmPage(s)
 	dto.Success(gin.H{

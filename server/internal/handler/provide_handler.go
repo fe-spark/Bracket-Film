@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"server/internal/model"
+	"server/internal/model/dto"
 	"server/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -19,7 +20,11 @@ var ProvideHd = new(ProvideHandler)
 func (h *ProvideHandler) HandleProvide(c *gin.Context) {
 	ac := c.Query("ac")
 	t, _ := strconv.Atoi(c.DefaultQuery("t", "0"))
-	pg, _ := strconv.Atoi(c.DefaultQuery("pg", "1"))
+	// 通用分页参数提取
+	paging := dto.GetPageParams(c)
+	pg := paging.Current
+	limit := paging.PageSize
+
 	wd := c.Query("wd")
 	h_param, _ := strconv.Atoi(c.DefaultQuery("h", "0"))
 	ids := c.Query("ids")
@@ -54,20 +59,21 @@ func (h *ProvideHandler) HandleProvide(c *gin.Context) {
 
 	switch ac {
 	case "list":
-		page, pagecount, total, vodList := service.ProvideSvc.GetVodList(t, pg, wd, h_param, year, area, lang, plot, sort)
+		page, pagecount, total, vodList := service.ProvideSvc.GetVodList(t, pg, wd, h_param, year, area, lang, plot, sort, limit)
 		if vodList == nil {
 			vodList = []model.FilmList{}
 		}
 		c.JSON(200, gin.H{
-			"code":      1,
-			"msg":       "数据列表",
-			"page":      page,
-			"pagecount": pagecount,
-			"limit":     "20",
-			"total":     total,
-			"list":      vodList,
-			"class":     classList,
-			"filters":   filters,
+			"code":        1,
+			"msg":         "数据列表",
+			"page":        page,
+			"pagecount":   pagecount,
+			"limit":       limit,
+			"total":       total,
+			"recordcount": total,
+			"list":        vodList,
+			"class":       classList,
+			"filters":     filters,
 		})
 	case "videolist", "detail":
 		var idsArr []string
@@ -89,7 +95,7 @@ func (h *ProvideHandler) HandleProvide(c *gin.Context) {
 				"filters":   filters,
 			})
 		} else {
-			page, pagecount, total, vodListSimple := service.ProvideSvc.GetVodList(t, pg, wd, h_param, year, area, lang, plot, sort)
+			page, pagecount, total, vodListSimple := service.ProvideSvc.GetVodList(t, pg, wd, h_param, year, area, lang, plot, sort, limit)
 			var _idsArr []string
 			for _, v := range vodListSimple {
 				_idsArr = append(_idsArr, strconv.FormatInt(v.VodID, 10))
@@ -99,33 +105,35 @@ func (h *ProvideHandler) HandleProvide(c *gin.Context) {
 				detailList = []model.FilmDetail{}
 			}
 			c.JSON(200, gin.H{
-				"code":      1,
-				"msg":       "数据列表",
-				"page":      page,
-				"pagecount": pagecount,
-				"limit":     "20",
-				"total":     total,
-				"list":      detailList,
-				"class":     classList,
-				"filters":   filters,
+				"code":        1,
+				"msg":         "数据列表",
+				"page":        page,
+				"pagecount":   pagecount,
+				"limit":       limit,
+				"total":       total,
+				"recordcount": total,
+				"list":        detailList,
+				"class":       classList,
+				"filters":     filters,
 			})
 		}
 
 	default:
-		page, pagecount, total, vodList := service.ProvideSvc.GetVodList(t, pg, wd, h_param, year, area, lang, plot, sort)
+		page, pagecount, total, vodList := service.ProvideSvc.GetVodList(t, pg, wd, h_param, year, area, lang, plot, sort, limit)
 		if vodList == nil {
 			vodList = []model.FilmList{}
 		}
 		c.JSON(200, gin.H{
-			"code":      1,
-			"msg":       "数据列表",
-			"page":      page,
-			"pagecount": pagecount,
-			"limit":     "20",
-			"total":     total,
-			"list":      vodList,
-			"class":     classList,
-			"filters":   filters,
+			"code":        1,
+			"msg":         "数据列表",
+			"page":        page,
+			"pagecount":   pagecount,
+			"limit":       limit,
+			"total":       total,
+			"recordcount": total,
+			"list":        vodList,
+			"class":       classList,
+			"filters":     filters,
 		})
 	}
 }

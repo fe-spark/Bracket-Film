@@ -1,4 +1,4 @@
-﻿package service
+package service
 
 import (
 	"encoding/json"
@@ -227,8 +227,11 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 }
 
 // GetVodList 获取视频列表 (支持多维度筛选)
-func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, area, lang, plot, sort string) (int, int, int, []model.FilmList) {
-	page := dto.Page{PageSize: 20, Current: pg}
+func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, area, lang, plot, sort string, limit int) (int, int, int, []model.FilmList) {
+	if limit <= 0 {
+		limit = 20
+	}
+	page := dto.Page{PageSize: limit, Current: pg}
 	if page.Current <= 0 {
 		page.Current = 1
 	}
@@ -293,10 +296,7 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 		}
 	}
 
-	var count int64
-	query.Count(&count)
-	page.Total = int(count)
-	page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
+	dto.GetPage(query, &page)
 
 	orderBy := "update_stamp DESC"
 	switch sort {
