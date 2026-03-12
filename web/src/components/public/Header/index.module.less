@@ -71,23 +71,24 @@
   }
 
   .logoImg {
-    height: 32px;
-    margin-right: 12px;
+    height: 44px; // Much larger icon for "grand" impact
+    margin-right: 14px;
     object-fit: contain;
-    transition: transform 0.3s ease;
+    transition: all 0.3s ease;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
   }
 
   .logoText {
-    font-size: 34px;
+    font-size: 38px;
     font-weight: 900;
     line-height: 1;
-    letter-spacing: -2px;
+    letter-spacing: -1.5px;
     background: linear-gradient(135deg, #faad14 0%, #fa541c 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
     text-transform: uppercase;
-    filter: drop-shadow(0 2px 4px rgba(250, 173, 20, 0.2));
+    filter: drop-shadow(0 2px 8px rgba(250, 173, 20, 0.25));
   }
 }
 
