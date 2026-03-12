@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Input, Button, Empty, Drawer, Flex } from "antd";
+import { Input, Button, Empty, Drawer, Flex, Dropdown } from "antd";
 import {
   SearchOutlined,
   HistoryOutlined,
@@ -10,6 +10,7 @@ import {
   MenuOutlined,
   HomeOutlined,
   FireOutlined,
+  DownOutlined,
 } from "@ant-design/icons";
 import { ApiGet } from "@/lib/api";
 import { cookieUtil, COOKIE_KEY_MAP } from "@/lib/cookie";
@@ -155,6 +156,49 @@ export default function Header() {
     </div>
   );
 
+  const [visibleCount, setVisibleCount] = useState(navList.length);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const itemsRef = useRef<(HTMLAnchorElement | null)[]>([]);
+
+  // Calculate visible items based on container width
+  useEffect(() => {
+    if (!containerRef.current || navList.length === 0) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const containerWidth = entries[0].contentRect.width;
+      if (containerWidth <= 0) return;
+
+      // 首页 index=0, 占位宽约 64px (text + padding + gap)
+      let totalWidth = 64; 
+      let count = 0;
+
+      // Calculate each item's width (measured or estimated)
+      for (let i = 0; i < navList.length; i++) {
+        const itemWidth = itemsRef.current[i]?.offsetWidth || 80; // Default estimate
+        if (totalWidth + itemWidth + 40 > containerWidth) { // 40 for "More" button buffer
+          break;
+        }
+        totalWidth += itemWidth + 32; // 32 is the gap
+        count++;
+      }
+      setVisibleCount(count);
+    });
+
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [navList.length]);
+
+  const visibleNavs = navList.slice(0, visibleCount);
+  const overflowNavs = navList.slice(visibleCount);
+
+  const moreMenu = {
+    items: overflowNavs.map((nav) => ({
+      key: nav.id,
+      label: nav.name,
+      onClick: () => router.push(`/filmClassify?Pid=${nav.id}`),
+    })),
+  };
+
   return (
     <header className={`${styles.headerWrap} ${scrolled ? styles.scrolled : ""}`}>
       <div className={styles.headerInner}>
@@ -170,11 +214,24 @@ export default function Header() {
             </div>
           )}
 
-          <nav className={styles.navLinks}>
+          <nav className={styles.navLinks} ref={containerRef}>
             <a onClick={() => router.push("/")} className={styles.navItem}>
               首页
             </a>
-            {navList.map((nav) => (
+            {/* Hidden items for width measurement */}
+            <div style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', display: 'flex', gap: 32 }}>
+              {navList.map((nav, i) => (
+                <a 
+                  key={`measure-${nav.id}`} 
+                  ref={el => { itemsRef.current[i] = el; }} 
+                  className={styles.navItem}
+                >
+                  {nav.name}
+                </a>
+              ))}
+            </div>
+
+            {visibleNavs.map((nav) => (
               <a
                 key={nav.id}
                 onClick={() => router.push(`/filmClassify?Pid=${nav.id}`)}
@@ -183,6 +240,14 @@ export default function Header() {
                 {nav.name}
               </a>
             ))}
+
+            {overflowNavs.length > 0 && (
+              <Dropdown menu={moreMenu} placement="bottomRight" trigger={['hover']} overlayClassName={styles.navMoreOverlay}>
+                <a className={styles.navItem}>
+                  更多 <DownOutlined style={{ fontSize: 12, marginLeft: 4 }} />
+                </a>
+              </Dropdown>
+            )}
           </nav>
         </div>
 
