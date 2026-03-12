@@ -56,6 +56,8 @@
   cursor: pointer;
   transition: transform 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
   will-change: transform;
+  transform: translateZ(0); /* Force GPU acceleration */
+  contain: layout style; /* Contain layout/style recalculations */
   min-width: 0;
   height: 100%;
   display: flex;
@@ -144,8 +146,7 @@
   position: absolute;
   top: 10px;
   right: 10px;
-  background: rgba(var(--primary-color-rgb), 0.85);
-  backdrop-filter: blur(4px);
+  background: rgba(var(--primary-color-rgb), 0.95); /* Increased opacity to compensate for lack of blur */
   color: var(--public-on-accent);
   padding: 2px 8px;
   border-radius: 4px;
@@ -175,7 +176,6 @@
 
   .tag {
     background: var(--film-tag-bg);
-    backdrop-filter: blur(8px);
     color: var(--film-tag-text);
     padding: 2px 6px;
     border-radius: 4px;
