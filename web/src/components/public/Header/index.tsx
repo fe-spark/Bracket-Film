@@ -159,6 +159,7 @@ export default function Header() {
   const [visibleCount, setVisibleCount] = useState(navList.length);
   const containerRef = useRef<HTMLDivElement>(null);
   const itemsRef = useRef<(HTMLAnchorElement | null)[]>([]);
+  const homeRef = useRef<HTMLAnchorElement>(null);
 
   // Calculate visible items based on container width
   useEffect(() => {
@@ -168,17 +169,26 @@ export default function Header() {
       const containerWidth = entries[0].contentRect.width;
       if (containerWidth <= 0) return;
 
-      // 首页 index=0, 占位宽约 64px (text + padding + gap)
-      let totalWidth = 64; 
+      // Measure "Home" width or fallback to 64
+      const homeWidth = homeRef.current?.offsetWidth || 64;
+      let totalWidth = homeWidth; 
       let count = 0;
 
-      // Calculate each item's width (measured or estimated)
+      const gap = 32;
+      const moreBtnBuffer = 60; // Approximate width for "更多" button
+
       for (let i = 0; i < navList.length; i++) {
-        const itemWidth = itemsRef.current[i]?.offsetWidth || 80; // Default estimate
-        if (totalWidth + itemWidth + 40 > containerWidth) { // 40 for "More" button buffer
+        const itemWidth = itemsRef.current[i]?.offsetWidth || 80;
+        
+        // If this is the last item, we don't need the "More" buffer if it fits
+        const isLastOne = i === navList.length - 1;
+        const widthNeeded = itemWidth + gap + (isLastOne ? 0 : moreBtnBuffer);
+
+        if (totalWidth + widthNeeded > containerWidth) {
           break;
         }
-        totalWidth += itemWidth + 32; // 32 is the gap
+        
+        totalWidth += itemWidth + gap;
         count++;
       }
       setVisibleCount(count);
@@ -215,11 +225,11 @@ export default function Header() {
           )}
 
           <nav className={styles.navLinks} ref={containerRef}>
-            <a onClick={() => router.push("/")} className={styles.navItem}>
+            <a onClick={() => router.push("/")} className={styles.navItem} ref={homeRef}>
               首页
             </a>
             {/* Hidden items for width measurement */}
-            <div style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', display: 'flex', gap: 32 }}>
+            <div style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', display: 'flex', gap: 32, opacity: 0 }}>
               {navList.map((nav, i) => (
                 <a 
                   key={`measure-${nav.id}`} 
