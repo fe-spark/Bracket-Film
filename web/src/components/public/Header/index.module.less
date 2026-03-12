@@ -145,7 +145,7 @@
   display: flex;
   align-items: center;
   width: 280px;
-  min-width: 160px; // Ensure user can still type
+  min-width: 160px;
   background: color-mix(in srgb, var(--public-surface-3) 40%, transparent);
   backdrop-filter: blur(12px);
   border: 1px solid var(--public-border-3);
@@ -241,7 +241,80 @@
   display: none;
 }
 
-// Media Queries
+// History & Overlays (BASE Styles first)
+.historyWrapper { position: relative; }
+.historyPanel {
+  position: absolute;
+  top: calc(100% + 16px);
+  right: 0;
+  width: 340px;
+  background: color-mix(in srgb, var(--public-page-bg) 85%, transparent);
+  backdrop-filter: blur(40px) saturate(160%);
+  -webkit-backdrop-filter: blur(40px) saturate(160%);
+  border: 1px solid color-mix(in srgb, var(--public-border-2) 60%, transparent);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  border-radius: 18px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(20px) scale(0.9);
+  transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+  overflow: hidden;
+  z-index: 1001;
+  &.show { opacity: 1; visibility: visible; transform: translateY(0) scale(1); }
+}
+
+.historyHeader {
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--public-border-1);
+  .icon { font-size: 20px; color: #faad14; }
+  .title { flex: 1; font-weight: 800; font-size: 16px; color: var(--public-text-1); }
+  .clear { cursor: pointer; font-size: 18px; color: var(--public-text-6); transition: all 0.2s; &:hover { color: #ff4d4f; transform: scale(1.2); } }
+}
+
+.historyList {
+  max-height: 400px;
+  overflow-y: auto;
+  min-height: 80px; // Ensure it doesn't look like a line when loading or small
+  &::-webkit-scrollbar { width: 6px; }
+  &::-webkit-scrollbar-thumb { background: var(--public-border-1); border-radius: 10px; }
+}
+
+.historyItem {
+  padding: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: all 0.3s;
+  cursor: pointer;
+  &:hover { background: color-mix(in srgb, #faad14 10%, transparent); padding-left: 28px; .filmTitle { color: #faad14; } }
+  .filmTitle { font-size: 15px; font-weight: 600; color: var(--public-text-1); transition: color 0.3s; }
+  .episode { font-size: 12px; color: var(--public-text-4); }
+}
+
+.navMoreOverlay {
+  :global(.ant-dropdown-menu) {
+    background: color-mix(in srgb, var(--public-page-bg) 85%, transparent) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+    border: 1px solid var(--public-border-2);
+    border-radius: 12px !important;
+    padding: 8px !important;
+    box-shadow: var(--public-shadow-lg) !important;
+  }
+  :global(.ant-dropdown-menu-item) {
+    border-radius: 8px !important;
+    color: var(--public-text-2) !important;
+    font-weight: 500;
+    padding: 10px 16px !important;
+    transition: all 0.3s !important;
+    &:hover { background: rgba(250, 173, 20, 0.1) !important; color: #faad14 !important; }
+  }
+}
+
+// Media Queries (Overrides)
 @media (max-width: 1280px) {
   .headerInner {
     padding: 0 24px;
@@ -256,7 +329,7 @@
     font-size: 24px !important;
   }
   .searchGroup {
-    width: 160px; // Further reduce for tablets
+    width: 160px;
     padding: 0 12px;
   }
 }
@@ -311,78 +384,6 @@
       .logoImg { height: 24px; margin-right: 8px; }
       .logoText { font-size: 20px !important; }
     }
-  }
-}
-
-// History & Overlays
-.historyWrapper { position: relative; }
-.historyPanel {
-  position: absolute;
-  top: calc(100% + 16px);
-  right: 0;
-  width: 340px;
-  background: color-mix(in srgb, var(--public-page-bg) 85%, transparent);
-  backdrop-filter: blur(40px) saturate(160%);
-  -webkit-backdrop-filter: blur(40px) saturate(160%);
-  border: 1px solid color-mix(in srgb, var(--public-border-2) 60%, transparent);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-  border-radius: 18px;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(20px) scale(0.9);
-  transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
-  overflow: hidden;
-  z-index: 1001;
-  &.show { opacity: 1; visibility: visible; transform: translateY(0) scale(1); }
-}
-
-.historyHeader {
-  padding: 20px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border-bottom: 1px solid var(--public-border-1);
-  .icon { font-size: 20px; color: #faad14; }
-  .title { flex: 1; font-weight: 800; font-size: 16px; color: var(--public-text-1); }
-  .clear { cursor: pointer; font-size: 18px; color: var(--public-text-6); transition: all 0.2s; &:hover { color: #ff4d4f; transform: scale(1.2); } }
-}
-
-.historyList {
-  max-height: 400px;
-  overflow-y: auto;
-  &::-webkit-scrollbar { width: 6px; }
-  &::-webkit-scrollbar-thumb { background: var(--public-border-1); border-radius: 10px; }
-}
-
-.historyItem {
-  padding: 14px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  transition: all 0.3s;
-  cursor: pointer;
-  &:hover { background: color-mix(in srgb, #faad14 10%, transparent); padding-left: 28px; .filmTitle { color: #faad14; } }
-  .filmTitle { font-size: 15px; font-weight: 600; color: var(--public-text-1); transition: color 0.3s; }
-  .episode { font-size: 12px; color: var(--public-text-4); }
-}
-
-.navMoreOverlay {
-  :global(.ant-dropdown-menu) {
-    background: color-mix(in srgb, var(--public-page-bg) 85%, transparent) !important;
-    backdrop-filter: blur(20px) !important;
-    -webkit-backdrop-filter: blur(20px) !important;
-    border: 1px solid var(--public-border-2);
-    border-radius: 12px !important;
-    padding: 8px !important;
-    box-shadow: var(--public-shadow-lg) !important;
-  }
-  :global(.ant-dropdown-menu-item) {
-    border-radius: 8px !important;
-    color: var(--public-text-2) !important;
-    font-weight: 500;
-    padding: 10px 16px !important;
-    transition: all 0.3s !important;
-    &:hover { background: rgba(250, 173, 20, 0.1) !important; color: #faad14 !important; }
   }
 }
 
