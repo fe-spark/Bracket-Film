@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"server/internal/config"
@@ -99,48 +101,54 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 	filters := make(map[string][]map[string]any)
 
 	tree := repository.GetActiveCategoryTree()
-	for _, c := range tree.Children {
-		if c.Show {
-			classList = append(classList, model.FilmClass{
-				ID:   c.Id,
-				Name: c.Name,
-			})
 
-			searchTags := repository.GetSearchTag(model.SearchTagsVO{Pid: c.Id})
-			// Initialize to empty slice to avoid "null" in JSON
+	type categoryResult struct {
+		index   int
+		item    model.FilmClass
+		filters []map[string]any
+	}
+
+	resultChan := make(chan categoryResult, len(tree.Children))
+	var wg sync.WaitGroup
+
+	for i, c := range tree.Children {
+		if !c.Show {
+			continue
+		}
+		wg.Add(1)
+		go func(index int, category *model.CategoryTree) {
+			defer wg.Done()
+
+			searchTags := repository.GetSearchTag(model.SearchTagsVO{Pid: category.Id})
 			tvboxFilters := make([]map[string]any, 0)
 
-			// Robustly get titles
+			// Robustly get metadata from searchTags
 			titles := make(map[string]string)
 			if tIf, ok := searchTags["titles"]; ok {
-				switch t := tIf.(type) {
-				case map[string]any:
-					for k, v := range t {
+				if tMap, ok := tIf.(map[string]any); ok {
+					for k, v := range tMap {
 						if vStr, ok := v.(string); ok {
 							titles[k] = vStr
 						}
 					}
-				case map[string]string:
-					titles = t
+				} else if tStrMap, ok := tIf.(map[string]string); ok {
+					titles = tStrMap
 				}
 			}
 
-			// Robustly get sortList
 			var sortList []string
 			if sIf, ok := searchTags["sortList"]; ok {
-				switch s := sIf.(type) {
-				case []any:
-					for _, v := range s {
+				if sArr, ok := sIf.([]any); ok {
+					for _, v := range sArr {
 						if vStr, ok := v.(string); ok {
 							sortList = append(sortList, vStr)
 						}
 					}
-				case []string:
-					sortList = s
+				} else if sStrArr, ok := sIf.([]string); ok {
+					sortList = sStrArr
 				}
 			}
 
-			// Robustly get tags
 			var tags map[string]any
 			if tMap, ok := searchTags["tags"].(map[string]any); ok {
 				tags = tMap
@@ -162,14 +170,10 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 				case []map[string]string:
 					for _, item := range td {
 						v := item["Value"]
-						// TVBox tid filtering: if value is empty, it means "All", which maps to current type ID
 						if key == "Category" && v == "" {
-							v = strconv.FormatInt(c.Id, 10)
+							v = strconv.FormatInt(category.Id, 10)
 						}
-						values = append(values, map[string]string{
-							"n": item["Name"],
-							"v": v,
-						})
+						values = append(values, map[string]string{"n": item["Name"], "v": v})
 					}
 				case []any:
 					for _, item := range td {
@@ -178,21 +182,9 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 							vStr, _ := m["Value"].(string)
 							v := vStr
 							if key == "Category" && v == "" {
-								v = strconv.FormatInt(c.Id, 10)
+								v = strconv.FormatInt(category.Id, 10)
 							}
-							values = append(values, map[string]string{
-								"n": nStr,
-								"v": v,
-							})
-						} else if m, ok := item.(map[string]string); ok {
-							v := m["Value"]
-							if key == "Category" && v == "" {
-								v = strconv.FormatInt(c.Id, 10)
-							}
-							values = append(values, map[string]string{
-								"n": m["Name"],
-								"v": v,
-							})
+							values = append(values, map[string]string{"n": nStr, "v": v})
 						}
 					}
 				}
@@ -202,16 +194,44 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 					if key == "Category" {
 						tvboxKey = "tid"
 					}
-
 					tvboxFilters = append(tvboxFilters, map[string]any{
-						"key":   tvboxKey,
-						"name":  name,
-						"value": values,
+						"key": tvboxKey, "name": name, "value": values,
 					})
 				}
 			}
-			filters[strconv.FormatInt(c.Id, 10)] = tvboxFilters
-		}
+
+			resultChan <- categoryResult{
+				index:   index,
+				item:    model.FilmClass{ID: category.Id, Name: category.Name},
+				filters: tvboxFilters,
+			}
+		}(i, c)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// 收集并保持顺序 (或根据分类权重排序，这里尝试保持原有 tree.Children 顺序)
+	type finalItem struct {
+		index   int
+		item    model.FilmClass
+		filters []map[string]any
+	}
+	var finals []finalItem
+	for res := range resultChan {
+		finals = append(finals, finalItem{res.index, res.item, res.filters})
+	}
+
+	// 按原始索引排序
+	sort.Slice(finals, func(i, j int) bool {
+		return finals[i].index < finals[j].index
+	})
+
+	for _, f := range finals {
+		classList = append(classList, f.item)
+		filters[strconv.FormatInt(f.item.ID, 10)] = f.filters
 	}
 
 	// 写入 Redis 缓存 (5 分钟)

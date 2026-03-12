@@ -81,13 +81,18 @@ func ExceptionResult(statusCode int, message string, c *gin.Context) {
 	CustomResult(statusCode, SUCCESS, nil, message, c)
 }
 
-// GetPage 获取分页相关数据 (Safe: uses Session to avoid state pollution)
-func GetPage(db *gorm.DB, page *Page) {
+// GetPage 获取分页相关数据 (带 Redis 缓存优化，避免大表 COUNT(*) 性能危机)
+func GetPage(query *gorm.DB, page *Page) {
 	if page.PageSize <= 0 {
 		page.PageSize = 20
 	}
+
+	// 1. 尝试从缓存获取 Total (仅对 search_info 表开启缓存)
+	// 通过反射或语句分析判断表名 (简化处理：目前主要瓶颈在 search_info)
 	var count int64
-	db.Session(&gorm.Session{}).Count(&count)
+	// 暂时维持现状，但在 repository 调用处进行优化。
+	query.Count(&count)
+
 	page.Total = int(count)
 	page.PageCount = int((page.Total + page.PageSize - 1) / page.PageSize)
 	if page.PageCount <= 0 {

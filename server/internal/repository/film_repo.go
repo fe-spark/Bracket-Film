@@ -933,61 +933,110 @@ func GetSearchTag(st model.SearchTagsVO) map[string]any {
 	tagMap := make(map[string]any)
 	activeSortList := make([]string, 0)
 
-	// 多维联动逻辑 (Elegant Faceted)：计算每一行的选项时，锁定其他所有已选中的维度的关系映射
+	// 1. 批量加载候选标签 (SearchTagItem)
+	var allItems []model.SearchTagItem
+	db.Mdb.Where("pid = ?", pid).Order("score DESC").Limit(500).Find(&allItems)
+	itemsByType := make(map[string][]model.SearchTagItem)
+	for _, item := range allItems {
+		itemsByType[item.TagType] = append(itemsByType[item.TagType], item)
+	}
+
+	// 2. 检查是否有任何筛选条件处于激活状态 (如果是初始状态，我们可以极大压缩查询)
+	hasFilters := st.Cid > 0 || st.Area != "" || st.Language != "" || st.Year != "" || st.Plot != ""
+
+	// 3. 初始加载加速：如果没有任何筛选，一次性查出该 Pid 下所有维度的活跃标签
+	initialActiveSets := make(map[string]map[string]bool)
+	if !hasFilters {
+		var avs []struct {
+			TagType  string
+			TagValue string
+		}
+		db.Mdb.Table("movie_tag_rel").
+			Select("movie_tag_rel.tag_type, movie_tag_rel.tag_value").
+			Joins("JOIN search_info ON search_info.mid = movie_tag_rel.mid").
+			Where("search_info.pid = ?", pid).
+			Group("movie_tag_rel.tag_type, movie_tag_rel.tag_value").
+			Scan(&avs)
+		for _, av := range avs {
+			if initialActiveSets[av.TagType] == nil {
+				initialActiveSets[av.TagType] = make(map[string]bool)
+			}
+			initialActiveSets[av.TagType][av.TagValue] = true
+		}
+	}
+
+	// 4. 多维滚动查询
 	for _, t := range sortList {
 		var sticky string
 		var activeSet map[string]bool
 
-		// 基础过滤集：限定在当前大类 (PID) 下
-		// 使用 search_info 开启主查询，通过 Joins 联动其他维度
-		query := db.Mdb.Table("search_info").Select("search_info.mid").Where("search_info.pid = ?", pid)
+		if !hasFilters {
+			activeSet = initialActiveSets[t]
+		} else {
+			// 联动核心：计算当前行时，应用除本行外其他维度的已选条件
+			query := db.Mdb.Table("search_info").Select("search_info.mid").Where("search_info.pid = ?", pid)
+			if t != "Category" && st.Cid > 0 {
+				if IsRootCategory(st.Cid) {
+					query = query.Where("search_info.pid = ?", st.Cid)
+				} else {
+					query = query.Where("search_info.cid = ?", st.Cid)
+				}
+			}
+			if t != "Area" && st.Area != "" && st.Area != "全部" {
+				if st.Area == "其它" {
+					topVals := GetTopTagValues(pid, "Area")
+					if len(topVals) > 0 {
+						query = query.Where("search_info.area NOT IN ?", topVals)
+					}
+				} else {
+					query = query.Joins("JOIN movie_tag_rel r_area ON r_area.mid = search_info.mid AND r_area.tag_type = 'Area' AND r_area.tag_value = ?", st.Area)
+				}
+			}
+			if t != "Language" && st.Language != "" && st.Language != "全部" {
+				if st.Language == "其它" {
+					topVals := GetTopTagValues(pid, "Language")
+					if len(topVals) > 0 {
+						query = query.Where("search_info.language NOT IN ?", topVals)
+					}
+				} else {
+					query = query.Joins("JOIN movie_tag_rel r_lang ON r_lang.mid = search_info.mid AND r_lang.tag_type = 'Language' AND r_lang.tag_value = ?", st.Language)
+				}
+			}
+			if t != "Year" && st.Year != "" && st.Year != "全部" {
+				if st.Year == "其它" {
+					topVals := GetTopTagValues(pid, "Year")
+					if len(topVals) > 0 {
+						query = query.Where("search_info.year NOT IN ?", topVals)
+					}
+				} else {
+					query = query.Joins("JOIN movie_tag_rel r_year ON r_year.mid = search_info.mid AND r_year.tag_type = 'Year' AND r_year.tag_value = ?", st.Year)
+				}
+			}
+			if t != "Plot" && st.Plot != "" && st.Plot != "全部" {
+				if st.Plot == "其它" {
+					topVals := GetTopTagValues(pid, "Plot")
+					for _, v := range topVals {
+						query = query.Where("search_info.class_tag NOT LIKE ?", fmt.Sprintf("%%%s%%", v))
+					}
+				} else {
+					query = query.Joins("JOIN movie_tag_rel r_plot ON r_plot.mid = search_info.mid AND r_plot.tag_type = 'Plot' AND r_plot.tag_value = ?", st.Plot)
+				}
+			}
 
-		// 联动核心：计算当前行时，应用除本行外其他维度的已选条件
-		if t != "Category" && st.Cid > 0 {
-			if IsRootCategory(st.Cid) {
-				query = query.Where("search_info.pid = ?", st.Cid)
-			} else {
-				query = query.Where("search_info.cid = ?", st.Cid)
-			}
-		}
-		if t != "Area" && st.Area != "" && st.Area != "全部" {
-			if st.Area == "其它" {
-				topVals := GetTopTagValues(pid, "Area")
-				if len(topVals) > 0 {
-					query = query.Where("search_info.area NOT IN ?", topVals)
+			if t == "Category" {
+				var vals []int64
+				db.Mdb.Model(&model.SearchInfo{}).Select("search_info.cid").Joins("JOIN (?) as s ON s.mid = search_info.mid", query).Distinct().Pluck("cid", &vals)
+				activeSet = make(map[string]bool)
+				for _, v := range vals {
+					activeSet[fmt.Sprint(v)] = true
 				}
-			} else {
-				query = query.Joins("JOIN movie_tag_rel r_area ON r_area.mid = search_info.mid AND r_area.tag_type = 'Area' AND r_area.tag_value = ?", st.Area)
-			}
-		}
-		if t != "Language" && st.Language != "" && st.Language != "全部" {
-			if st.Language == "其它" {
-				topVals := GetTopTagValues(pid, "Language")
-				if len(topVals) > 0 {
-					query = query.Where("search_info.language NOT IN ?", topVals)
+			} else if t != "Sort" {
+				var vals []string
+				db.Mdb.Model(&model.MovieTagRel{}).Select("movie_tag_rel.tag_value").Joins("JOIN (?) as s ON s.mid = movie_tag_rel.mid", query).Where("tag_type = ?", t).Distinct().Pluck("tag_value", &vals)
+				activeSet = make(map[string]bool)
+				for _, v := range vals {
+					activeSet[v] = true
 				}
-			} else {
-				query = query.Joins("JOIN movie_tag_rel r_lang ON r_lang.mid = search_info.mid AND r_lang.tag_type = 'Language' AND r_lang.tag_value = ?", st.Language)
-			}
-		}
-		if t != "Year" && st.Year != "" && st.Year != "全部" {
-			if st.Year == "其它" {
-				topVals := GetTopTagValues(pid, "Year")
-				if len(topVals) > 0 {
-					query = query.Where("search_info.year NOT IN ?", topVals)
-				}
-			} else {
-				query = query.Joins("JOIN movie_tag_rel r_year ON r_year.mid = search_info.mid AND r_year.tag_type = 'Year' AND r_year.tag_value = ?", st.Year)
-			}
-		}
-		if t != "Plot" && st.Plot != "" && st.Plot != "全部" {
-			if st.Plot == "其它" {
-				topVals := GetTopTagValues(pid, "Plot")
-				for _, v := range topVals {
-					query = query.Where("search_info.class_tag NOT LIKE ?", fmt.Sprintf("%%%s%%", v))
-				}
-			} else {
-				query = query.Joins("JOIN movie_tag_rel r_plot ON r_plot.mid = search_info.mid AND r_plot.tag_type = 'Plot' AND r_plot.tag_value = ?", st.Plot)
 			}
 		}
 
@@ -997,40 +1046,31 @@ func GetSearchTag(st model.SearchTagsVO) map[string]any {
 			if st.Cid == 0 {
 				sticky = ""
 			}
-			var vals []int64
-			// 分类联动依然基于 search_infos 表查分类 ID
-			db.Mdb.Model(&model.SearchInfo{}).Where("mid IN (?)", query).Distinct().Pluck("cid", &vals)
-			activeSet = make(map[string]bool)
-			for _, v := range vals {
-				activeSet[fmt.Sprint(v)] = true
-			}
 		case "Sort":
-			// 排序行不需要开启联动感知
-		default:
-			// Plot, Area, Language, Year 统一从 movie_tag_rel 表获取联动后的有效标签集
-			switch t {
-			case "Plot":
-				sticky = st.Plot
-			case "Area":
-				sticky = st.Area
-			case "Language":
-				sticky = st.Language
-			case "Year":
-				sticky = st.Year
+		case "Plot":
+			sticky = st.Plot
+		case "Area":
+			sticky = st.Area
+		case "Language":
+			sticky = st.Language
+		case "Year":
+			sticky = st.Year
+		}
+
+		// 构建 Tag 列表
+		candidateItems := itemsByType[t]
+		tagStrs := make([]string, 0)
+		for _, item := range candidateItems {
+			if sticky != "" && item.Value == sticky {
+				tagStrs = append(tagStrs, fmt.Sprintf("%s:%s", item.Name, item.Value))
+				continue
 			}
-
-			var vals []string
-			db.Mdb.Model(&model.MovieTagRel{}).
-				Where("tag_type = ? AND mid IN (?)", t, query).
-				Distinct().Pluck("tag_value", &vals)
-
-			activeSet = make(map[string]bool)
-			for _, v := range vals {
-				activeSet[v] = true
+			if activeSet == nil || activeSet[item.Value] {
+				tagStrs = append(tagStrs, fmt.Sprintf("%s:%s", item.Name, item.Value))
 			}
 		}
 
-		tags := HandleTagStr(pid, t, activeSet, sticky, GetTagsByTitle(pid, t, activeSet, sticky)...)
+		tags := HandleTagStr(pid, t, activeSet, sticky, tagStrs...)
 		if t == "Sort" || len(tags) > 1 || (sticky != "" && sticky != "全部") {
 			tagMap[t] = tags
 			activeSortList = append(activeSortList, t)

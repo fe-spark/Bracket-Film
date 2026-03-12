@@ -2,6 +2,7 @@ package db
 
 import (
 	"server/internal/config"
+	"time"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -25,5 +26,20 @@ func InitMysql() (err error) {
 		},
 		Logger: logger.Default.LogMode(logger.Error), //设置日志级别为Error, 避免采集时打印繁杂的 SQL 语句
 	})
-	return
+
+	if err != nil {
+		return err
+	}
+
+	sqlDB, err := Mdb.DB()
+	if err != nil {
+		return err
+	}
+
+	// 设置连接池
+	sqlDB.SetMaxIdleConns(10)           // 最大空闲连接数
+	sqlDB.SetMaxOpenConns(50)           // 最大打开连接数
+	sqlDB.SetConnMaxLifetime(time.Hour) // 连接最大复用时间
+
+	return nil
 }
