@@ -3,7 +3,6 @@ package repository
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"server/internal/config"
 	"server/internal/infra/db"
 	"server/internal/model"
@@ -103,23 +102,26 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 		// 3. 第一阶段：处理采集站的第一层 (通常是电影、电视剧等)
 		// 我们不直接存这些分类到 Category 表，而是将其作为映射依据
 		for _, node := range tree.Children {
-			// 识别它是我们的哪个标准大类
+			// 识别它是我们的哪个标准大类 (確定性硬編碼 ID 版本)
 			mainId := GetMainCategoryIdByName(node.Name, node.Id)
 
-			// **动态发现逻辑**：如果映射引擎没能识别，则视其为新发现的大类
-			if mainId == 0 {
+			// **動態補全邏輯**：如果映射引擎返回了 ID 但數據庫中暫未初始化（罕見），則自動補完它
+			if mainId != 0 {
 				var newMain model.Category
-				// 尝试通过名称查找或创建
-				if err := tx.Where("pid = 0 AND name = ?", node.Name).FirstOrCreate(&newMain, model.Category{
-					Pid:   0,
-					Name:  node.Name,
-					Alias: node.Name,
-					Show:  true,
-					Sort:  0,
-				}).Error; err != nil {
-					return err
+				if err := tx.Where("id = ?", mainId).First(&newMain).Error; err != nil {
+					// 找不到則按照標準角色創建 (確保 ID 1-8 的一致性)
+					role := GetCategoryBucketRole(node.Name)
+					if role == "" {
+						role = node.Name
+					}
+					tx.Create(&model.Category{
+						Id:    mainId,
+						Pid:   0,
+						Name:  role,
+						Alias: node.Name,
+						Show:  true,
+					})
 				}
-				mainId = newMain.Id
 			}
 			pointerToMainId[node] = mainId
 		}
@@ -329,71 +331,49 @@ func GetParentId(id int64) int64 {
 
 // InitMainCategories 初始化标准大类与执行周期性健康检查
 func InitMainCategories() {
+	// 定义标准大类及其固定 ID (不可更改，確保部署即用)
 	categories := []model.Category{
-		{Pid: 0, Name: "电影", Alias: "电影,影片,电影片"},
-		{Pid: 0, Name: "电视剧", Alias: "电视剧,连续剧,系列剧,剧集"},
-		{Pid: 0, Name: "动漫", Alias: "动漫,动画,动漫片,动画片"},
-		{Pid: 0, Name: "综艺", Alias: "综艺,综艺片,真人秀,脱口秀"},
-		{Pid: 0, Name: "纪录片", Alias: "纪录片,记录片"},
-		{Pid: 0, Name: "短剧", Alias: "短剧,短剧大全,爽剧"},
-		{Pid: 0, Name: "其他", Alias: "其他,其它,待分类"},
+		{Id: 1, Pid: 0, Name: "电影", Alias: "电影,影片,电影片"},
+		{Id: 2, Pid: 0, Name: "电视剧", Alias: "电视剧,连续剧,系列剧,剧集"},
+		{Id: 4, Pid: 0, Name: "动漫", Alias: "动漫,动画,动漫片,动画片"}, // 動漫固定為 4
+		{Id: 3, Pid: 0, Name: "综艺", Alias: "综艺,综艺片,真人秀,脱口秀"},
+		{Id: 5, Pid: 0, Name: "纪录片", Alias: "纪录片,记录片"},
+		{Id: 7, Pid: 0, Name: "短剧", Alias: "短剧,短剧大全,爽剧"},
+		{Id: 6, Pid: 0, Name: "伦理片", Alias: "伦理,非法,福利,写真,X级"},
+		{Id: 8, Pid: 0, Name: "其他", Alias: "其他,其它,待分类"},
 	}
 
-	fmt.Println("[Init] 正在执行大类标准化与数据健康检查...")
+	fmt.Println("[Init] 正在執行大類標準化與數據健康檢查 (固定 ID 模式)...")
 
 	for _, c := range categories {
-		// 1. 识别并匹配标准大类 (支持改名与别名追溯)
-		var realC model.Category
-		err := db.Mdb.Where("pid = 0 AND name = ?", c.Name).First(&realC).Error
-		if err != nil {
-			// 尝试别名匹配
-			aliases := strings.Split(c.Alias, ",")
-			foundByAlias := false
-			for _, a := range aliases {
-				a = strings.TrimSpace(a)
-				if a == "" || a == c.Name {
-					continue
-				}
-				if err := db.Mdb.Where("pid = 0 AND name = ?", a).First(&realC).Error; err == nil {
-					fmt.Printf("[Init] 发现别名匹配大类 [%s] (ID: %d), 标准化为 [%s]...\n", realC.Name, realC.Id, c.Name)
-					
-					// 处理名称冲突 (腾出标准名坑位)
-					var conflict model.Category
-					if err := db.Mdb.Where("name = ? AND id != ?", c.Name, realC.Id).First(&conflict).Error; err == nil {
-						if conflict.Pid != 0 {
-							fmt.Printf("[Init] 冲突处理：将子分类 [%s] (ID: %d) 重命名为 [%s(子)]\n", c.Name, conflict.Id, c.Name)
-							db.Mdb.Model(&conflict).Update("name", c.Name+"(子)")
-						}
-					}
-
-					db.Mdb.Model(&realC).Updates(map[string]any{"name": c.Name, "alias": c.Alias})
-					foundByAlias = true
-					break
-				}
-			}
-			if !foundByAlias {
-				db.Mdb.Create(&c)
-				realC = c
-			}
-		} else {
-			// 標準名已對上，確保別名規則同步更新
-			db.Mdb.Model(&realC).Update("alias", c.Alias)
+		// ROOT FIX: 解決名稱衝突 (如果標準名 '動漫' 被 ID 10 佔用，而我們需要 ID 4 佔用它)
+		var conflict model.Category
+		if err := db.Mdb.Where("name = ? AND id != ?", c.Name, c.Id).First(&conflict).Error; err == nil {
+			fmt.Printf("[Init] 發現名稱衝突：[%s] 被 ID %d 佔用，正在釋放坑位...\n", c.Name, conflict.Id)
+			db.Mdb.Model(&conflict).Updates(map[string]any{
+				"name": fmt.Sprintf("%s_%d", conflict.Name, conflict.Id),
+				"show": false, // 隱藏衝突項
+			})
 		}
 
+		// 使用 Upsert 確保 ID 1-8 被標準大類佔據，且名稱正確
+		db.Mdb.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			DoUpdates: clause.Assignments(map[string]any{"name": c.Name, "alias": c.Alias, "pid": 0, "show": true}),
+		}).Create(&c)
+
 		// 2. 补全排序标签 (确保 Score 分值足够显示)
-		if realC.Id > 0 {
-			defaultSorts := []model.SearchTagItem{
-				{Pid: realC.Id, TagType: "Sort", Name: "时间", Value: "update_stamp", Score: 10},
-				{Pid: realC.Id, TagType: "Sort", Name: "人气", Value: "hits", Score: 10},
-				{Pid: realC.Id, TagType: "Sort", Name: "评分", Value: "score", Score: 10},
-				{Pid: realC.Id, TagType: "Sort", Name: "最新", Value: "release_stamp", Score: 10},
-			}
-			for _, s := range defaultSorts {
-				db.Mdb.Clauses(clause.OnConflict{
-					Columns:   []clause.Column{{Name: "pid"}, {Name: "tag_type"}, {Name: "value"}},
-					DoUpdates: clause.Assignments(map[string]any{"score": 10}),
-				}).Create(&s)
-			}
+		defaultSorts := []model.SearchTagItem{
+			{Pid: c.Id, TagType: "Sort", Name: "时间", Value: "update_stamp", Score: 10},
+			{Pid: c.Id, TagType: "Sort", Name: "人气", Value: "hits", Score: 10},
+			{Pid: c.Id, TagType: "Sort", Name: "评分", Value: "score", Score: 10},
+			{Pid: c.Id, TagType: "Sort", Name: "最新", Value: "release_stamp", Score: 10},
+		}
+		for _, s := range defaultSorts {
+			db.Mdb.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "pid"}, {Name: "tag_type"}, {Name: "value"}},
+				DoUpdates: clause.Assignments(map[string]any{"score": 10}),
+			}).Create(&s)
 		}
 	}
 

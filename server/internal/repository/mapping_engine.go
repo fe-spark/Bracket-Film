@@ -41,58 +41,59 @@ func GetCategoryBucketRole(typeName string) string {
 	return ""
 }
 
-// GetMainCategoryIdByName 根据采集站的分类名识别标准大类 ID (数据库驱动版)
+// GetStandardIdByRole 返回标准大类的固定 ID (硬編碼確保部署即用，不受數據庫初始化順序影響)
+func GetStandardIdByRole(role string) int64 {
+	switch role {
+	case "电影":
+		return 1
+	case "电视剧":
+		return 2
+	case "综艺":
+		return 3
+	case "动漫":
+		return 4
+	case "纪录片":
+		return 5
+	case "短剧":
+		return 6
+	case "伦理片":
+		return 7
+	case "其他":
+		return 8
+	default:
+		return 0
+	}
+}
+
+// GetMainCategoryIdByName 根据采集站的分类名识别标准大类 ID (無狀態確定性版本)
 func GetMainCategoryIdByName(typeName string, typePid int64) int64 {
 	typeName = strings.TrimSpace(typeName)
 	if typeName == "" {
-		return 0
+		return GetStandardIdByRole("其他")
 	}
 
-	// 1. 获取所有顶级大类配置 (Pid=0)
-	var mains []model.Category
-	db.Mdb.Where("pid = 0").Find(&mains)
-
-	// 2. 优先级 A：通过智能分类引擎判定所属标准大类
+	// 1. 優先級 A：通過智能分類引擎判定角色，並返回硬編碼的標準 ID
 	role := GetCategoryBucketRole(typeName)
 	if role != "" {
-		for _, m := range mains {
-			if m.Name == role {
-				return m.Id
-			}
-		}
+		return GetStandardIdByRole(role)
 	}
 
-	// 3. 优先级 B：根据采集站通用标准 Pid 推断 (MacCMS 常见约定)
+	// 2. 優先級 B：根據採集站常用 Pid 推斷 (MacCMS 常用約定)
 	switch typePid {
 	case 1:
-		return findIdByName(mains, "电影")
+		return GetStandardIdByRole("电影")
 	case 2:
-		return findIdByName(mains, "电视剧")
+		return GetStandardIdByRole("电视剧")
 	case 3:
-		return findIdByName(mains, "综艺")
+		return GetStandardIdByRole("综艺")
 	case 4:
-		return findIdByName(mains, "动漫")
+		return GetStandardIdByRole("动漫")
 	case 37:
-		return findIdByName(mains, "短剧")
+		return GetStandardIdByRole("短剧")
 	}
 
-	// 4. 优先级 C：数据库别名精准/模糊搜索
-	for _, m := range mains {
-		if m.Name == typeName {
-			return m.Id
-		}
-		aliases := strings.Split(m.Alias, ",")
-		for _, a := range aliases {
-			a = strings.TrimSpace(a)
-			if a != "" && (a == typeName || strings.Contains(typeName, a)) {
-				return m.Id
-			}
-		}
-	}
-
-	// 5. 兜底逻辑：如果所有规则均失效，归类到标准的“其他”桶 (ID 6 或根据名称查找)
-	// 这样确保影片不会变成不可见的 Pid=0 垃圾数据
-	return findIdByName(mains, "其他")
+	// 3. 兜底回退：歸類到標準的“其他”桶 (ID 8)
+	return GetStandardIdByRole("其他")
 }
 
 func findIdByName(mains []model.Category, name string) int64 {
