@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
+
 // ExistUserTable 判断表中是否存在User表
 func ExistUserTable() bool {
 	return db.Mdb.Migrator().HasTable(&model.User{})
@@ -40,12 +41,16 @@ func InitAdminAccount() {
 
 // GetUserByNameOrEmail 查询 username || email 对应的账户信息
 func GetUserByNameOrEmail(userName string) *model.User {
-	var u *model.User
-	if err := db.Mdb.Where("user_name = ? OR email = ?", userName, userName).First(&u).Error; err != nil {
-		log.Println(err)
+	var u model.User
+	err := db.Mdb.Where("user_name = ? OR email = ?", userName, userName).Limit(1).Find(&u).Error
+	if err != nil {
+		log.Println("GetUserByNameOrEmail Error:", err)
 		return nil
 	}
-	return u
+	if u.ID == 0 {
+		return nil
+	}
+	return &u
 }
 
 // GetUserById 通过id获取对应的用户信息

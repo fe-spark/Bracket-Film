@@ -92,15 +92,19 @@ func (i *IndexService) GetCategoryInfo() map[string]any {
 	nav := make(map[string]any)
 	tree := repository.GetCategoryTree()
 	for _, t := range tree.Children {
-		switch t.Category.Name {
-		case "动漫", "动漫片":
+		switch t.Name {
+		case "动漫":
 			nav["cartoon"] = t
-		case "电影", "电影片":
+		case "电影":
 			nav["film"] = t
-		case "连续剧", "电视剧":
+		case "电视剧":
 			nav["tv"] = t
-		case "综艺", "综艺片":
+		case "综艺":
 			nav["variety"] = t
+		case "短剧":
+			nav["short"] = t
+		case "纪录片":
+			nav["document"] = t
 		}
 	}
 	return nav

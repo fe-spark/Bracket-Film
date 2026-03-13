@@ -21,6 +21,16 @@ var (
 	RedisAddr     = ""
 	RedisPassword = ""
 	RedisDBNo     = 0
+
+	// IsDevMode 是否处于开发模式 (开发模式下每次启动会清空数据库和 Redis)
+	IsDevMode = false
+
+	// MySQL 原始分项配置 (用于建库与重建等底层操作)
+	MysqlHost   = ""
+	MysqlPort   = ""
+	MysqlUser   = ""
+	MysqlPass   = ""
+	MysqlDBName = ""
 )
 
 const (
@@ -152,6 +162,15 @@ func InitConfig() {
 	if ListenerPort == "" {
 		panic("环境变量缺失: PORT 或 LISTENER_PORT")
 	}
+
+	// 检测开发模式 (ENV=dev 或 IS_DEV_MODE=true)
+	env := os.Getenv("ENV")
+	devFlag := os.Getenv("IS_DEV_MODE")
+	if env == "dev" || devFlag == "true" {
+		IsDevMode = true
+		fmt.Println("[Config] 检测到开发模式：已开启数据库与 Redis 自动清空机制")
+	}
+
 	fmt.Printf("[Config] 加载端口: %s\n", ListenerPort)
 
 	// 加载 MySQL 配置
@@ -166,7 +185,13 @@ func InitConfig() {
 			mHost, mPort, mUser, mDB))
 	}
 
-	MysqlDsn = fmt.Sprintf("%s:%s@(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+	MysqlHost = mHost
+	MysqlPort = mPort
+	MysqlUser = mUser
+	MysqlPass = mPass
+	MysqlDBName = mDB
+
+	MysqlDsn = fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local&timeout=10s&readTimeout=30s&interpolateParams=true",
 		mUser, mPass, mHost, mPort, mDB)
 	fmt.Printf("[Config] 加载 MySQL DSN: %s:%s@(%s:%s)/%s\n", mUser, "******", mHost, mPort, mDB)
 
@@ -190,4 +215,10 @@ func InitConfig() {
 		}
 	}
 	fmt.Printf("[Config] 加载 Redis 地址: %s, DB: %d\n", RedisAddr, RedisDBNo)
+}
+
+// GetRootMysqlDsn 获取不带数据库名的 DSN，用于 CREATE DATABASE 等管理操作
+func GetRootMysqlDsn() string {
+	return fmt.Sprintf("%s:%s@tcp(%s:%s)/?charset=utf8mb4&parseTime=True&loc=Local",
+		MysqlUser, MysqlPass, MysqlHost, MysqlPort)
 }

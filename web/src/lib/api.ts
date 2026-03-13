@@ -1,15 +1,13 @@
-"use client";
-
 import axios, {
   AxiosInstance,
-  AxiosRequestConfig,
   InternalAxiosRequestConfig,
 } from "axios";
 import { getToken, setToken } from "./auth";
-import { message } from "antd";
+
+const isClient = typeof window !== "undefined";
 
 const instance: AxiosInstance = axios.create({
-  baseURL: "/api",
+  baseURL: isClient ? "/api" : (process.env.API_URL + "/api" || "http://127.0.0.1:3601/api"),
   timeout: 80000,
 });
 
@@ -18,9 +16,11 @@ const instance: AxiosInstance = axios.create({
 // 请求拦截器
 instance.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const token = getToken();
-    if (token && token.value.length > 0) {
-      config.headers[token.key] = token.value;
+    if (isClient) {
+      const token = getToken();
+      if (token && token.value.length > 0) {
+        config.headers[token.key] = token.value;
+      }
     }
     return config;
   },
@@ -30,20 +30,26 @@ instance.interceptors.request.use(
 // 响应拦截器
 instance.interceptors.response.use(
   (response) => {
-    const newToken = response.headers["new-token"];
-    if (newToken && newToken.length > 0) {
-      setToken(newToken);
+    if (isClient) {
+      const newToken = response.headers["new-token"];
+      if (newToken && newToken.length > 0) {
+        setToken(newToken);
+      }
     }
     return response.data;
   },
-  (error) => {
-    if (error.response?.status === 401) {
-      message.error(error.response.data?.msg || "请先登录");
-      window.location.href = "/login";
-    } else if (error.response?.status === 403) {
-      message.error("无访问权限");
-    } else {
-      message.error("服务器繁忙，请稍后再试");
+  async (error) => {
+    if (isClient) {
+      // 动态导入 message 以避免在服务端报错
+      const { message } = await import("antd");
+      if (error.response?.status === 401) {
+        message.error(error.response.data?.msg || "请先登录");
+        window.location.href = "/login";
+      } else if (error.response?.status === 403) {
+        message.error("无访问权限");
+      } else {
+        message.error("服务器繁忙，请稍后再试");
+      }
     }
     return Promise.reject(error);
   },

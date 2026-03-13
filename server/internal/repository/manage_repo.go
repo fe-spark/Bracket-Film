@@ -11,8 +11,8 @@ import (
 	"server/internal/model"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
+
 
 // ExistSiteConfig 判断 MySQL 中是否已有网站配置
 func ExistSiteConfig() bool {
@@ -35,7 +35,8 @@ func SaveSiteBasic(c model.BasicConfig) error {
 		Keyword: c.Keyword, Describe: c.Describe, State: c.State, Hint: c.Hint,
 		IsVideoProxy: c.IsVideoProxy,
 	}
-	db.Mdb.Clauses(clause.OnConflict{UpdateAll: true}).Where("id > 0").Delete(&model.SiteConfigRecord{})
+	// 采用覆盖式更新 (因为只维护单行配置)
+	db.Mdb.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&model.SiteConfigRecord{})
 	if err := db.Mdb.Create(&rec).Error; err != nil {
 		return err
 	}

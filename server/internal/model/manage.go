@@ -51,3 +51,15 @@ type SiteConfigRecord struct {
 	Hint     string `gorm:"size:512"`
 	IsVideoProxy bool // 是否启用视频播放代理
 }
+// MappingRule 定义从采集源到标准系统的转换规则 (地区/语言/标签黑名单)
+type MappingRule struct {
+	gorm.Model
+	Group   string `gorm:"uniqueIndex:uidx_group_raw;size:32"` // Area, Language, Blacklist
+	Raw     string `gorm:"uniqueIndex:uidx_group_raw;size:128"` // 原始值 (采集源)
+	Target  string `gorm:"size:128"`                            // 标准值 (如果为空则视为黑名单项)
+	Remarks string `gorm:"size:256"`                            // 备注
+}
+
+func (MappingRule) TableName() string {
+	return "mapping_rules"
+}

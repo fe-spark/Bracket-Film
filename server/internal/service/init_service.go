@@ -10,6 +10,8 @@ import (
 	"server/internal/repository"
 	"server/internal/spider"
 	"server/internal/utils"
+
+	"github.com/robfig/cron/v3"
 )
 
 type InitService struct{}
@@ -18,7 +20,18 @@ var InitSvc = new(InitService)
 
 func (s *InitService) DefaultDataInit() {
 	if !repository.ExistUserTable() {
+		// 只有在用户表不存在时（视为首次运行或库重建），才执行完整的表迁移与初始数据灌入
 		s.TableInit()
+	} else {
+		// 常规重启：仅执行 AutoMigrate 确保结构对齐，并加载内存缓存
+		db.Mdb.AutoMigrate(
+			&model.User{}, &model.SearchInfo{}, &model.FileInfo{}, &model.FailureRecord{},
+			&model.MovieDetailInfo{}, &model.Category{}, &model.MoviePlaylist{},
+			&model.VirtualPictureQueue{}, &model.FilmSource{}, &model.SearchTagItem{},
+			&model.CrontabRecord{}, &model.SiteConfigRecord{}, &model.MovieSourceMapping{},
+			&model.Banner{}, &model.CronSourceRel{}, &model.MappingRule{},
+		)
+		repository.InitMappingEngine()
 	}
 
 	s.BasicConfigInit()
@@ -43,12 +56,21 @@ func (s *InitService) TableInit() {
 		&model.MovieSourceMapping{},
 		&model.Banner{},
 		&model.CronSourceRel{},
-		&model.MovieTagRel{},
+		&model.MappingRule{},
 	)
 	if err != nil {
 		log.Println("Database AutoMigrate Failed:", err)
 		return
 	}
+
+	// 初始化映射清洗引擎 (建表后立即同步种子数据)
+	repository.InitMappingEngine()
+
+	// 初始化映射清洗引擎 (建表后立即同步种子数据)
+	repository.InitMappingEngine()
+
+	// 初始化标准大类
+	repository.InitMainCategories()
 
 	// 专门处理表的默认或初始状态定义
 	db.Mdb.Exec(fmt.Sprintf("alter table %s auto_Increment = %d", model.TableUser, config.UserIdInitialVal))
@@ -70,7 +92,7 @@ func (s *InitService) BasicConfigInit() {
 		State:    true,
 		Hint:     "网站升级中, 暂时无法访问 !!!",
 	}
-	_ = repository.SaveSiteBasic(bc)
+	_ = repository.SaveSiteBasic(bc) // SaveSiteBasic 内部应处理 FirstOrCreate 逻辑
 }
 
 func (s *InitService) BannersInit() {
@@ -95,16 +117,17 @@ func (s *InitService) FilmSourceInit() {
 	if repository.ExistCollectSourceList() {
 		return
 	}
+	// 直接初始化采集源 - 使用 URI 哈希作为 ID 确保服务重启后顺序一致且支持主从切换
 	l := []model.FilmSource{
-		{Id: utils.GenerateSalt(), Name: "HD(LZ)", Uri: `https://cj.lziapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.MasterCollect, SyncPictures: false, CollectType: model.CollectVideo, State: true, Interval: 500},
-		{Id: utils.GenerateSalt(), Name: "HD(BF)", Uri: `https://bfzyapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
-		{Id: utils.GenerateSalt(), Name: "HD(FF)", Uri: `http://cj.ffzyapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
-		{Id: utils.GenerateSalt(), Name: "HD(OK)", Uri: `https://okzyapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
-		{Id: utils.GenerateSalt(), Name: "HD(HM)", Uri: `https://json.heimuer.xyz/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
-		{Id: utils.GenerateSalt(), Name: "HD(LY)", Uri: `https://360zy.com/api.php/provide/vod/at/json`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
-		{Id: utils.GenerateSalt(), Name: "HD(SN)", Uri: `https://suoniapi.com/api.php/provide/vod/from/snm3u8/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
-		{Id: utils.GenerateSalt(), Name: "HD(DB)", Uri: `https://caiji.dbzy.tv/api.php/provide/vod/from/dbm3u8/at/json/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
-		{Id: utils.GenerateSalt(), Name: "HD(IK)", Uri: `https://ikunzyapi.com/api.php/provide/vod/at/json`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
+		{Name: "HD(LZ)", Uri: `https://cj.lziapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.MasterCollect, SyncPictures: false, CollectType: model.CollectVideo, State: true, Interval: 500},
+		{Name: "HD(BF)", Uri: `https://bfzyapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
+		{Name: "HD(FF)", Uri: `http://cj.ffzyapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
+		{Name: "HD(OK)", Uri: `https://okzyapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
+		{Name: "HD(HM)", Uri: `https://json.heimuer.xyz/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
+		{Name: "HD(LY)", Uri: `https://360zy.com/api.php/provide/vod/at/json`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
+		{Name: "HD(SN)", Uri: `https://suoniapi.com/api.php/provide/vod/from/snm3u8/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
+		{Name: "HD(DB)", Uri: `https://caiji.dbzy.tv/api.php/provide/vod/from/dbm3u8/at/json/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
+		{Name: "HD(IK)", Uri: `https://ikunzyapi.com/api.php/provide/vod/at/json`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
 	}
 	if err := repository.BatchAddCollectSource(l); err != nil {
 		log.Println("BatchAddCollectSource Error: ", err)
@@ -113,80 +136,55 @@ func (s *InitService) FilmSourceInit() {
 
 func (s *InitService) CollectCrontabInit() {
 	if repository.ExistTask() {
-		for _, task := range repository.GetAllFilmTask() {
-			switch task.Model {
-			case 0:
-				cid, err := spider.AddAutoUpdateCron(task.Id, task.Spec)
-				if err != nil {
-					log.Println("影视自动更新任务添加失败: ", err.Error())
-					continue
-				}
-				task.Cid = cid
-			case 1:
-				cid, err := spider.AddFilmUpdateCron(task.Id, task.Spec)
-				if err != nil {
-					log.Println("影视更新定时任务添加失败: ", err.Error())
-					continue
-				}
-				task.Cid = cid
-			case 2:
-				cid, err := spider.AddFilmRecoverCron(task.Id, task.Spec)
-				if err != nil {
-					log.Println("自动清理失败采集记录定时任务添加失败: ", err.Error())
-					continue
-				}
-				task.Cid = cid
-			case 3:
-				cid, err := spider.AddOrphanCleanCron(task.Id, task.Spec)
-				if err != nil {
-					log.Println("孤儿数据清理定时任务添加失败: ", err.Error())
-					continue
-				}
-				task.Cid = cid
+		if tasks := repository.GetAllFilmTask(); len(tasks) > 0 {
+			for _, task := range tasks {
+				s.registerTask(task)
 			}
-			spider.RegisterTaskCid(task.Id, task.Cid)
-			repository.UpdateFilmTask(task)
 		}
 	} else {
-		task := model.FilmCollectTask{
-			Id: utils.GenerateSalt(), Time: config.DefaultUpdateTime, Spec: config.DefaultUpdateSpec,
-			Model: 0, State: false, Remark: fmt.Sprintf("每20分钟自动采集已启用站点最近 %d 小时内更新的影片", config.DefaultUpdateTime),
-		}
-		cid, err := spider.AddAutoUpdateCron(task.Id, task.Spec)
-		if err != nil {
-			log.Println("影视更新定时任务添加失败: ", err.Error())
-			return
-		}
-		task.Cid = cid
-		spider.RegisterTaskCid(task.Id, cid)
-		repository.SaveFilmTask(task)
-
-		recoverTask := model.FilmCollectTask{
-			Id: utils.GenerateSalt(), Time: 0, Spec: config.EveryWeekSpec,
-			Model: 2, State: false, Remark: "每周日凌晨4点清理采集失败的记录",
-		}
-		cid, err = spider.AddFilmRecoverCron(recoverTask.Id, recoverTask.Spec)
-		if err != nil {
-			log.Println("失败采集恢复定时任务添加失败: ", err.Error())
-			return
-		}
-		recoverTask.Cid = cid
-		spider.RegisterTaskCid(recoverTask.Id, cid)
-		repository.SaveFilmTask(recoverTask)
-
-		orphanTask := model.FilmCollectTask{
-			Id: utils.GenerateSalt(), Time: 0, Spec: "0 0 0 * * *",
-			Model: 3, State: false, Remark: "每天凌晨0点清理无主影片的孤儿播放列表",
-		}
-		cid, err = spider.AddOrphanCleanCron(orphanTask.Id, orphanTask.Spec)
-		if err != nil {
-			log.Println("孤儿数据清理定时任务添加失败: ", err.Error())
-			return
-		}
-		orphanTask.Cid = cid
-		spider.RegisterTaskCid(orphanTask.Id, cid)
-		repository.SaveFilmTask(orphanTask)
+		// 初始任务预设
+		s.createDefaultTasks()
 	}
 
 	spider.CronCollect.Start()
+}
+
+func (s *InitService) registerTask(task model.FilmCollectTask) {
+	var cid cron.EntryID
+	var err error
+	switch task.Model {
+	case 0:
+		cid, err = spider.AddAutoUpdateCron(task.Id, task.Spec)
+	case 1:
+		cid, err = spider.AddFilmUpdateCron(task.Id, task.Spec)
+	case 2:
+		cid, err = spider.AddFilmRecoverCron(task.Id, task.Spec)
+	case 3:
+		cid, err = spider.AddOrphanCleanCron(task.Id, task.Spec)
+	}
+	if err == nil {
+		task.Cid = cid
+		spider.RegisterTaskCid(task.Id, task.Cid)
+		repository.UpdateFilmTask(task)
+	}
+}
+
+func (s *InitService) createDefaultTasks() {
+	task := model.FilmCollectTask{
+		Id: utils.GenerateSalt(), Time: config.DefaultUpdateTime, Spec: config.DefaultUpdateSpec,
+		Model: 0, State: false, Remark: fmt.Sprintf("每20分钟自动采集已启用站点最近 %d 小时内更新的影片", config.DefaultUpdateTime),
+	}
+	s.registerTask(task)
+
+	recoverTask := model.FilmCollectTask{
+		Id: utils.GenerateSalt(), Time: 0, Spec: config.EveryWeekSpec,
+		Model: 2, State: false, Remark: "每周日凌晨4点清理采集失败的记录",
+	}
+	s.registerTask(recoverTask)
+
+	orphanTask := model.FilmCollectTask{
+		Id: utils.GenerateSalt(), Time: 0, Spec: "0 0 0 * * *",
+		Model: 3, State: false, Remark: "每天凌晨0点清理无主影片的孤儿播放列表",
+	}
+	s.registerTask(orphanTask)
 }

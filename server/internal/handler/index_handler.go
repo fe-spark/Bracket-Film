@@ -143,12 +143,21 @@ func (h *IndexHandler) FilmTagSearch(c *gin.Context) {
 	page := dto.GetPageParams(c)
 	page.PageSize = 49
 
+	cat := service.IndexSvc.GetPidCategory(params.Pid)
+	var title string
+	if cat != nil && cat.Category != nil {
+		title = cat.Category.Name
+	} else {
+		title = "未知分类"
+	}
+
 	list := service.IndexSvc.GetFilmsByTags(params, page)
+	searchTags := service.IndexSvc.SearchTags(params)
 
 	dto.Success(gin.H{
-		"title":  service.IndexSvc.GetPidCategory(params.Pid).Category,
+		"title":  title,
 		"list":   list,
-		"search": service.IndexSvc.SearchTags(params),
+		"search": searchTags,
 		"params": map[string]string{
 			"Pid":      pidStr,
 			"Category": cidStr,

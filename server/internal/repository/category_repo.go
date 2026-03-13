@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // 简易内存映射：仅用于爬虫入库等批量场景的高频查找，避免过多的数据库 IO
@@ -95,65 +96,67 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 			cache[fmt.Sprintf("%d_%s", c.Pid, c.Name)] = c.Id
 		}
 
-		// 2. 指针映射表：节点指针 -> 真实数据库 ID (用于在后续层级中找父 ID)
-		pointerToId := make(map[*model.CategoryTree]int64)
-		pointerToId[tree] = 0 // 树根 (Pid=-1) 的逻辑 ID 对应 0
+		// 2. 指针映射表：节点指针 -> 真实维护的 Pid (MainCategory.Id)
+		pointerToMainId := make(map[*model.CategoryTree]int64)
 
-		// 3. 第一阶段：处理树的第一层子节点 (通常是“电影”、“电视剧”等根分类)
-		var newRoots []*model.Category
+		// 3. 第一阶段：处理采集站的第一层 (通常是电影、电视剧等)
+		// 我们不直接存这些分类到 Category 表，而是将其作为映射依据
 		for _, node := range tree.Children {
-			key := fmt.Sprintf("0_%s", node.Name)
-			if id, ok := cache[key]; ok {
-				pointerToId[node] = id
-				// 关键点：回填真实 ID 到内存对象中，供后续流程使用
-				node.Id = id
-			} else {
-				// 准备批量入库 (不带 ID，交由 DB 自增)
-				c := &model.Category{Name: node.Name, Pid: 0, Show: true}
-				newRoots = append(newRoots, c)
-				node.Category = c
+			// 识别它是我们的哪个标准大类
+			mainId := GetMainCategoryIdByName(node.Name, node.Id)
+
+			// **动态发现逻辑**：如果映射引擎没能识别，则视其为新发现的大类
+			if mainId == 0 {
+				var newMain model.Category
+				// 尝试通过名称查找或创建
+				if err := tx.Where("pid = 0 AND name = ?", node.Name).FirstOrCreate(&newMain, model.Category{
+					Pid:   0,
+					Name:  node.Name,
+					Alias: node.Name,
+					Show:  true,
+					Sort:  0,
+				}).Error; err != nil {
+					return err
+				}
+				mainId = newMain.Id
 			}
-		}
-		if len(newRoots) > 0 {
-			if err := tx.Create(&newRoots).Error; err != nil {
-				return err
-			}
-		}
-		// 回填新入库大类的真实 ID 到映射表和 node 对象
-		for _, node := range tree.Children {
-			if _, ok := pointerToId[node]; !ok {
-				pointerToId[node] = node.Category.Id
-				node.Id = node.Category.Id
-			}
+			pointerToMainId[node] = mainId
 		}
 
-		// 4. 第二阶段：处理树的第二层 (子类)
+		// 4. 第二阶段：处理采集站的第二层 (子类)
 		var newSubs []*model.Category
 		for _, rootNode := range tree.Children {
-			realPid := pointerToId[rootNode]
+			realPid := pointerToMainId[rootNode]
 			for _, subNode := range rootNode.Children {
-				key := fmt.Sprintf("%d_%s", realPid, subNode.Name)
+				// 剥离名称中的属性 (如 "国产剧" -> "剧集")
+				cleanSubName, _ := MapAttributesFromTypeName(subNode.Name)
+
+				key := fmt.Sprintf("%d_%s", realPid, cleanSubName)
 				if id, ok := cache[key]; ok {
-					pointerToId[subNode] = id
 					subNode.Id = id
 					subNode.Pid = realPid
 				} else {
-					subC := &model.Category{Name: subNode.Name, Pid: realPid, Show: true}
+					subC := &model.Category{Name: cleanSubName, Pid: realPid, Show: true}
 					newSubs = append(newSubs, subC)
 					subNode.Category = subC
 				}
 			}
 		}
+
 		if len(newSubs) > 0 {
-			if err := tx.Create(&newSubs).Error; err != nil {
-				return err
+			// 对于新出现的类型，执行去重入库
+			for _, ns := range newSubs {
+				// 再次检查防止本次批量内重复 (虽然 tree 一般不会有重复)
+				if err := tx.Where("pid = ? AND name = ?", ns.Pid, ns.Name).FirstOrCreate(ns).Error; err != nil {
+					return err
+				}
 			}
-			// 回填子类 ID
+			// 回填入库后的 ID
 			for _, rootNode := range tree.Children {
 				for _, subNode := range rootNode.Children {
 					if subNode.Category != nil && subNode.Id == 0 {
 						subNode.Id = subNode.Category.Id
-						subNode.Pid = pointerToId[rootNode]
+						subNode.Pid = subNode.Category.Pid
 					}
 				}
 			}
@@ -167,37 +170,37 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 }
 
 // buildTreeHelper 内部辅助函数：直接从列表构建树形结构内存模型
-func buildTreeHelper(all []model.Category) model.CategoryTree {
-	nodes := make(map[int64]*model.CategoryTree)
-	for _, c := range all {
-		item := c
-		nodes[item.Id] = &model.CategoryTree{
-			Category: &item,
-			Children: make([]*model.CategoryTree, 0),
-		}
-	}
+func buildTreeHelper() model.CategoryTree {
+	var allList []model.Category
+	db.Mdb.Where("`show` = ?", true).Order("pid ASC, sort DESC, id ASC").Find(&allList)
 
+	nodes := make(map[int64]*model.CategoryTree)
 	root := model.CategoryTree{
 		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
 		Children: make([]*model.CategoryTree, 0),
 	}
 
-	for _, c := range all {
-		node := nodes[c.Id]
-		if c.Pid == 0 {
+	for _, c := range allList {
+		item := c
+		node := &model.CategoryTree{
+			Category: &item,
+			Children: make([]*model.CategoryTree, 0),
+		}
+		nodes[item.Id] = node
+
+		if item.Pid == 0 {
 			root.Children = append(root.Children, node)
-		} else if parent, ok := nodes[c.Pid]; ok {
+		} else if parent, ok := nodes[item.Pid]; ok {
 			parent.Children = append(parent.Children, node)
 		}
 	}
+
 	return root
 }
 
 // GetCategoryTree 获取完整分类树副本 (实时查库，不走长期缓存)
 func GetCategoryTree() model.CategoryTree {
-	var all []model.Category
-	db.Mdb.Find(&all)
-	return buildTreeHelper(all)
+	return buildTreeHelper()
 }
 
 // GetActiveCategoryTree 获取仅包含有影视内容的分类树副本 (实时查库 + Redis 缓存)
@@ -210,50 +213,62 @@ func GetActiveCategoryTree() model.CategoryTree {
 		}
 	}
 
-	// 2. 获取所有配置显示且未删除的分类
-	var all []model.Category
-	db.Mdb.Where("`show` = ?", true).Find(&all)
-
-	// 3. 实时查出哪些 Pid 和 Cid 下面真的存有视频记录 (DISTINCT)
-	var activeIds []int64
-	db.Mdb.Raw("SELECT DISTINCT pid FROM search_info UNION SELECT DISTINCT cid FROM search_info").Pluck("pid", &activeIds)
-
-	activeMap := make(map[int64]bool)
-	for _, id := range activeIds {
-		activeMap[id] = true
+	// 2. 获取活跃的 Pid (MainCategory) 和 Cid (Category)
+	var activeCids []int64
+	db.Mdb.Raw("SELECT DISTINCT cid FROM search_info").Pluck("cid", &activeCids)
+	activeCidMap := make(map[int64]bool)
+	for _, id := range activeCids {
+		activeCidMap[id] = true
 	}
 
-	// 4. 内存构建树
+	var activePids []int64
+	db.Mdb.Raw("SELECT DISTINCT pid FROM search_info").Pluck("pid", &activePids)
+	activePidMap := make(map[int64]bool)
+	for _, id := range activePids {
+		activePidMap[id] = true
+	}
+
+	// 3. 构建树
+	var allList []model.Category
+	db.Mdb.Where("`show` = ?", true).Order("pid ASC, sort DESC, id ASC").Find(&allList)
+
 	nodes := make(map[int64]*model.CategoryTree)
-	for _, c := range all {
-		item := c
-		nodes[item.Id] = &model.CategoryTree{
-			Category: &item,
-			Children: make([]*model.CategoryTree, 0),
-		}
-	}
-
 	root := model.CategoryTree{
 		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
 		Children: make([]*model.CategoryTree, 0),
 	}
 
-	// 5. 第一遍：挂载子类
-	for _, c := range all {
-		if c.Pid != 0 {
-			if parent, ok := nodes[c.Pid]; ok && activeMap[c.Id] {
+	// 第一遍：创建所有节点
+	for _, c := range allList {
+		item := c
+		node := &model.CategoryTree{
+			Category: &item,
+			Children: make([]*model.CategoryTree, 0),
+		}
+		nodes[item.Id] = node
+	}
+
+	// 第二遍：处理子类并更新父大类的活跃状态
+	for _, c := range allList {
+		if c.Pid == 0 {
+			continue
+		}
+		if activeCidMap[c.Id] {
+			if parent, ok := nodes[c.Pid]; ok {
 				parent.Children = append(parent.Children, nodes[c.Id])
+				activePidMap[c.Pid] = true
 			}
 		}
 	}
 
-	// 6. 第二遍：挂载有数据或有子类的大类到根部
-	for _, c := range all {
-		if c.Pid == 0 {
-			node := nodes[c.Id]
-			if activeMap[c.Id] || len(node.Children) > 0 {
-				root.Children = append(root.Children, node)
-			}
+	// 第三遍：收集活跃的大类到根节点下
+	for _, c := range allList {
+		if c.Pid != 0 {
+			continue
+		}
+		node := nodes[c.Id]
+		if activePidMap[c.Id] || len(node.Children) > 0 {
+			root.Children = append(root.Children, node)
 		}
 	}
 
@@ -290,9 +305,7 @@ func ExistsCategoryTree() bool {
 
 // GetChildrenTree 获取对应主分类下的子分类列表 (实时查库)
 func GetChildrenTree(pid int64) []*model.CategoryTree {
-	var all []model.Category
-	db.Mdb.Find(&all)
-	tree := buildTreeHelper(all)
+	tree := buildTreeHelper()
 
 	if pid == 0 {
 		return tree.Children
@@ -311,4 +324,23 @@ func GetParentId(id int64) int64 {
 		RefreshCategoryCache()
 	}
 	return idToPid[id]
+}
+
+// InitMainCategories 初始化标准大类
+func InitMainCategories() {
+	categories := []model.Category{
+		{Pid: 0, Name: "电影", Alias: "电影,影片,电影片"},
+		{Pid: 0, Name: "电视剧", Alias: "电视剧,连续剧,系列剧,剧集"},
+		{Pid: 0, Name: "动漫", Alias: "动漫,动画,动漫片,动画片"},
+		{Pid: 0, Name: "综艺", Alias: "综艺,综艺片,真人秀,脱口秀"},
+		{Pid: 0, Name: "纪录片", Alias: "纪录片,记录片"},
+		{Pid: 0, Name: "短剧", Alias: "短剧,短剧大全,爽剧"},
+	}
+
+	for _, c := range categories {
+		db.Mdb.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "name"}},
+			DoNothing: true,
+		}).Create(&c)
+	}
 }

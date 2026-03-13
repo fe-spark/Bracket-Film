@@ -81,7 +81,7 @@ func GetAllFilmTask() []model.FilmCollectTask {
 	return tl
 }
 
-// GetFilmTaskById 通过Id获取当前任务信息
+// GetFilmTaskById 通过 Id 获取当前任务信息
 func GetFilmTaskById(id string) (model.FilmCollectTask, error) {
 	var r model.CrontabRecord
 	if err := db.Mdb.Where("task_id = ?", id).First(&r).Error; err != nil {
@@ -102,12 +102,12 @@ func GetFilmTaskById(id string) (model.FilmCollectTask, error) {
 	}, nil
 }
 
-// UpdateFilmTask 更新定时任务信息(直接覆盖Id对应的定时任务信息)
+// UpdateFilmTask 更新定时任务信息 (直接覆盖 Id 对应的定时任务信息)
 func UpdateFilmTask(t model.FilmCollectTask) {
 	SaveFilmTask(t)
 }
 
-// DelFilmTask 通过Id删除对应的定时任务信息
+// DelFilmTask 通过 Id 删除对应的定时任务信息
 func DelFilmTask(id string) {
 	_ = db.Mdb.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("task_id = ?", id).Delete(&model.CrontabRecord{}).Error; err != nil {
@@ -116,6 +116,7 @@ func DelFilmTask(id string) {
 		return tx.Where("task_id = ?", id).Delete(&model.CronSourceRel{}).Error
 	})
 }
+
 
 // ExistTask 是否存在定时任务相关信息
 func ExistTask() bool {
@@ -126,7 +127,7 @@ func ExistTask() bool {
 
 // --------- Collect Source -----------
 
-// GetCollectSourceList 获取采集站API列表
+// GetCollectSourceList 获取采集站 API 列表
 func GetCollectSourceList() []model.FilmSource {
 	var list []model.FilmSource
 	if err := db.Mdb.Order("grade ASC").Find(&list).Error; err != nil {
@@ -136,7 +137,7 @@ func GetCollectSourceList() []model.FilmSource {
 	return list
 }
 
-// GetCollectSourceListByGrade 返回指定类型的采集Api信息 Master | Slave
+// GetCollectSourceListByGrade 返回指定类型的采集 Api 信息 Master | Slave
 func GetCollectSourceListByGrade(grade model.SourceGrade) []model.FilmSource {
 	var list []model.FilmSource
 	if err := db.Mdb.Where("grade = ?", grade).Find(&list).Error; err != nil {
@@ -146,7 +147,7 @@ func GetCollectSourceListByGrade(grade model.SourceGrade) []model.FilmSource {
 	return list
 }
 
-// FindCollectSourceById 通过Id标识获取对应的资源站信息
+// FindCollectSourceById 通过 Id 标识获取对应的资源站信息
 func FindCollectSourceById(id string) *model.FilmSource {
 	var fs model.FilmSource
 	if err := db.Mdb.Where("id = ?", id).First(&fs).Error; err != nil {
@@ -155,7 +156,7 @@ func FindCollectSourceById(id string) *model.FilmSource {
 	return &fs
 }
 
-// DelCollectResource 通过Id删除对应的采集站点信息
+// DelCollectResource 通过 Id 删除对应的采集站点信息
 func DelCollectResource(id string) {
 	_ = db.Mdb.Transaction(func(tx *gorm.DB) error {
 		// 1. 删除关联的定时任务关系
@@ -176,17 +177,23 @@ func AddCollectSource(s model.FilmSource) error {
 	var count int64
 	db.Mdb.Model(&model.FilmSource{}).Where("uri = ?", s.Uri).Count(&count)
 	if count > 0 {
-		return errors.New("当前采集站点信息已存在, 请勿重复添加")
+		return errors.New("当前采集站点信息已存在，请勿重复添加")
 	}
-	// 生成一个短uuid
+	// 基于 URI 生成稳定的哈希 ID，确保服务重启后采集源顺序一致且支持主从切换
 	if s.Id == "" {
-		s.Id = utils.GenerateSalt()
+		s.Id = utils.GenerateHashKey(s.Uri)
 	}
 	return db.Mdb.Create(&s).Error
 }
 
 // BatchAddCollectSource 批量添加采集站信息
 func BatchAddCollectSource(list []model.FilmSource) error {
+	// 为没有 ID 的采集源生成稳定的哈希 ID
+	for i := range list {
+		if list[i].Id == "" {
+			list[i].Id = utils.GenerateHashKey(list[i].Uri)
+		}
+	}
 	return db.Mdb.Create(list).Error
 }
 
@@ -195,7 +202,7 @@ func UpdateCollectSource(s model.FilmSource) error {
 	var count int64
 	db.Mdb.Model(&model.FilmSource{}).Where("id != ? AND uri = ?", s.Id, s.Uri).Count(&count)
 	if count > 0 {
-		return errors.New("当前采集站链接已存在其他站点中, 请勿重复添加")
+		return errors.New("当前采集站链接已存在其他站点中，请勿重复添加")
 	}
 	return db.Mdb.Save(&s).Error
 }
@@ -214,7 +221,8 @@ func ClearAllCollectSource() {
 	}
 }
 
-// ExistCollectSourceList 查询是否已经存在站点list相关数据
+
+// ExistCollectSourceList 查询是否已经存在站点 list 相关数据
 func ExistCollectSourceList() bool {
 	var count int64
 	db.Mdb.Model(&model.FilmSource{}).Count(&count)
@@ -243,7 +251,7 @@ func SaveFailureRecord(fl model.FailureRecord) {
 	if fl.RetryCount <= 0 {
 		fl.RetryCount = 1
 	}
-	// 数据量不多但存在并发问题, 开启事务
+	// 数据量不多但存在并发问题，开启事务
 	err := db.Mdb.Transaction(func(tx *gorm.DB) error {
 		current, err := findPendingFailure(tx, fl)
 		if err == nil {
@@ -269,7 +277,7 @@ func SaveFailureRecord(fl model.FailureRecord) {
 		}
 		return nil
 	})
-	// 如果事务提交失败, 则输出相应信息, (存一份数据到Redis??)
+	// 如果事务提交失败，则输出相应信息，(存一份数据到 Redis??)
 	if err != nil {
 		log.Println("Save failure record affairs failed:", err)
 	}
@@ -277,7 +285,7 @@ func SaveFailureRecord(fl model.FailureRecord) {
 
 // FailureRecordList 获取所有的采集失效记录
 func FailureRecordList(vo model.RecordRequestVo) []model.FailureRecord {
-	// 通过RecordRequestVo,生成查询条件
+	// 通过 RecordRequestVo，生成查询条件
 	qw := db.Mdb.Model(&model.FailureRecord{})
 	if vo.OriginId != "" {
 		qw.Where("origin_id = ?", vo.OriginId)
@@ -300,10 +308,10 @@ func FailureRecordList(vo model.RecordRequestVo) []model.FailureRecord {
 	return list
 }
 
-// FindRecordById 获取id对应的失效记录
+// FindRecordById 获取 id 对应的失效记录
 func FindRecordById(id uint) *model.FailureRecord {
 	var fr model.FailureRecord
-	// 通过ID查询对应的数据
+	// 通过 ID 查询对应的数据
 	if err := db.Mdb.First(&fr, id).Error; err != nil {
 		return nil
 	}
@@ -315,10 +323,10 @@ func PendingRecord() []model.FailureRecord {
 	var list []model.FailureRecord
 	// 1. 获取 hour > 4320 || hour < 0  && status = 1 的影片信息
 	db.Mdb.Where("(hour > 4320 OR hour < 0) AND status = 1").Find(&list)
-	// 2. 获取 hour > 0 && hour < 4320 && status = 1 的影片信息(只获取最早的一条记录)
+	// 2. 获取 hour > 0 && hour < 4320 && status = 1 的影片信息 (只获取最早的一条记录)
 	var fr model.FailureRecord
 	if err := db.Mdb.Where("hour > 0 AND hour < 4320 AND status = 1").Order("hour DESC, created_at ASC").First(&fr).Error; err == nil {
-		// 3. 将 fr 添加到 list中
+		// 3. 将 fr 添加到 list 中
 		list = append(list, fr)
 	}
 	return list
@@ -334,7 +342,7 @@ func ChangeRecord(fr *model.FailureRecord, status int) {
 
 // RetryRecord 修改重试采集成功的记录
 func RetryRecord(id uint, status int) error {
-	// 查询id对应的失败记录
+	// 查询 id 对应的失败记录
 	fr := FindRecordById(id)
 	if fr == nil {
 		return errors.New("failure record not found")

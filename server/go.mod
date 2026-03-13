@@ -6,12 +6,12 @@ toolchain go1.24.10
 
 require (
 	github.com/gin-gonic/gin v1.9.0
+	github.com/go-sql-driver/mysql v1.7.0
 	github.com/gocolly/colly/v2 v2.1.0
 	github.com/golang-jwt/jwt/v5 v5.1.0
 	github.com/longbridgeapp/opencc v0.3.13
 	github.com/redis/go-redis/v9 v9.0.2
 	github.com/robfig/cron/v3 v3.0.1
-	golang.org/x/net v0.8.0
 	golang.org/x/sync v0.19.0
 	golang.org/x/time v0.14.0
 	gorm.io/driver/mysql v1.4.7
@@ -32,7 +32,6 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.12.0 // indirect
-	github.com/go-sql-driver/mysql v1.7.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
@@ -55,6 +54,7 @@ require (
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	golang.org/x/arch v0.3.0 // indirect
 	golang.org/x/crypto v0.7.0 // indirect
+	golang.org/x/net v0.8.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
 	golang.org/x/text v0.8.0 // indirect
 	google.golang.org/appengine v1.6.6 // indirect

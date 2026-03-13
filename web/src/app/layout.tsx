@@ -9,6 +9,8 @@ const outfit = Outfit({
   weight: ["300", "400", "500", "600", "700", "800", "900"],
 });
 
+import { ApiGet } from "@/lib/api";
+
 export async function generateMetadata(): Promise<Metadata> {
   let siteName = "";
   let describe = "";
@@ -16,18 +18,12 @@ export async function generateMetadata(): Promise<Metadata> {
   let icon = "";
 
   try {
-    const apiUrl = process.env.API_URL || "http://127.0.0.1:3601";
-    const res = await fetch(`${apiUrl}/config/basic`, {
-      next: { revalidate: 60 },
-    });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.code === 0 && json.data) {
-        siteName = json.data.siteName || "";
-        describe = json.data.describe || "";
-        keyword = json.data.keyword || "";
-        icon = json.data.logo || "";
-      }
+    const res = await ApiGet("/config/basic");
+    if (res && res.code === 0 && res.data) {
+      siteName = res.data.siteName || "";
+      describe = res.data.describe || "";
+      keyword = res.data.keyword || "";
+      icon = res.data.logo || "";
     }
   } catch (err) {
     console.error("fetch metadata error:", err);

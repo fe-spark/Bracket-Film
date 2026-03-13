@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+
 // ExistSearchTable 检查搜索表是否存在
 func ExistSearchTable() bool {
 	return db.Mdb.Migrator().HasTable(&model.SearchInfo{})
@@ -112,61 +113,9 @@ func BatchSaveOrUpdate(list []model.SearchInfo) map[string]int64 {
 	}
 
 	BatchHandleSearchTag(list...)
-	// 3. 异步同步标签关系表 (规范化存储以供高性能联动)
-	go SyncMovieTagRel(latestInfos)
-
 	return keyToMid
 }
 
-// SyncMovieTagRel 同步影片与各维度标签的关系表 (供智能联动筛选使用)
-func SyncMovieTagRel(list []model.SearchInfo) {
-	if len(list) == 0 {
-		return
-	}
-
-	var mids []int64
-	for _, v := range list {
-		mids = append(mids, v.Mid)
-	}
-
-	// 在独立事务中处理
-	_ = db.Mdb.Transaction(func(tx *gorm.DB) error {
-		// 1. 清理旧的关系
-		tx.Where("mid IN ?", mids).Delete(&model.MovieTagRel{})
-
-		// 2. 构造新的关系集合
-		var rels []model.MovieTagRel
-		for _, v := range list {
-			// Area
-			if v.Area != "" && v.Area != "全部" && v.Area != "其它" {
-				rels = append(rels, model.MovieTagRel{Mid: v.Mid, TagType: "Area", TagValue: v.Area})
-			}
-			// Language
-			if v.Language != "" && v.Language != "全部" && v.Language != "其它" {
-				rels = append(rels, model.MovieTagRel{Mid: v.Mid, TagType: "Language", TagValue: v.Language})
-			}
-			// Year
-			if v.Year > 0 {
-				rels = append(rels, model.MovieTagRel{Mid: v.Mid, TagType: "Year", TagValue: fmt.Sprint(v.Year)})
-			}
-			// Plot (从 class_tag 中拆分)
-			if v.ClassTag != "" {
-				plots := strings.SplitSeq(v.ClassTag, ",")
-				for p := range plots {
-					p = strings.TrimSpace(p)
-					if p != "" && p != "全部" && p != "其它" {
-						rels = append(rels, model.MovieTagRel{Mid: v.Mid, TagType: "Plot", TagValue: p})
-					}
-				}
-			}
-		}
-
-		if len(rels) > 0 {
-			tx.CreateInBatches(&rels, 500)
-		}
-		return nil
-	})
-}
 
 func SaveSearchInfo(s model.SearchInfo) error {
 	// 同样采用 ContentKey 去重策略，确保 Mid 唯一归约
@@ -192,8 +141,6 @@ func SaveSearchInfo(s model.SearchInfo) error {
 			SourceMid: s.Mid,
 			GlobalMid: info.Mid,
 		})
-		// 同步标签关系表 (规范化)
-		go SyncMovieTagRel([]model.SearchInfo{info})
 	}
 
 	BatchHandleSearchTag(s)
@@ -344,18 +291,16 @@ func BatchHandleSearchTag(infos ...model.SearchInfo) {
 		if info.Pid <= 0 {
 			continue
 		}
-		// 新增：将所属分类 ID 作为一个动态标签，只有该分类下有视频时才会在筛选栏出现
-		// 注意：如果 Cid == Pid，说明是直接关联到大类的异常数据，这种情况下不生成 Category 标签，避免大类名称出现在筛选子项中
-		if info.Cid > 0 && info.Cid != info.Pid {
-			// 查找分类名称
-			cName := info.CName
-			if cName == "" {
-				// 如果没有 CName (SearchInfo 结构可能未填)，则回退到静态查询或缓存
-				// 这里假设 SearchInfo.CName 是有的
-			}
-			HandleSearchTags(cName, "Category", info.Pid, fmt.Sprint(info.Cid))
-		}
-		HandleSearchTags(info.ClassTag, "Plot", info.Pid)
+		// 获取大类名称用于清洗
+		mName := GetMainCategoryName(info.Pid)
+
+		// 恢复 Category 维度的标签生成，用于支持按需隐藏子类
+		HandleSearchTags(info.CName, "Category", info.Pid, fmt.Sprint(info.Cid))
+
+		// 清洗后的剧情标签
+		cleanPlot := CleanPlotTags(info.ClassTag, info.Area, mName, info.CName)
+		HandleSearchTags(cleanPlot, "Plot", info.Pid)
+
 		HandleSearchTags(info.Area, "Area", info.Pid)
 		HandleSearchTags(info.Language, "Language", info.Pid)
 		// 新增：动态年分标签
@@ -368,6 +313,7 @@ func BatchHandleSearchTag(infos ...model.SearchInfo) {
 	ClearAllSearchTagsCache()
 }
 
+
 func SaveSearchTag(search model.SearchInfo) {
 	BatchHandleSearchTag(search)
 }
@@ -378,9 +324,7 @@ func ensureStaticTagsForPid(pid int64) {
 		return
 	}
 
-	// 此时不再初始化 Year，年份将随数据动态生成
-
-	// 3. 初始化 Initial (A-Z)
+	// 2. 初始化 Initial (A-Z)
 	var initialItems []model.SearchTagItem
 	for i := 65; i <= 90; i++ {
 		v := string(rune(i))
@@ -388,7 +332,7 @@ func ensureStaticTagsForPid(pid int64) {
 	}
 	db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&initialItems)
 
-	// 4. 初始化 Sort
+	// 3. 初始化 Sort
 	sortItems := []model.SearchTagItem{
 		{Pid: pid, TagType: "Sort", Name: "时间排序", Value: "update_stamp", Score: 3},
 		{Pid: pid, TagType: "Sort", Name: "人气排序", Value: "hits", Score: 2},
@@ -401,12 +345,14 @@ func ensureStaticTagsForPid(pid int64) {
 	initializedPids.Store(pid, true)
 }
 
-func HandleSearchTags(preTags string, tagType string, pid int64, customValues ...string) {
-	preTags = regexp.MustCompile(`[\s\n\r]+`).ReplaceAllString(preTags, "")
+func HandleSearchTags(allTags string, tagType string, pid int64, customValues ...string) {
+	allTags = regexp.MustCompile(`[\s\n\r]+`).ReplaceAllString(allTags, "")
+	// 分隔符增强：支持由 CleanPlotTags 生成的逗号，以及采集站原始的斜杠、点等
+	parts := regexp.MustCompile(`[/,，、\s\.\+\|]`).Split(allTags, -1)
 
 	upsert := func(v string, customVal ...string) {
 		v = strings.TrimSpace(v)
-		if v == "" || v == "其它" {
+		if v == "" || v == "其它" || v == "其他" || v == "全部" || v == "剧情" || v == "暂无" {
 			return
 		}
 
@@ -418,9 +364,12 @@ func HandleSearchTags(preTags string, tagType string, pid int64, customValues ..
 		score := int64(1)
 		doUpdates := clause.Assignments(map[string]any{"score": gorm.Expr("score + 1")})
 
-		// 年份特殊处理：分值即年份，确保按年份倒序排列
+		// 年份特殊处理：分值即年份，确保按年份倒序排列，同时剔除不合法的 0 年份
 		if tagType == "Year" {
 			y, _ := strconv.Atoi(v)
+			if y <= 0 {
+				return
+			}
 			score = int64(y)
 			doUpdates = clause.Assignments(map[string]any{"score": score}) // 年份分数固定为年份值
 		}
@@ -431,29 +380,12 @@ func HandleSearchTags(preTags string, tagType string, pid int64, customValues ..
 		}).Create(&model.SearchTagItem{Pid: pid, TagType: tagType, Name: v, Value: val, Score: score})
 	}
 
-	if tagType == "Category" && len(customValues) > 0 {
-		upsert(preTags, customValues[0])
-		return
-	}
-
-	if preTags == "" || preTags == "其它" {
-		return
-	}
-	var vals []string
-	switch {
-	case strings.Contains(preTags, "/"):
-		vals = strings.Split(preTags, "/")
-	case strings.Contains(preTags, ","):
-		vals = strings.Split(preTags, ",")
-	case strings.Contains(preTags, "，"):
-		vals = strings.Split(preTags, "，")
-	case strings.Contains(preTags, "、"):
-		vals = strings.Split(preTags, "、")
-	default:
-		vals = []string{preTags}
-	}
-	for _, v := range vals {
-		upsert(v)
+	for _, t := range parts {
+		if tagType == "Category" && len(customValues) > 0 {
+			upsert(t, customValues[0])
+		} else {
+			upsert(t)
+		}
 	}
 }
 
@@ -481,17 +413,31 @@ func ConvertSearchInfo(sourceId string, detail model.MovieDetail) model.SearchIn
 		contentKey = fmt.Sprintf("name_%s", utils.GenerateHashKey(detail.Name))
 	}
 
-	// 关键修复 1：基于分类名称 (CName) 从数据库获取我们维护的稳定 Cid
-	// 这样即使不同站点的 Cid 不同，只要名称一致（如“动作片”），就能归约为同一个分类 ID
-	resolvedCid := GetCidByName(detail.CName)
+	// --- 关键重构：使用标准化映射引擎 ---
+
+	// 1. 识别标准大类 ID (Pid)
+	correctPid := GetMainCategoryIdByName(detail.CName, detail.Pid)
+
+	// 2. 剥离分类名中的属性 (如 "国产剧" -> "剧集" + "大陆")
+	cleanCName, typeArea := MapAttributesFromTypeName(detail.CName)
+
+	// 3. 寻找或映射稳定的二级分类 ID (Cid)
+	resolvedCid := GetCidByName(cleanCName)
 	if resolvedCid == 0 {
-		// 兜底：如果名称没对上，暂时保留原始 Cid (虽然可能导致归位失败，但好过丢掉)
+		// 如果是新类型，暂时保留原始 Cid，但在后续入库流程中会自动对齐
 		resolvedCid = detail.Cid
 	}
 
-	// 关键修复 2：根据解析后的 Cid 实时查询正确的 Pid
-	// 这确保了影片能正确归类到“电影”、“电视剧”等智能根分类下，从而让筛选标签正常显示
-	correctPid := GetRootId(resolvedCid)
+	// 4. 标准化 Area 和 Language
+	finalArea := NormalizeArea(detail.Area)
+	if typeArea != "" && !strings.Contains(finalArea, typeArea) {
+		finalArea = typeArea + (map[bool]string{true: "," + finalArea, false: ""})[finalArea != "其他"]
+	}
+	finalLang := NormalizeLanguage(detail.Language)
+
+	// 5. 剧情标签清洗 (去除冗余关键词，如大类名、地区名、通用冗余词)
+	mName := GetMainCategoryName(correctPid)
+	finalClassTag := CleanPlotTags(detail.ClassTag, finalArea, mName, cleanCName)
 
 	return model.SearchInfo{
 		Mid:          detail.Id,
@@ -501,10 +447,10 @@ func ConvertSearchInfo(sourceId string, detail model.MovieDetail) model.SearchIn
 		Pid:          correctPid,
 		Name:         detail.Name,
 		SubTitle:     detail.SubTitle,
-		CName:        detail.CName,
-		ClassTag:     detail.ClassTag,
-		Area:         detail.Area,
-		Language:     detail.Language,
+		CName:        cleanCName,
+		ClassTag:     finalClassTag,
+		Area:         finalArea,
+		Language:     finalLang,
 		Year:         year,
 		Initial:      detail.Initial,
 		Score:        score,
@@ -773,51 +719,27 @@ func GetMovieDetailByDBID(mid int64, name string) []model.MoviePlaySource {
 	return mps
 }
 
-func GetTagsByTitle(pid int64, tagType string, activeValues map[string]bool, stickyValue string) []string {
+func GetTagsByTitle(pid int64, tagType string, stickyValue string) []string {
 	var tags []string
 
 	var items []model.SearchTagItem
-	// 对于 Plot, Area, Language, Category 提高展示上限到 30
 	limit := 30
-	if tagType == "Plot" {
-		limit = 11 // 剧情类保持较少
-	}
+	scoreThreshold := int64(9)
 
 	query := db.Mdb.Where("pid = ? AND tag_type = ?", pid, tagType)
+	if scoreThreshold > 0 {
+		query = query.Where("score > ?", scoreThreshold)
+	}
+
 	if tagType == "Category" {
-		// 排除大类本身 (Value 等于 Pid 的项)
 		query = query.Where("value != ?", fmt.Sprint(pid))
 	}
 	query.Order("score DESC").Limit(limit).Find(&items)
 
-	// 核心逻辑：即时存在性校验 (Result-Driven)
 	for _, item := range items {
-		// 粘性逻辑：如果是当前选中的，无论如何都显示
-		if stickyValue != "" && item.Value == stickyValue {
-			tags = append(tags, fmt.Sprintf("%s:%s", item.Name, item.Value))
-			continue
-		}
-
-		// 存在性判断
-		if activeValues != nil {
-			// 如果外部传入了精准的已锁定标签集（如联动查询时），直接使用
-			if activeValues[item.Value] {
-				tags = append(tags, fmt.Sprintf("%s:%s", item.Name, item.Value))
-			}
-		} else if tagType == "Plot" {
-			// Plot 在没有预计算 activeValues 时走模糊匹配兜底 (例如简单的面板初始化)
-			var exists int64
-			db.Mdb.Model(&model.SearchInfo{}).Where("pid = ? AND class_tag LIKE ?", pid, fmt.Sprintf("%%%s%%", item.Value)).Limit(1).Count(&exists)
-			if exists > 0 {
-				tags = append(tags, fmt.Sprintf("%s:%s", item.Name, item.Value))
-			}
-		} else {
-			// 其他类型在没有 activeValues 时暂时不做即时校验 (通常走缓存)
-			tags = append(tags, fmt.Sprintf("%s:%s", item.Name, item.Value))
-		}
+		tags = append(tags, fmt.Sprintf("%s:%s", item.Name, item.Value))
 	}
 
-	// 关键修复：如果数据库中缺失静态标签（Year, Sort），自动提供默认值
 	if len(tags) == 0 {
 		switch tagType {
 		case "Sort":
@@ -832,15 +754,11 @@ func GetTagsByTitle(pid int64, tagType string, activeValues map[string]bool, sti
 	return tags
 }
 
-// GetTopTagValues 获取某个维度的“热门/展示”值集，用于“其它”逻辑的排除参考
 func GetTopTagValues(pid int64, tagType string) []string {
 	var items []model.SearchTagItem
-	limit := 30
-	if tagType == "Plot" {
-		limit = 11
-	}
+	limit := 12
 
-	query := db.Mdb.Where("pid = ? AND tag_type = ?", pid, tagType)
+	query := db.Mdb.Where("pid = ? AND tag_type = ? AND score >= 10", pid, tagType)
 	if tagType == "Category" {
 		query = query.Where("value != ?", fmt.Sprint(pid))
 	}
@@ -853,7 +771,7 @@ func GetTopTagValues(pid int64, tagType string) []string {
 	return vals
 }
 
-func HandleTagStr(pid int64, title string, activeValues map[string]bool, stickyValue string, tags ...string) []map[string]string {
+func HandleTagStr(title string, stickyValue string, tags ...string) []map[string]string {
 	list := make([]map[string]string, 0)
 
 	// 除排序外，默认都有“全部”选项
@@ -862,38 +780,16 @@ func HandleTagStr(pid int64, title string, activeValues map[string]bool, stickyV
 		list = append(list, map[string]string{"Name": "全部", "Value": ""})
 	}
 
-	hotValueMap := make(map[string]bool)
 	for _, t := range tags {
 		if sl := strings.Split(t, ":"); len(sl) > 1 {
 			list = append(list, map[string]string{"Name": sl[0], "Value": sl[1]})
-			hotValueMap[sl[1]] = true
 		}
 	}
 
 	// 针对特定类型，恢复显示“其它”选项
 	if strings.EqualFold(title, "Plot") || strings.EqualFold(title, "Area") ||
 		strings.EqualFold(title, "Language") || strings.EqualFold(title, "Year") {
-
-		// 粘性逻辑：如果当前选中的就是“其它”，必须强制显示
-		if stickyValue == "其它" {
-			list = append(list, map[string]string{"Name": "其它", "Value": "其它"})
-		} else if activeValues == nil {
-			// 如果没有联动上下文（如初次加载或兜底），默认显示“其它”以保证入口存在
-			list = append(list, map[string]string{"Name": "其它", "Value": "其它"})
-		} else {
-			// 【性能优化】在联动上下文中，不再执行 Count 语句
-			// 逻辑：如果当前维度的有效值集 (activeValues) 中包含不在热门列表 (hotValueMap) 里的值，就显示“其它”
-			hasOthers := false
-			for val := range activeValues {
-				if !hotValueMap[val] {
-					hasOthers = true
-					break
-				}
-			}
-			if hasOthers {
-				list = append(list, map[string]string{"Name": "其它", "Value": "其它"})
-			}
-		}
+		list = append(list, map[string]string{"Name": "其它", "Value": "其它"})
 	}
 
 	return list
@@ -935,111 +831,17 @@ func GetSearchTag(st model.SearchTagsVO) map[string]any {
 
 	// 1. 批量加载候选标签 (SearchTagItem)
 	var allItems []model.SearchTagItem
-	db.Mdb.Where("pid = ?", pid).Order("score DESC").Limit(500).Find(&allItems)
+	db.Mdb.Where("pid = ? AND score >= 10", pid).Order("score DESC").Limit(500).Find(&allItems)
 	itemsByType := make(map[string][]model.SearchTagItem)
 	for _, item := range allItems {
-		itemsByType[item.TagType] = append(itemsByType[item.TagType], item)
-	}
-
-	// 2. 检查是否有任何筛选条件处于激活状态 (如果是初始状态，我们可以极大压缩查询)
-	hasFilters := st.Cid > 0 || st.Area != "" || st.Language != "" || st.Year != "" || st.Plot != ""
-
-	// 3. 初始加载加速：如果没有任何筛选，一次性查出该 Pid 下所有维度的活跃标签
-	initialActiveSets := make(map[string]map[string]bool)
-	if !hasFilters {
-		var avs []struct {
-			TagType  string
-			TagValue string
-		}
-		db.Mdb.Table("movie_tag_rel").
-			Select("movie_tag_rel.tag_type, movie_tag_rel.tag_value").
-			Joins("JOIN search_info ON search_info.mid = movie_tag_rel.mid").
-			Where("search_info.pid = ?", pid).
-			Group("movie_tag_rel.tag_type, movie_tag_rel.tag_value").
-			Scan(&avs)
-		for _, av := range avs {
-			if initialActiveSets[av.TagType] == nil {
-				initialActiveSets[av.TagType] = make(map[string]bool)
-			}
-			initialActiveSets[av.TagType][av.TagValue] = true
+		if len(itemsByType[item.TagType]) < 12 {
+			itemsByType[item.TagType] = append(itemsByType[item.TagType], item)
 		}
 	}
 
-	// 4. 多维滚动查询
+	// 2. 构建返回的 Tag 列表 (移除联动，仅展示分类下的 Top 标签)
 	for _, t := range sortList {
 		var sticky string
-		var activeSet map[string]bool
-
-		if !hasFilters {
-			activeSet = initialActiveSets[t]
-		} else {
-			// 联动核心：计算当前行时，应用除本行外其他维度的已选条件
-			query := db.Mdb.Table("search_info").Select("search_info.mid").Where("search_info.pid = ?", pid)
-			if t != "Category" && st.Cid > 0 {
-				if IsRootCategory(st.Cid) {
-					query = query.Where("search_info.pid = ?", st.Cid)
-				} else {
-					query = query.Where("search_info.cid = ?", st.Cid)
-				}
-			}
-			if t != "Area" && st.Area != "" && st.Area != "全部" {
-				if st.Area == "其它" {
-					topVals := GetTopTagValues(pid, "Area")
-					if len(topVals) > 0 {
-						query = query.Where("search_info.area NOT IN ?", topVals)
-					}
-				} else {
-					query = query.Joins("JOIN movie_tag_rel r_area ON r_area.mid = search_info.mid AND r_area.tag_type = 'Area' AND r_area.tag_value = ?", st.Area)
-				}
-			}
-			if t != "Language" && st.Language != "" && st.Language != "全部" {
-				if st.Language == "其它" {
-					topVals := GetTopTagValues(pid, "Language")
-					if len(topVals) > 0 {
-						query = query.Where("search_info.language NOT IN ?", topVals)
-					}
-				} else {
-					query = query.Joins("JOIN movie_tag_rel r_lang ON r_lang.mid = search_info.mid AND r_lang.tag_type = 'Language' AND r_lang.tag_value = ?", st.Language)
-				}
-			}
-			if t != "Year" && st.Year != "" && st.Year != "全部" {
-				if st.Year == "其它" {
-					topVals := GetTopTagValues(pid, "Year")
-					if len(topVals) > 0 {
-						query = query.Where("search_info.year NOT IN ?", topVals)
-					}
-				} else {
-					query = query.Joins("JOIN movie_tag_rel r_year ON r_year.mid = search_info.mid AND r_year.tag_type = 'Year' AND r_year.tag_value = ?", st.Year)
-				}
-			}
-			if t != "Plot" && st.Plot != "" && st.Plot != "全部" {
-				if st.Plot == "其它" {
-					topVals := GetTopTagValues(pid, "Plot")
-					for _, v := range topVals {
-						query = query.Where("search_info.class_tag NOT LIKE ?", fmt.Sprintf("%%%s%%", v))
-					}
-				} else {
-					query = query.Joins("JOIN movie_tag_rel r_plot ON r_plot.mid = search_info.mid AND r_plot.tag_type = 'Plot' AND r_plot.tag_value = ?", st.Plot)
-				}
-			}
-
-			if t == "Category" {
-				var vals []int64
-				db.Mdb.Model(&model.SearchInfo{}).Select("search_info.cid").Joins("JOIN (?) as s ON s.mid = search_info.mid", query).Distinct().Pluck("cid", &vals)
-				activeSet = make(map[string]bool)
-				for _, v := range vals {
-					activeSet[fmt.Sprint(v)] = true
-				}
-			} else if t != "Sort" {
-				var vals []string
-				db.Mdb.Model(&model.MovieTagRel{}).Select("movie_tag_rel.tag_value").Joins("JOIN (?) as s ON s.mid = movie_tag_rel.mid", query).Where("tag_type = ?", t).Distinct().Pluck("tag_value", &vals)
-				activeSet = make(map[string]bool)
-				for _, v := range vals {
-					activeSet[v] = true
-				}
-			}
-		}
-
 		switch t {
 		case "Category":
 			sticky = fmt.Sprint(st.Cid)
@@ -1057,20 +859,12 @@ func GetSearchTag(st model.SearchTagsVO) map[string]any {
 			sticky = st.Year
 		}
 
-		// 构建 Tag 列表
-		candidateItems := itemsByType[t]
 		tagStrs := make([]string, 0)
-		for _, item := range candidateItems {
-			if sticky != "" && item.Value == sticky {
-				tagStrs = append(tagStrs, fmt.Sprintf("%s:%s", item.Name, item.Value))
-				continue
-			}
-			if activeSet == nil || activeSet[item.Value] {
-				tagStrs = append(tagStrs, fmt.Sprintf("%s:%s", item.Name, item.Value))
-			}
+		for _, item := range itemsByType[t] {
+			tagStrs = append(tagStrs, fmt.Sprintf("%s:%s", item.Name, item.Value))
 		}
 
-		tags := HandleTagStr(pid, t, activeSet, sticky, tagStrs...)
+		tags := HandleTagStr(t, sticky, tagStrs...)
 		if t == "Sort" || len(tags) > 1 || (sticky != "" && sticky != "全部") {
 			tagMap[t] = tags
 			activeSortList = append(activeSortList, t)
@@ -1079,9 +873,12 @@ func GetSearchTag(st model.SearchTagsVO) map[string]any {
 	res["sortList"] = activeSortList
 	res["tags"] = tagMap
 
-	// 3. 写入 Redis 缓存 (所有组合均缓存 24 小时)
+	// 3. 写入 Redis 缓存
+	// 缓存策略：2 小时 TTL + AfterSave 主动清除
+	// - 由于 AfterSave 钩子会在影片更新时主动清除 SearchTags 缓存，TTL 可适当缩短
+	// - 2 小时足够应对高频访问，同时保证极端情况下 (缓存未主动清除) 数据最终一致性
 	if data, err := json.Marshal(res); err == nil {
-		db.Rdb.Set(db.Cxt, cacheKey, string(data), time.Hour*24)
+		db.Rdb.Set(db.Cxt, cacheKey, string(data), time.Hour*2)
 	}
 
 	return res
@@ -1102,7 +899,7 @@ func GetSearchOptions(st model.SearchTagsVO) map[string]any {
 	// 回退逻辑 (兜底)
 	tagMap := make(map[string]any)
 	for _, t := range []string{"Plot", "Area", "Language", "Year"} {
-		tagMap[t] = HandleTagStr(st.Pid, t, nil, "", GetTagsByTitle(st.Pid, t, nil, "")...)
+		tagMap[t] = HandleTagStr(t, "", GetTagsByTitle(st.Pid, t, "")...)
 	}
 	return tagMap
 }
@@ -1212,12 +1009,24 @@ func GetSearchInfosByTags(st model.SearchTagsVO, page *dto.Page) []model.SearchI
 				qw = qw.Where(fmt.Sprintf("%s = ?", k), value)
 			case "plot":
 				if vStr, ok := value.(string); ok && strings.EqualFold(vStr, "其它") {
+					// 优化： consolidated NOT LIKE 查询，减少 SQL 复杂度
+					// 获取热门标签列表，排除这些标签的剧情
 					topVals := GetTopTagValues(st.Pid, fieldName)
-					for _, v := range topVals {
-						qw = qw.Where("class_tag NOT LIKE ?", fmt.Sprintf("%%%v%%", v))
+					if len(topVals) > 0 {
+						// 限制 NOT LIKE 子句数量 (最多 5 个),防止 SQL 过于复杂影响性能
+						// 注意：LIKE 查询无法利用索引，但通过限制热门标签数量可减少开销
+						// 未来优化：可考虑引入 Full-Text Search (FTS) 进一步提升性能
+						maxPlotExcludes := 5
+						if len(topVals) < maxPlotExcludes {
+							maxPlotExcludes = len(topVals)
+						}
+						for i := 0; i < maxPlotExcludes; i++ {
+							qw = qw.Where("class_tag NOT LIKE ?", fmt.Sprintf("%%%v%%", topVals[i]))
+						}
 					}
 					break
 				}
+				// 普通剧情标签使用 LIKE 查询
 				qw = qw.Where("class_tag LIKE ?", fmt.Sprintf("%%%v%%", value))
 			case "sort":
 				if sVal, ok := value.(string); ok && strings.EqualFold(sVal, "release_stamp") {
@@ -1243,7 +1052,6 @@ func GetSearchInfosByTags(st model.SearchTagsVO, page *dto.Page) []model.SearchI
 func GetSearchInfoById(id int64) *model.SearchInfo {
 	s := model.SearchInfo{}
 	if err := db.Mdb.Where("mid = ?", id).First(&s).Error; err != nil {
-		log.Printf("GetSearchInfoById Error: %v", err)
 		return nil
 	}
 	return &s
@@ -1271,10 +1079,6 @@ func DelFilmSearch(id int64) error {
 		if err := tx.Where("mid = ?", id).Delete(&model.Banner{}).Error; err != nil {
 			return err
 		}
-		// 5. 删除标签关系
-		if err := tx.Where("mid = ?", id).Delete(&model.MovieTagRel{}).Error; err != nil {
-			return err
-		}
 		return nil
 	})
 
@@ -1295,12 +1099,6 @@ func ShieldFilmSearch(cid int64) error {
 		// 1. 软删除检索信息
 		if err := tx.Where("cid = ?", cid).Delete(&model.SearchInfo{}).Error; err != nil {
 			return err
-		}
-		// 2. 硬删除对应的标签关系 (保持查询结果干净)
-		if len(mids) > 0 {
-			if err := tx.Where("mid IN ?", mids).Delete(&model.MovieTagRel{}).Error; err != nil {
-				return err
-			}
 		}
 		return nil
 	})
@@ -1329,13 +1127,6 @@ func RecoverFilmSearch(cid int64) error {
 	if err != nil {
 		log.Printf("RecoverFilmSearch Error: %v", err)
 		return err
-	}
-
-	// 2. 异步重新同步该分类下所有影片的标签关系 (因为 Shield 时被硬删除了)
-	var infos []model.SearchInfo
-	db.Mdb.Where("cid = ?", cid).Find(&infos)
-	if len(infos) > 0 {
-		go SyncMovieTagRel(infos)
 	}
 
 	// 清除对应 Pid 的搜索标签缓存
@@ -1385,13 +1176,11 @@ func FilmZero() {
 		model.TableVirtualPicture,
 		model.TableSearchTag,
 		model.TableBanners,
-		model.TableMovieTagRel,
 	}
 	for _, t := range tables {
-		if err := db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", t)).Error; err != nil {
-			log.Printf("TRUNCATE TABLE %s Error: %v\n", t, err)
-		}
+		db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", t))
 	}
+	time.Sleep(100 * time.Millisecond)
 
 	// 3. 同步清理采集失败记录，确保彻底清空
 	TruncateRecordTable()
@@ -1410,13 +1199,11 @@ func MasterFilmZero() {
 		model.TableVirtualPicture,
 		model.TableSearchTag,
 		model.TableBanners,
-		model.TableMovieTagRel,
 	}
 	for _, t := range tables {
-		if err := db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", t)).Error; err != nil {
-			log.Printf("TRUNCATE TABLE %s Error: %v\n", t, err)
-		}
+		db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", t))
 	}
+	time.Sleep(100 * time.Millisecond)
 
 	// 清除所有 Redis 缓存
 	ClearCategoryCache()

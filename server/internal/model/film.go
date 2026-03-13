@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"server/internal/config"
 	"server/internal/infra/db"
 	"server/internal/model/dto"
@@ -120,19 +121,19 @@ type SearchInfo struct {
 	Mid          int64   `json:"mid" gorm:"uniqueIndex:idx_mid"`                                                                   // 影片ID (全局唯一)
 	ContentKey   string  `json:"contentKey" gorm:"uniqueIndex:idx_content"`                                                        // 内容指纹 (hash(name) or dbid)
 	SourceId     string  `json:"sourceId" gorm:"index"`                                                                            // 来源站点ID
-	Cid          int64   `json:"cid" gorm:"index;index:idx_pid_update;index:idx_cid_update;index:idx_pid_hits;index:idx_cid_hits"` // 分类ID
-	Pid          int64   `json:"pid" gorm:"index;index:idx_pid_update;index:idx_cid_update;index:idx_pid_hits;index:idx_cid_hits"` // 上级分类ID
-	Name         string  `json:"name"`                                                                                             // 片名
+	Cid          int64   `json:"cid" gorm:"index;index:idx_pid_update;index:idx_cid_update;index:idx_pid_hits;index:idx_cid_hits;index:idx_filter_score;index:idx_filter_update;index:idx_filter_hits"` // 分类ID
+	Pid          int64   `json:"pid" gorm:"index;index:idx_pid_update;index:idx_cid_update;index:idx_pid_hits;index:idx_cid_hits;index:idx_filter_score;index:idx_filter_update;index:idx_filter_hits;constraint:OnDelete:CASCADE"` // 上级分类ID
+	Name         string  `json:"name"`                                                                                                                                                 // 片名
 	SubTitle     string  `json:"subTitle"`                                                                                         // 影片子标题
 	CName        string  `json:"cName"`                                                                                            // 分类名称
 	ClassTag     string  `json:"classTag"`                                                                                         // 类型标签
-	Area         string  `json:"area" gorm:"index"`                                                                                // 地区
-	Language     string  `json:"language" gorm:"index"`                                                                            // 语言
-	Year         int64   `json:"year" gorm:"index"`                                                                                // 年份
+	Area         string  `json:"area" gorm:"index;index:idx_filter_score;index:idx_filter_update;index:idx_filter_hits"`             // 地区
+	Language     string  `json:"language" gorm:"index;index:idx_filter_score;index:idx_filter_update;index:idx_filter_hits"`         // 语言
+	Year         int64   `json:"year" gorm:"index;index:idx_filter_score;index:idx_filter_update;index:idx_filter_hits"`             // 年份
 	Initial      string  `json:"initial"`                                                                                          // 首字母
-	Score        float64 `json:"score" gorm:"index"`                                                                               // 评分
-	UpdateStamp  int64   `json:"updateStamp" gorm:"index;index:idx_pid_update;index:idx_cid_update"`                               // 更新时间
-	Hits         int64   `json:"hits" gorm:"index;index:idx_pid_hits;index:idx_cid_hits"`                                          // 热度排行
+	Score        float64 `json:"score" gorm:"index;index:idx_filter_score"`                                                        // 评分
+	UpdateStamp  int64   `json:"updateStamp" gorm:"index;index:idx_pid_update;index:idx_cid_update;index:idx_filter_update"`         // 更新时间
+	Hits         int64   `json:"hits" gorm:"index;index:idx_pid_hits;index:idx_cid_hits;index:idx_filter_hits"`                     // 热度排行
 	State        string  `json:"state"`                                                                                            // 状态 正片|预告
 	Remarks      string  `json:"remarks"`                                                                                          // 完结 | 更新至x集
 	DbId         int64   `json:"dbId" gorm:"index"`                                                                                // 豆瓣ID (用于精准去重)
@@ -145,15 +146,29 @@ type SearchInfo struct {
 
 // AfterSave GORM 钩子：在数据保存/更新后自动清理缓存，确保首页数据实时性
 func (s *SearchInfo) AfterSave(tx *gorm.DB) (err error) {
+	ctx := context.Background()
+
 	// 1. 清理首页全量缓存
-	db.Rdb.Del(context.Background(), config.IndexPageCacheKey)
+	db.Rdb.Del(ctx, config.IndexPageCacheKey)
 
 	// 2. 清理 TVBox 列表第一页缓存 (由于涉及多种 Sort/Pid/Limit 组合，使用模糊匹配清理)
 	// 注意：此处使用 Keys 操作在数据量极大时可能有性能影响，但考虑到采集频率可控且主要是首页缓存，是合理的
 	pattern := config.TVBoxList + ":*"
-	iter := db.Rdb.Scan(context.Background(), 0, pattern, 100).Iterator()
-	for iter.Next(context.Background()) {
-		db.Rdb.Del(context.Background(), iter.Val())
+	iter := db.Rdb.Scan(ctx, 0, pattern, 100).Iterator()
+	for iter.Next(ctx) {
+		db.Rdb.Del(ctx, iter.Val())
+	}
+
+	// 3. 清理搜索标签缓存 (SearchTags:*), 确保新入库/更新的影片能实时在筛选菜单中体现
+	// 清理当前分类的复合标签缓存 (格式：Search:Tags:{pid}:*)
+	if s.Pid > 0 {
+		tagPattern := fmt.Sprintf("%s:%d:*", config.SearchTags, s.Pid)
+		iter := db.Rdb.Scan(ctx, 0, tagPattern, 100).Iterator()
+		for iter.Next(ctx) {
+			db.Rdb.Del(ctx, iter.Val())
+		}
+		// 兼容基础版 key: Search:Tags:{pid}
+		db.Rdb.Del(ctx, fmt.Sprintf("%s:%d", config.SearchTags, s.Pid))
 	}
 
 	return
@@ -162,25 +177,13 @@ func (s *SearchInfo) AfterSave(tx *gorm.DB) (err error) {
 // SearchTagItem 影片检索标签持久化模型 (MySQL)
 type SearchTagItem struct {
 	gorm.Model
-	Pid     int64  `gorm:"uniqueIndex:uidx_search_tag;not null"`
-	TagType string `gorm:"uniqueIndex:uidx_search_tag;size:32;not null"`  // Category/Plot/Area/Language/Year/Initial/Sort
+	Pid     int64  `gorm:"uniqueIndex:uidx_search_tag;not null;constraint:OnDelete:CASCADE"`
+	TagType string `gorm:"uniqueIndex:uidx_search_tag;size:32;not null"` // Category/Plot/Area/Language/Year/Initial/Sort
 	Name    string `gorm:"size:128;not null"`                             // 展示名称
 	Value   string `gorm:"uniqueIndex:uidx_search_tag;size:128;not null"` // 筛选值
 	Score   int64  `gorm:"default:0"`                                     // 热度权重，用于排序
 }
 
-// MovieTagRel 影片与标签的关系映射表 (用于高性能联动筛选)
-type MovieTagRel struct {
-	Mid      int64  `gorm:"index:idx_mid_tag;primaryKey"`                          // 影片ID
-	TagType  string `gorm:"index:idx_mid_tag;primaryKey;size:32"`                  // 标签类型 (Plot/Area/Language/Year)
-	TagValue string `gorm:"index:idx_mid_tag;index:idx_value;primaryKey;size:128"` // 标签值
-}
-
-func (MovieTagRel) TableName() string {
-	return "movie_tag_rel"
-}
-
-const TableMovieTagRel = "movie_tag_rel"
 
 // Tag 影片分类标签结构体
 type Tag struct {

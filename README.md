@@ -39,6 +39,7 @@ graph TD
         API --> Faceted[Faceted Search Engine]
         API --> Dedupe[Deduplication Logic]
         API --> Mapping[Global ID Mapper]
+        API --> Cleaning[Dynamic Mapping & Cleaning]
     end
 ```
 
@@ -52,6 +53,7 @@ graph TD
 - 📺 **视频代理加速**：内置服务器级 SOCKS5 视频代理重写引擎，完美解决高频切片卡顿与跨域限制。
 - 🛠️ **全站动态配置**：支持网站名称、Logo、SEO 关键字及维护模式一键下发，前端实时适配。
 - 🔍 **内容级去重**：基于 `ContentKey` (豆瓣 ID 或内容指纹) 的全局归一化存储，物理杜绝冗余数据。
+- ⚙️ **动态映射与清洗**：彻底移除硬编码，支持地区、语言及标签黑名单的数据库实时配置，配合多维标签拆解技术，确保海量碎片化数据（如“美国,日本”、“国语,英语”）精准归口。
 - 🔗 **Global ID 映射**：全站 ID 归约技术，确保主站切换后播放历史、书签与 API 接口的持久稳定性。
 - 📺 **全平台兼容**：完美适配 Web 端、原生播放器及 TVBox/MacCMS 系列标准接口。同时可作为 [Bracket-App](https://github.com/fe-spark/Bracket-App) (原生播放端) 的核心视频源。
 
