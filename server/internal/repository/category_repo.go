@@ -341,25 +341,38 @@ func InitMainCategories() {
 		// 1. 确保大类存在
 		db.Mdb.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "name"}},
-			DoNothing:    true,
+			DoNothing: true,
 		}).Create(&c)
 
 		// 2. 如果是新创建或已存在，尝试为其初始化默认排序标签
-		// 先查询大类真实 ID (针对 OnConflict 时 ID 不确定的情况)
 		var realC model.Category
 		if err := db.Mdb.Where("pid = 0 AND name = ?", c.Name).First(&realC).Error; err == nil {
+			fmt.Printf("[Init] 正在为大类 [%s] (ID: %d) 初始化默认排序标签...\n", realC.Name, realC.Id)
 			defaultSorts := []model.SearchTagItem{
 				{Pid: realC.Id, TagType: "Sort", Name: "时间", Value: "update_stamp", Score: 10},
 				{Pid: realC.Id, TagType: "Sort", Name: "人气", Value: "hits", Score: 10},
 				{Pid: realC.Id, TagType: "Sort", Name: "评分", Value: "score", Score: 10},
 				{Pid: realC.Id, TagType: "Sort", Name: "最新", Value: "release_stamp", Score: 10},
 			}
+			var inserted int
 			for _, s := range defaultSorts {
-				db.Mdb.Clauses(clause.OnConflict{
+				result := db.Mdb.Clauses(clause.OnConflict{
 					Columns:   []clause.Column{{Name: "pid"}, {Name: "tag_type"}, {Name: "value"}},
 					DoNothing: true,
 				}).Create(&s)
+				if result.RowsAffected > 0 {
+					inserted++
+				}
 			}
+			if inserted > 0 {
+				fmt.Printf("[Init] 大类 [%s] 已成功插入 %d 条排序标签\n", realC.Name, inserted)
+			}
+
+			// 3. 强制清理该大类的搜索标签缓存，防止旧的空数据干扰
+			cacheKey := fmt.Sprintf("%s:%d", config.SearchTags, realC.Id)
+			db.Rdb.Del(db.Cxt, cacheKey)
+		} else {
+			fmt.Printf("[Init] 警告: 未能在数据库中找到大类 [%s], 跳过属性初始化\n", c.Name)
 		}
 	}
 }
