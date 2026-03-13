@@ -53,10 +53,7 @@ func GetMainCategoryIdByName(typeName string, typePid int64) int64 {
 		return findIdByName(mains, "短剧")
 	}
 
-	// 4. 最后尝试：根据名称包含的关键词进行最后识别
-	if strings.Contains(typeName, "电影") || strings.Contains(typeName, "片") {
-		return findIdByName(mains, "电影")
-	}
+	// 4. 最后尝试：根据名称包含的关键词进行优先级判定 (动漫 > 综艺 > 剧集 > 电影)
 	if strings.Contains(typeName, "动漫") || strings.Contains(typeName, "动画") {
 		return findIdByName(mains, "动漫")
 	}
@@ -65,6 +62,12 @@ func GetMainCategoryIdByName(typeName string, typePid int64) int64 {
 	}
 	if strings.Contains(typeName, "剧") {
 		return findIdByName(mains, "电视剧")
+	}
+	if strings.Contains(typeName, "电影") || strings.Contains(typeName, "影片") || typeName == "电影片" {
+		return findIdByName(mains, "电影")
+	}
+	if strings.Contains(typeName, "纪录") || strings.Contains(typeName, "记录") {
+		return findIdByName(mains, "纪录片")
 	}
 
 	// 找不到匹配项，返回 0 触发外层的 FirstOrCreate 逻辑

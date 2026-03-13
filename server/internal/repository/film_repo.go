@@ -332,12 +332,12 @@ func ensureStaticTagsForPid(pid int64) {
 	}
 	db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&initialItems)
 
-	// 3. 初始化 Sort
+	// 3. 初始化 Sort (确保分值 >= 10 以通过 GetSearchTag 的过滤)
 	sortItems := []model.SearchTagItem{
-		{Pid: pid, TagType: "Sort", Name: "时间排序", Value: "update_stamp", Score: 3},
-		{Pid: pid, TagType: "Sort", Name: "人气排序", Value: "hits", Score: 2},
-		{Pid: pid, TagType: "Sort", Name: "评分排序", Value: "score", Score: 1},
-		{Pid: pid, TagType: "Sort", Name: "最新上映", Value: "release_stamp", Score: 0},
+		{Pid: pid, TagType: "Sort", Name: "时间", Value: "update_stamp", Score: 10},
+		{Pid: pid, TagType: "Sort", Name: "人气", Value: "hits", Score: 10},
+		{Pid: pid, TagType: "Sort", Name: "评分", Value: "score", Score: 10},
+		{Pid: pid, TagType: "Sort", Name: "最新", Value: "release_stamp", Score: 10},
 	}
 	db.Mdb.Clauses(clause.OnConflict{DoNothing: true}).Create(&sortItems)
 
@@ -744,10 +744,10 @@ func GetTagsByTitle(pid int64, tagType string, stickyValue string) []string {
 		switch tagType {
 		case "Sort":
 			tags = []string{
-				"时间排序:update_stamp",
-				"人气排序:hits",
-				"评分排序:score",
-				"最新上映:release_stamp",
+				"时间:update_stamp",
+				"人气:hits",
+				"评分:score",
+				"最新:release_stamp",
 			}
 		}
 	}

@@ -375,4 +375,6 @@ func InitMainCategories() {
 			fmt.Printf("[Init] 警告: 未能在数据库中找到大类 [%s], 跳过属性初始化\n", c.Name)
 		}
 	}
+	// 4. 初始化完成后刷新内存映射，确保后续采集能直接匹配到这些大类
+	RefreshCategoryCache()
 }
