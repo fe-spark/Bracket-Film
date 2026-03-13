@@ -338,9 +338,28 @@ func InitMainCategories() {
 	}
 
 	for _, c := range categories {
+		// 1. 确保大类存在
 		db.Mdb.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "name"}},
-			DoNothing: true,
+			DoNothing:    true,
 		}).Create(&c)
+
+		// 2. 如果是新创建或已存在，尝试为其初始化默认排序标签
+		// 先查询大类真实 ID (针对 OnConflict 时 ID 不确定的情况)
+		var realC model.Category
+		if err := db.Mdb.Where("pid = 0 AND name = ?", c.Name).First(&realC).Error; err == nil {
+			defaultSorts := []model.SearchTagItem{
+				{Pid: realC.Id, TagType: "Sort", Name: "时间", Value: "update_stamp", Score: 10},
+				{Pid: realC.Id, TagType: "Sort", Name: "人气", Value: "hits", Score: 10},
+				{Pid: realC.Id, TagType: "Sort", Name: "评分", Value: "score", Score: 10},
+				{Pid: realC.Id, TagType: "Sort", Name: "最新", Value: "release_stamp", Score: 10},
+			}
+			for _, s := range defaultSorts {
+				db.Mdb.Clauses(clause.OnConflict{
+					Columns:   []clause.Column{{Name: "pid"}, {Name: "tag_type"}, {Name: "value"}},
+					DoNothing: true,
+				}).Create(&s)
+			}
+		}
 	}
 }

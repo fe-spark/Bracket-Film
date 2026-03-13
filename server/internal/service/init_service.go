@@ -69,7 +69,7 @@ func (s *InitService) TableInit() {
 	// 初始化映射清洗引擎 (建表后立即同步种子数据)
 	repository.InitMappingEngine()
 
-	// 初始化标准大类
+	// 初始化标准大类与默认排序标签
 	repository.InitMainCategories()
 
 	// 专门处理表的默认或初始状态定义
