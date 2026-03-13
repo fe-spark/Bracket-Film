@@ -864,6 +864,16 @@ func GetSearchTag(st model.SearchTagsVO) map[string]any {
 			tagStrs = append(tagStrs, fmt.Sprintf("%s:%s", item.Name, item.Value))
 		}
 
+		// 针对排序，若数据库中无自定义配置，则使用预设默认值
+		if t == "Sort" && len(tagStrs) == 0 {
+			tagStrs = []string{
+				"时间:update_stamp",
+				"人气:hits",
+				"评分:score",
+				"最新:release_stamp",
+			}
+		}
+
 		tags := HandleTagStr(t, sticky, tagStrs...)
 		if t == "Sort" || len(tags) > 1 || (sticky != "" && sticky != "全部") {
 			tagMap[t] = tags
