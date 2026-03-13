@@ -10,6 +10,37 @@ import (
 // StandardMapping 现在已迁移至数据库驱动 (mapping_rules 表)
 // 内存中维护 sync.Map 以保证高性能
 
+// GetCategoryBucketRole 根据名称推断其属于哪一个预设标准大类 (正则匹配版)
+func GetCategoryBucketRole(typeName string) string {
+	typeName = strings.TrimSpace(typeName)
+	if typeName == "" {
+		return ""
+	}
+
+	// 优先级正则表达式字典（从细到粗排布，避免交叉误判）
+	patterns := []struct {
+		Role  string
+		Regex string
+	}{
+		{"短剧", `短剧|微短剧|爽剧|竖屏剧`},
+		{"纪录片", `纪录片|记录片|纪实|专题`},
+		{"动漫", `动漫|动画|番剧|二次元|BD|OVA`},
+		{"综艺", `综艺|真人秀|脱口秀|晚会|访谈|晚$`},
+		{"伦理片", `伦理|非法|福利|写真|X级`},
+		{"电影", `电影|影片|片$|剧场版|蓝光|动作片|喜剧片|爱情片|科幻片|恐怖片|剧情片|战争片|动作|喜剧|爱情|科幻|惊悚|恐怖`},
+		{"电视剧", `电视剧|连续剧|系列剧|剧集|国产剧|港剧|台剧|泰剧|美剧|韩剧|日剧|欧美剧|海外剧|剧$`},
+	}
+
+	for _, p := range patterns {
+		re := regexp.MustCompile("(?i)" + p.Regex)
+		if re.MatchString(typeName) {
+			return p.Role
+		}
+	}
+
+	return ""
+}
+
 // GetMainCategoryIdByName 根据采集站的分类名识别标准大类 ID (数据库驱动版)
 func GetMainCategoryIdByName(typeName string, typePid int64) int64 {
 	typeName = strings.TrimSpace(typeName)
@@ -21,13 +52,35 @@ func GetMainCategoryIdByName(typeName string, typePid int64) int64 {
 	var mains []model.Category
 	db.Mdb.Where("pid = 0").Find(&mains)
 
-	// 2. 匹配逻辑：全匹配 -> 别名包含匹配 -> 模糊匹配
+	// 2. 优先级 A：通过智能分类引擎判定所属标准大类
+	role := GetCategoryBucketRole(typeName)
+	if role != "" {
+		for _, m := range mains {
+			if m.Name == role {
+				return m.Id
+			}
+		}
+	}
+
+	// 3. 优先级 B：根据采集站通用标准 Pid 推断 (MacCMS 常见约定)
+	switch typePid {
+	case 1:
+		return findIdByName(mains, "电影")
+	case 2:
+		return findIdByName(mains, "电视剧")
+	case 3:
+		return findIdByName(mains, "综艺")
+	case 4:
+		return findIdByName(mains, "动漫")
+	case 37:
+		return findIdByName(mains, "短剧")
+	}
+
+	// 4. 优先级 C：数据库别名精准/模糊搜索
 	for _, m := range mains {
-		// A. 名称完全一致
 		if m.Name == typeName {
 			return m.Id
 		}
-		// B. 别名命中 (别名以逗号分隔)
 		aliases := strings.Split(m.Alias, ",")
 		for _, a := range aliases {
 			a = strings.TrimSpace(a)
@@ -37,41 +90,9 @@ func GetMainCategoryIdByName(typeName string, typePid int64) int64 {
 		}
 	}
 
-	// 3. 特殊规则：根据常见垂直模型推断 (针对采集站 type_pid)
-	// 如果采集站的 pid 为这些值，且数据库中已有对应标准类，则直接返回
-	// 注意：这里不再硬编码 ID 比较，而是根据名称逻辑
-	switch typePid {
-	case 1: // 电影
-		return findIdByName(mains, "电影")
-	case 2: // 电视剧
-		return findIdByName(mains, "电视剧")
-	case 3: // 综艺
-		return findIdByName(mains, "综艺")
-	case 4: // 动漫
-		return findIdByName(mains, "动漫")
-	case 37: // 短剧
-		return findIdByName(mains, "短剧")
-	}
-
-	// 4. 最后尝试：根据名称包含的关键词进行优先级判定 (动漫 > 综艺 > 剧集 > 电影)
-	if strings.Contains(typeName, "动漫") || strings.Contains(typeName, "动画") {
-		return findIdByName(mains, "动漫")
-	}
-	if strings.Contains(typeName, "综艺") {
-		return findIdByName(mains, "综艺")
-	}
-	if strings.Contains(typeName, "剧") {
-		return findIdByName(mains, "电视剧")
-	}
-	if strings.Contains(typeName, "电影") || strings.Contains(typeName, "影片") || typeName == "电影片" {
-		return findIdByName(mains, "电影")
-	}
-	if strings.Contains(typeName, "纪录") || strings.Contains(typeName, "记录") {
-		return findIdByName(mains, "纪录片")
-	}
-
-	// 找不到匹配项，返回 0 触发外层的 FirstOrCreate 逻辑
-	return 0
+	// 5. 兜底逻辑：如果所有规则均失效，归类到标准的“其他”桶 (ID 6 或根据名称查找)
+	// 这样确保影片不会变成不可见的 Pid=0 垃圾数据
+	return findIdByName(mains, "其他")
 }
 
 func findIdByName(mains []model.Category, name string) int64 {

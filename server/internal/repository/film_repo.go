@@ -1209,10 +1209,11 @@ func MasterFilmZero() {
 	ClearCategoryCache()
 }
 
-// CleanEmptyFilms 清理所有片名为空的无效记录
+// CleanEmptyFilms 清理所有片名为空或无法识别大类(Pid=0)的垃圾记录
 func CleanEmptyFilms() int64 {
 	var infos []model.SearchInfo
-	db.Mdb.Where("name = ? OR name IS NULL", "").Find(&infos)
+	// 同时清理无名影片和 Pid=0 的无法映射垃圾数据
+	db.Mdb.Where("name = ? OR name IS NULL OR pid = 0", "").Find(&infos)
 	if len(infos) == 0 {
 		return 0
 	}

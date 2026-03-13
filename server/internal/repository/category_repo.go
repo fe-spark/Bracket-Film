@@ -327,7 +327,7 @@ func GetParentId(id int64) int64 {
 	return idToPid[id]
 }
 
-// InitMainCategories 初始化标准大类
+// InitMainCategories 初始化标准大类与执行周期性健康检查
 func InitMainCategories() {
 	categories := []model.Category{
 		{Pid: 0, Name: "电影", Alias: "电影,影片,电影片"},
@@ -336,14 +336,17 @@ func InitMainCategories() {
 		{Pid: 0, Name: "综艺", Alias: "综艺,综艺片,真人秀,脱口秀"},
 		{Pid: 0, Name: "纪录片", Alias: "纪录片,记录片"},
 		{Pid: 0, Name: "短剧", Alias: "短剧,短剧大全,爽剧"},
+		{Pid: 0, Name: "其他", Alias: "其他,其它,待分类"},
 	}
 
+	fmt.Println("[Init] 正在执行大类标准化与数据健康检查...")
+
 	for _, c := range categories {
-		// 1. 智能查找与标准化：先尝试精准匹配名称，如果失败则尝试通过别名匹配并重命名
+		// 1. 识别并匹配标准大类 (支持改名与别名追溯)
 		var realC model.Category
 		err := db.Mdb.Where("pid = 0 AND name = ?", c.Name).First(&realC).Error
 		if err != nil {
-			// 如果直接找标准名没对上，尝试搜别名 (别名通常包含 "动漫片" 等)
+			// 尝试别名匹配
 			aliases := strings.Split(c.Alias, ",")
 			foundByAlias := false
 			for _, a := range aliases {
@@ -351,73 +354,52 @@ func InitMainCategories() {
 				if a == "" || a == c.Name {
 					continue
 				}
-				// 检查数据库中是否存在该“误名大类” (即名字虽然叫 动漫片，但它其实是我们想要的 动漫)
 				if err := db.Mdb.Where("pid = 0 AND name = ?", a).First(&realC).Error; err == nil {
-					// 找到了！说明它就是我们要的大类，只是名字不对，尝试执行改名标准化
-					fmt.Printf("[Init] 发现别名匹配大类 [%s] (ID: %d), 尝试标准化为 [%s]...\n", realC.Name, realC.Id, c.Name)
+					fmt.Printf("[Init] 发现别名匹配大类 [%s] (ID: %d), 标准化为 [%s]...\n", realC.Name, realC.Id, c.Name)
 					
-					// 冲突预处理：如果目标名字 "c.Name" 已被某个子类占用，先把那个子类改名
+					// 处理名称冲突 (腾出标准名坑位)
 					var conflict model.Category
-					if err := db.Mdb.Where("name = ?", c.Name).First(&conflict).Error; err == nil {
-						if conflict.Id != realC.Id {
-							if conflict.Pid != 0 {
-								// 是二级分类，改名腾出坑位
-								fmt.Printf("[Init] 名字 [%s] 被子分类 (ID: %d) 占用，正在将其重命名为 [%s]...\n", c.Name, conflict.Id, c.Name+"(子)")
-								db.Mdb.Model(&conflict).Update("name", c.Name+"(子)")
-							} else {
-								// 居然有另外一个大类叫这个名字，说明存在两个大类，记录 ID 待后续合并或逻辑对齐
-								fmt.Printf("[Init] 警告: 目标名 [%s] 已被另一个大类 (ID: %d) 占用\n", c.Name, conflict.Id)
-							}
+					if err := db.Mdb.Where("name = ? AND id != ?", c.Name, realC.Id).First(&conflict).Error; err == nil {
+						if conflict.Pid != 0 {
+							fmt.Printf("[Init] 冲突处理：将子分类 [%s] (ID: %d) 重命名为 [%s(子)]\n", c.Name, conflict.Id, c.Name)
+							db.Mdb.Model(&conflict).Update("name", c.Name+"(子)")
 						}
 					}
 
-					// 执行更名与别名对齐
-					db.Mdb.Model(&realC).Updates(map[string]any{
-						"name":  c.Name,
-						"alias": c.Alias,
-					})
+					db.Mdb.Model(&realC).Updates(map[string]any{"name": c.Name, "alias": c.Alias})
 					foundByAlias = true
 					break
 				}
 			}
 			if !foundByAlias {
-				// 彻底没找到，创建新的
 				db.Mdb.Create(&c)
 				realC = c
 			}
 		} else {
-			// 名称已对上，确保别名也是最新的
+			// 標準名已對上，確保別名規則同步更新
 			db.Mdb.Model(&realC).Update("alias", c.Alias)
 		}
 
-		// 2. 为该大类检查并补全排序标签
+		// 2. 补全排序标签 (确保 Score 分值足够显示)
 		if realC.Id > 0 {
-			fmt.Printf("[Init] 正在为大类 [%s] (ID: %d) 检查并补全排序标签...\n", realC.Name, realC.Id)
 			defaultSorts := []model.SearchTagItem{
 				{Pid: realC.Id, TagType: "Sort", Name: "时间", Value: "update_stamp", Score: 10},
 				{Pid: realC.Id, TagType: "Sort", Name: "人气", Value: "hits", Score: 10},
 				{Pid: realC.Id, TagType: "Sort", Name: "评分", Value: "score", Score: 10},
 				{Pid: realC.Id, TagType: "Sort", Name: "最新", Value: "release_stamp", Score: 10},
 			}
-			var inserted int
 			for _, s := range defaultSorts {
-				result := db.Mdb.Clauses(clause.OnConflict{
+				db.Mdb.Clauses(clause.OnConflict{
 					Columns:   []clause.Column{{Name: "pid"}, {Name: "tag_type"}, {Name: "value"}},
-					DoNothing: true,
+					DoUpdates: clause.Assignments(map[string]any{"score": 10}),
 				}).Create(&s)
-				if result.RowsAffected > 0 {
-					inserted++
-				}
 			}
-			if inserted > 0 {
-				fmt.Printf("[Init] 大类 [%s] 已成功补全 %d 条排序标签\n", realC.Name, inserted)
-			}
-
-			// 3. 强制清理该大类的搜索标签缓存，保证生效
-			cacheKey := fmt.Sprintf("%s:%d", config.SearchTags, realC.Id)
-			db.Rdb.Del(db.Cxt, cacheKey)
 		}
 	}
-	// 4. 重建分类缓存内存映射
+
+	// 3. 重建映射并清理残余缓存
 	RefreshCategoryCache()
+	db.Rdb.Del(db.Cxt, config.ActiveCategoryTreeKey, config.IndexPageCacheKey)
+	ClearAllSearchTagsCache()
+	fmt.Println("[Init] 标准化与健康检查完成。")
 }

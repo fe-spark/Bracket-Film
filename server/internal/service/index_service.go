@@ -90,7 +90,7 @@ func (i *IndexService) GetFilmDetail(id int) model.MovieDetailVo {
 // GetCategoryInfo 分类信息获取, 组装导航栏需要的信息
 func (i *IndexService) GetCategoryInfo() map[string]any {
 	nav := make(map[string]any)
-	tree := repository.GetCategoryTree()
+	tree := repository.GetActiveCategoryTree()
 	for _, t := range tree.Children {
 		switch t.Name {
 		case "动漫":
@@ -112,7 +112,7 @@ func (i *IndexService) GetCategoryInfo() map[string]any {
 
 // GetNavCategory 获取导航分类信息
 func (i *IndexService) GetNavCategory() []*model.Category {
-	tree := repository.GetCategoryTree()
+	tree := repository.GetActiveCategoryTree()
 	cl := make([]*model.Category, 0)
 	for _, c := range tree.Children {
 		if c.Show {
@@ -146,7 +146,7 @@ func (i *IndexService) GetFilmCategory(id int64, idType string, page *dto.Page) 
 
 // GetPidCategory 获取pid对应的分类信息
 func (i *IndexService) GetPidCategory(pid int64) *model.CategoryTree {
-	tree := repository.GetCategoryTree()
+	tree := repository.GetActiveCategoryTree()
 	for _, t := range tree.Children {
 		if t.Id == pid {
 			return &model.CategoryTree{Category: t.Category, Children: t.Children}
