@@ -31,8 +31,11 @@ func (s *InitService) DefaultDataInit() {
 			&model.CrontabRecord{}, &model.SiteConfigRecord{}, &model.MovieSourceMapping{},
 			&model.Banner{}, &model.CronSourceRel{}, &model.MappingRule{},
 		)
-		repository.InitMappingEngine()
 	}
+
+	// 映射引擎初始化 & 数据库标准数据对齐 (标准大类与排序标签)
+	repository.InitMappingEngine()
+	repository.InitMainCategories()
 
 	s.BasicConfigInit()
 	s.BannersInit()

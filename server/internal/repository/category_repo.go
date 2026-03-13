@@ -338,16 +338,16 @@ func InitMainCategories() {
 	}
 
 	for _, c := range categories {
-		// 1. 确保大类存在
+		// 1. 确保大类存在 (直接按名称冲突处理，无需再搜别名)
 		db.Mdb.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "name"}},
-			DoNothing: true,
+			DoUpdates: clause.AssignmentColumns([]string{"alias"}),
 		}).Create(&c)
 
-		// 2. 如果是新创建或已存在，尝试为其初始化默认排序标签
+		// 2. 获取生效的实例 ID 并初始化排序标签
 		var realC model.Category
 		if err := db.Mdb.Where("pid = 0 AND name = ?", c.Name).First(&realC).Error; err == nil {
-			fmt.Printf("[Init] 正在为大类 [%s] (ID: %d) 初始化默认排序标签...\n", realC.Name, realC.Id)
+			fmt.Printf("[Init] 正在为大类 [%s] (ID: %d) 检查并补全排序标签...\n", realC.Name, realC.Id)
 			defaultSorts := []model.SearchTagItem{
 				{Pid: realC.Id, TagType: "Sort", Name: "时间", Value: "update_stamp", Score: 10},
 				{Pid: realC.Id, TagType: "Sort", Name: "人气", Value: "hits", Score: 10},
@@ -365,16 +365,14 @@ func InitMainCategories() {
 				}
 			}
 			if inserted > 0 {
-				fmt.Printf("[Init] 大类 [%s] 已成功插入 %d 条排序标签\n", realC.Name, inserted)
+				fmt.Printf("[Init] 大类 [%s] 已补全 %d 条排序标签\n", realC.Name, inserted)
 			}
 
-			// 3. 强制清理该大类的搜索标签缓存，防止旧的空数据干扰
+			// 3. 清理缓存
 			cacheKey := fmt.Sprintf("%s:%d", config.SearchTags, realC.Id)
 			db.Rdb.Del(db.Cxt, cacheKey)
-		} else {
-			fmt.Printf("[Init] 警告: 未能在数据库中找到大类 [%s], 跳过属性初始化\n", c.Name)
 		}
 	}
-	// 4. 初始化完成后刷新内存映射，确保后续采集能直接匹配到这些大类
+	// 4. 刷新内存映射
 	RefreshCategoryCache()
 }
