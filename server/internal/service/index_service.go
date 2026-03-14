@@ -94,8 +94,8 @@ func (i *IndexService) GetCategoryInfo() map[string]any {
 	
 	// 定义标准简称映射 (仅用于保持 API 兼容性，如 film, tv 等字段名)
 	// 如果需要完全动态，可以考虑在 Category 表增加 Key 字段
-	keyMap := map[string]string{
-		"电影": "film", "电视剧": "tv", "综艺": "variety", "动漫": "cartoon", "短剧": "short", "纪录片": "document",
+ 	keyMap := map[string]string{
+		"电影": "film", "电视剧": "tv", "综艺": "variety", "动漫": "cartoon", "纪录片": "document",
 	}
 
 	for _, t := range tree.Children {

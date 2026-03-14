@@ -35,15 +35,19 @@ func (h *ProvideHandler) HandleProvide(c *gin.Context) {
 		t = tid
 	}
 
-	year, _ := strconv.Atoi(c.Query("year"))
+	year := c.Query("year")
 	area := c.Query("area")
 	lang := c.Query("language")
+	if lang == "" {
+		lang = c.Query("lang")
+	}
 	plot := c.Query("plot")
 	sort := c.Query("sort")
 
 	// 选中采集站时，优先直连该采集站返回原始数据
 	if sourceId != "" {
-		raw, err := service.ProvideSvc.GetVodDirectBySource(sourceId, ac, t, pg, wd, h_param, ids, year, area, lang, plot, sort)
+		directYear, _ := strconv.Atoi(year)
+		raw, err := service.ProvideSvc.GetVodDirectBySource(sourceId, ac, t, pg, wd, h_param, ids, directYear, area, lang, plot, sort)
 		if err != nil {
 			c.JSON(200, gin.H{"code": 0, "msg": "采集站直连失败: " + err.Error()})
 			return

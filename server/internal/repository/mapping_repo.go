@@ -43,9 +43,9 @@ func ReloadMappingRules() {
 		newSourceMap[fmt.Sprintf("%s_%d", m.SourceId, m.SourceTypeId)] = m.CategoryId
 	}
 
-	// 3. 加载标准大类缓存 (按优先级排序，确保 InitMainCategories 中定义的优先级)
+	// 3. 加载标准大类缓存
 	var mains []model.Category
-	db.Mdb.Where("pid = 0").Order("sort DESC, id ASC").Find(&mains)
+	db.Mdb.Where("pid = 0").Order("id ASC").Find(&mains)
 	cacheMainCats = mains
 
 	// 4. 清理并更新其它基础映射

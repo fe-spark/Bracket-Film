@@ -22,7 +22,6 @@ func GetCategoryBucketRole(typeName string) string {
 		model.BigCategoryAnimation,
 		model.BigCategoryVariety,
 		model.BigCategoryDocumentary,
-		model.BigCategoryShortFilm,
 		model.BigCategoryMovie,
 		model.BigCategoryTV,
 		model.BigCategoryOther,
@@ -57,7 +56,9 @@ func GetCategoryBucketRole(typeName string) string {
 		{"综艺", model.BigCategoryVariety},
 		{"娱乐", model.BigCategoryVariety},
 		{"纪录", model.BigCategoryDocumentary},
-		{"短剧", model.BigCategoryShortFilm},
+		{"短剧", model.BigCategoryOther},
+		{"爽剧", model.BigCategoryOther},
+		{"微电影", model.BigCategoryOther},
 		{"电影", model.BigCategoryMovie},
 		{"片", model.BigCategoryMovie},
 		{"院线", model.BigCategoryMovie},
@@ -129,6 +130,22 @@ func GetMainCategoryName(pid int64) string {
 		}
 	}
 
+	return ""
+}
+
+func GetCategoryNameById(id int64) string {
+	if id <= 0 {
+		return ""
+	}
+	if name, ok := GetCategoryNameFromCache(id); ok {
+		return name
+	}
+
+	var c model.Category
+	if err := db.Mdb.Where("id = ?", id).First(&c).Error; err == nil {
+		SetCategoryNameCache(id, c.Name)
+		return c.Name
+	}
 	return ""
 }
 

@@ -292,11 +292,13 @@ func BatchHandleSearchTag(infos ...model.SearchInfo) {
 		// 获取大类名称用于清洗
 		mName := GetMainCategoryName(info.Pid)
 
-		// 仅当存在具体的子分类（Cid != Pid）时，才生成 Category 维度的标签，
-		// 避免大类下出现一个名为大类本身的冗余标签（如“动漫”大类下出现“动漫”标签）
-		if info.Cid != info.Pid {
-			HandleSearchTags(info.CName, "Category", info.Pid, fmt.Sprint(info.Cid))
+		// 只要有具体的 Cid 分类（即使目前与 Pid 相同，后续通过同步分类树会自动生成子类），就生成 Category 标签。
+		// 为了防止“动漫”大类下出现“动漫”标签，我们在 HandleSearchTags 内部进行过滤。
+		catName := GetCategoryNameById(info.Cid)
+		if catName == "" {
+			catName = info.CName
 		}
+		HandleSearchTags(catName, "Category", info.Pid, fmt.Sprint(info.Cid))
 
 		// 清洗后的剧情标签
 		cleanPlot := CleanPlotTags(info.ClassTag, info.Area, mName, info.CName)
@@ -356,6 +358,11 @@ func HandleSearchTags(allTags string, tagType string, pid int64, customValues ..
 			val = customVal[0]
 		}
 
+		// 核心逻辑：如果是 Category 类型，且其分类 ID (val) 等于大类 ID (pid)，说明是大类本身，不应入库。
+		if tagType == "Category" && val == fmt.Sprint(pid) {
+			return
+		}
+
 		// 年份合法性校验
 		if tagType == "Year" {
 			if y, _ := strconv.Atoi(v); y <= 0 {
@@ -387,6 +394,31 @@ func ExistSearchInfo(mid int64) bool {
 	var count int64
 	db.Mdb.Model(&model.SearchInfo{}).Where("mid", mid).Count(&count)
 	return count > 0
+}
+
+func resolveFallbackCid(pid int64, cName string) int64 {
+	if pid <= 0 {
+		return 0
+	}
+	cName = strings.TrimSpace(cName)
+	if cName == "" {
+		return 0
+	}
+	if cName == GetMainCategoryName(pid) {
+		return 0
+	}
+
+	var sub model.Category
+	if err := db.Mdb.Where("pid = ? AND name = ?", pid, cName).First(&sub).Error; err == nil && sub.Id > 0 {
+		return sub.Id
+	}
+
+	sub = model.Category{Pid: pid, Name: cName, Show: true}
+	if err := db.Mdb.Where("pid = ? AND name = ?", pid, cName).FirstOrCreate(&sub).Error; err == nil && sub.Id > 0 {
+		RefreshCategoryCache()
+		return sub.Id
+	}
+	return 0
 }
 
 func ConvertSearchInfo(sourceId string, detail model.MovieDetail) model.SearchInfo {
@@ -425,6 +457,10 @@ func ConvertSearchInfo(sourceId string, detail model.MovieDetail) model.SearchIn
 	if correctPid == 0 {
 		standardName := GetCategoryBucketRole(detail.CName)
 		correctPid = GetStandardIdByRole(standardName)
+	}
+
+	if resolvedCid == 0 {
+		resolvedCid = resolveFallbackCid(correctPid, detail.CName)
 	}
 	if resolvedCid == 0 {
 		resolvedCid = correctPid // 找不到子类则归入大类

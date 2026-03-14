@@ -247,13 +247,13 @@ func (p *ProvideService) GetClassList() ([]model.FilmClass, map[string][]map[str
 }
 
 // GetVodList 获取视频列表 (支持多维度筛选)
-func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, area, lang, plot, sort string, limit int) (int, int, int, []model.FilmList) {
+func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year string, area, lang, plot, sort string, limit int) (int, int, int, []model.FilmList) {
 	if limit <= 0 {
 		limit = 20
 	}
 	// 1. 针对第一页的首页请求尝试 Redis 缓存 (依赖主动失效，TTL 设为 12 小时作为兜底)
 	cacheKey := ""
-	if pg <= 1 && wd == "" && h == 0 && year == 0 && area == "" && lang == "" && plot == "" {
+	if pg <= 1 && wd == "" && h == 0 && year == "" && area == "" && lang == "" && plot == "" {
 		cacheKey = fmt.Sprintf("%s:%d:S%s:L%d", config.TVBoxList, t, sort, limit)
 		if data, err := db.Rdb.Get(db.Cxt, cacheKey).Result(); err == nil && data != "" {
 			var res struct {
@@ -295,8 +295,17 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 		query = query.Where("update_stamp >= ?", timeLimit)
 	}
 
-	if year > 0 {
-		query = query.Where("year = ?", year)
+	if year != "" && year != "全部" {
+		if year == model.TagOthersValue || year == "其他" || year == "其它" {
+			if pid > 0 {
+				topVals := repository.GetTopTagValues(pid, "Year")
+				if len(topVals) > 0 {
+					query = query.Where("year NOT IN ?", topVals)
+				}
+			}
+		} else if y, err := strconv.Atoi(year); err == nil && y > 0 {
+			query = query.Where("year = ?", y)
+		}
 	}
 
 	// 统一处理“其它”逻辑
@@ -311,11 +320,16 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year int, a
 		if val == "" || val == "全部" {
 			continue
 		}
-		if val == "其它" && pid > 0 {
+		if (val == model.TagOthersValue || val == "其他" || val == "其它") && pid > 0 {
 			topVals := repository.GetTopTagValues(pid, dimType)
 			if len(topVals) > 0 {
 				if dimType == "Plot" {
-					for _, v := range topVals {
+					maxPlotExcludes := 5
+					if len(topVals) < maxPlotExcludes {
+						maxPlotExcludes = len(topVals)
+					}
+					for i := 0; i < maxPlotExcludes; i++ {
+						v := topVals[i]
 						query = query.Where("class_tag NOT LIKE ?", fmt.Sprintf("%%%s%%", v))
 					}
 				} else {

@@ -3,6 +3,7 @@ package repository
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"server/internal/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // 简易内存映射：仅用于爬虫入库等批量场景的高频查找，避免过多的数据库 IO
@@ -107,8 +109,7 @@ func SaveCategoryTree(sourceId string, tree *model.CategoryTree) error {
 	}
 
 	err := db.Mdb.Transaction(func(tx *gorm.DB) error {
-		// 1. 清理旧映射，准备重建
-		tx.Where("source_id = ?", sourceId).Delete(&model.CategoryMapping{})
+		version := time.Now().UnixNano()
 
 		// 2. 遍历采集站大类，建立本地映射
 		for _, node := range tree.Children {
@@ -134,7 +135,18 @@ func SaveCategoryTree(sourceId string, tree *model.CategoryTree) error {
 				tx.Where("pid = ? AND name = ?", localMain.Id, node.Name).FirstOrCreate(&localSub, model.Category{Pid: localMain.Id, Name: node.Name, Show: true})
 				targetId = localSub.Id
 			}
-			tx.Create(&model.CategoryMapping{SourceId: sourceId, SourceTypeId: node.Id, CategoryId: targetId})
+			tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "source_id"}, {Name: "source_type_id"}},
+				DoUpdates: clause.Assignments(map[string]any{
+					"category_id":     targetId,
+					"mapping_version": version,
+				}),
+			}).Create(&model.CategoryMapping{
+				SourceId:       sourceId,
+				SourceTypeId:   node.Id,
+				CategoryId:     targetId,
+				MappingVersion: version,
+			})
 
 			// 4. 处理来源子类 (继续挂载到本地标准大类下，平铺结构)
 			for _, sub := range node.Children {
@@ -142,9 +154,21 @@ func SaveCategoryTree(sourceId string, tree *model.CategoryTree) error {
 				tx.Where("pid = ? AND name = ?", localMain.Id, sub.Name).FirstOrCreate(&localSub, model.Category{Pid: localMain.Id, Name: sub.Name, Show: true})
 
 				// 记录子类映射 (100% 绑定)
-				tx.Create(&model.CategoryMapping{SourceId: sourceId, SourceTypeId: sub.Id, CategoryId: localSub.Id})
+				tx.Clauses(clause.OnConflict{
+					Columns: []clause.Column{{Name: "source_id"}, {Name: "source_type_id"}},
+					DoUpdates: clause.Assignments(map[string]any{
+						"category_id":     localSub.Id,
+						"mapping_version": version,
+					}),
+				}).Create(&model.CategoryMapping{
+					SourceId:       sourceId,
+					SourceTypeId:   sub.Id,
+					CategoryId:     localSub.Id,
+					MappingVersion: version,
+				})
 			}
 		}
+		tx.Where("source_id = ? AND mapping_version <> ?", sourceId, version).Delete(&model.CategoryMapping{})
 		return nil
 	})
 
@@ -157,7 +181,7 @@ func SaveCategoryTree(sourceId string, tree *model.CategoryTree) error {
 // buildTreeHelper 内部辅助函数：直接从列表构建树形结构内存模型
 func buildTreeHelper() model.CategoryTree {
 	var allList []model.Category
-	db.Mdb.Where("`show` = ?", true).Order("pid ASC, sort DESC, id ASC").Find(&allList)
+	db.Mdb.Where("`show` = ?", true).Order("pid ASC, id ASC").Find(&allList)
 
 	nodes := make(map[int64]*model.CategoryTree)
 	root := model.CategoryTree{
@@ -186,6 +210,7 @@ func buildTreeHelper() model.CategoryTree {
 			parent.Children = append(parent.Children, node)
 		}
 	}
+	sortRootCategories(root.Children)
 
 	return root
 }
@@ -222,7 +247,7 @@ func GetActiveCategoryTree() model.CategoryTree {
 
 	// 3. 构建树
 	var allList []model.Category
-	db.Mdb.Where("`show` = ?", true).Order("pid ASC, sort DESC, id ASC").Find(&allList)
+	db.Mdb.Where("`show` = ?", true).Order("pid ASC, id ASC").Find(&allList)
 
 	nodes := make(map[int64]*model.CategoryTree)
 	root := model.CategoryTree{
@@ -269,6 +294,7 @@ func GetActiveCategoryTree() model.CategoryTree {
 			root.Children = append(root.Children, node)
 		}
 	}
+	sortRootCategories(root.Children)
 
 	// 7. 写入 Redis 缓存 (1小时)
 	if data, err := json.Marshal(root); err == nil {
@@ -276,6 +302,28 @@ func GetActiveCategoryTree() model.CategoryTree {
 	}
 
 	return root
+}
+
+func sortRootCategories(children []*model.CategoryTree) {
+	rootOrder := map[string]int{
+		model.BigCategoryMovie:       1,
+		model.BigCategoryTV:          2,
+		model.BigCategoryAnimation:   3,
+		model.BigCategoryVariety:     4,
+		model.BigCategoryDocumentary: 5,
+		model.BigCategoryOther:       6,
+	}
+	sort.SliceStable(children, func(i, j int) bool {
+		oi, oki := rootOrder[children[i].Name]
+		oj, okj := rootOrder[children[j].Name]
+		if oki && okj && oi != oj {
+			return oi < oj
+		}
+		if oki != okj {
+			return oki
+		}
+		return children[i].Id < children[j].Id
+	})
 }
 
 // ClearCategoryCache 清除分类相关的所有缓存 (Redis + 内存映射)
@@ -319,15 +367,15 @@ func GetChildrenTree(pid int64) []*model.CategoryTree {
 // InitMainCategories 启动时刷新映射引擎与分类缓存
 func InitMainCategories() {
 	fmt.Println("[Init] 正在确保标准大类并刷新分类缓存...")
+	ensureCategoryIndexes()
 
-	// 1. 确保标准大类存在 (电影, 电视剧, 动漫, 综艺, 纪录片, 短剧, 其他)
+	// 1. 确保标准大类存在 (电影, 电视剧, 动漫, 综艺, 纪录片, 其他)
 	standards := []string{
 		model.BigCategoryMovie,
 		model.BigCategoryTV,
 		model.BigCategoryAnimation,
 		model.BigCategoryVariety,
 		model.BigCategoryDocumentary,
-		model.BigCategoryShortFilm,
 		model.BigCategoryOther,
 	}
 	// 设置每个大类的默认匹配正则 (Alias)
@@ -335,32 +383,24 @@ func InitMainCategories() {
 		model.BigCategoryAnimation:   "动漫,动画,番剧,日漫,国漫,美漫",
 		model.BigCategoryVariety:     "综艺,脱口秀,真人秀,选秀",
 		model.BigCategoryDocumentary: "纪录片,历史,文化,自然",
-		model.BigCategoryShortFilm:   "短剧,爽剧,微电影",
 		model.BigCategoryMovie:       "电影,动作,喜剧,爱情,科幻,恐怖,剧情,战争,惊悚",
 		model.BigCategoryTV:          "电视剧,国产,美剧,韩剧,日剧,港剧,台剧,泰剧,海外",
-		model.BigCategoryOther:       "其他,其它,解说,福利",
+		model.BigCategoryOther:       "其他,其它,解说,福利,短剧,爽剧,微电影",
 	}
 
-	for i, name := range standards {
-		// 计算优先级 (越靠前优先级越高)
-		priority := len(standards) - i
-
+	for _, name := range standards {
 		// 1. 先查找是否存在该记录
 		var cat model.Category
 		err := db.Mdb.Model(&model.Category{}).Where("pid = 0 AND name = ?", name).First(&cat).Error
 
 		if err == nil {
-			// 2. 存在则直接修改对象字段并使用 Save() 强制同步到数据库 (Save 会更新所有字段)
+			// 2. 存在则更新展示状态与别名
 			cat.Alias = aliases[name]
 			cat.Show = true
-			cat.Sort = priority
 			if saveErr := db.Mdb.Save(&cat).Error; saveErr != nil {
 				fmt.Printf("[Error] 更新大类 %s 失败: %v\n", name, saveErr)
 			} else {
-				// 立即从数据库回读，确保更新真正生效
-				var check model.Category
-				db.Mdb.First(&check, cat.Id)
-				fmt.Printf("[Init] 已对齐标准大类: %s (ID: %d, Sort: %d, DB实际Sort: %d)\n", name, cat.Id, priority, check.Sort)
+				fmt.Printf("[Init] 已对齐标准大类: %s (ID: %d)\n", name, cat.Id)
 			}
 		} else {
 			// 3. 不存在则创建
@@ -369,11 +409,11 @@ func InitMainCategories() {
 				Name:  name,
 				Alias: aliases[name],
 				Show:  true,
-				Sort:  priority,
 			})
-			fmt.Printf("[Init] 已创建标准大类: %s (Sort: %d)\n", name, priority)
+			fmt.Printf("[Init] 已创建标准大类: %s\n", name)
 		}
 	}
+	mergeShortFilmIntoOther()
 
 	// 2. 刷新映射引擎（加载顶级大类到内存缓存）
 	InitMappingEngine()
@@ -386,4 +426,60 @@ func InitMainCategories() {
 	ClearAllSearchTagsCache()
 
 	fmt.Println("[Init] 缓存刷新与标准大类对齐完成。")
+}
+
+func mergeShortFilmIntoOther() {
+	var other model.Category
+	if err := db.Mdb.Where("pid = 0 AND name = ?", model.BigCategoryOther).First(&other).Error; err != nil {
+		return
+	}
+	var short model.Category
+	if err := db.Mdb.Where("pid = 0 AND name = ?", model.BigCategoryShortFilm).First(&short).Error; err != nil {
+		return
+	}
+
+	_ = db.Mdb.Transaction(func(tx *gorm.DB) error {
+		tx.Model(&model.Category{}).Where("id = ?", short.Id).Update("show", false)
+
+		var shortChildren []model.Category
+		tx.Where("pid = ?", short.Id).Find(&shortChildren)
+
+		idMap := make(map[int64]int64)
+		for _, child := range shortChildren {
+			var target model.Category
+			if err := tx.Where("pid = ? AND name = ?", other.Id, child.Name).
+				FirstOrCreate(&target, model.Category{Pid: other.Id, Name: child.Name, Show: true}).Error; err == nil {
+				idMap[child.Id] = target.Id
+			}
+		}
+
+		tx.Table(model.TableSearchInfo).Where("pid = ?", short.Id).Update("pid", other.Id)
+		tx.Table(model.TableSearchInfo).Where("cid = ?", short.Id).Update("cid", other.Id)
+		tx.Model(&model.CategoryMapping{}).Where("category_id = ?", short.Id).Update("category_id", other.Id)
+
+		for oldID, newID := range idMap {
+			tx.Table(model.TableSearchInfo).Where("cid = ?", oldID).Update("cid", newID)
+			tx.Model(&model.CategoryMapping{}).Where("category_id = ?", oldID).Update("category_id", newID)
+			tx.Model(&model.Category{}).Where("id = ?", oldID).Update("show", false)
+		}
+
+		tx.Where("pid = ? AND tag_type = ?", short.Id, "Category").Delete(&model.SearchTagItem{})
+		tx.Where("pid = ? AND tag_type = ?", other.Id, "Category").Delete(&model.SearchTagItem{})
+		tx.Exec(
+			"INSERT INTO "+model.TableSearchTag+" (created_at,updated_at,pid,tag_type,name,value,score) "+
+				"SELECT NOW(),NOW(),s.pid,'Category',c.name,CAST(s.cid AS CHAR),COUNT(*) "+
+				"FROM "+model.TableSearchInfo+" s "+
+				"JOIN "+model.TableCategory+" c ON c.id = s.cid "+
+				"WHERE s.pid = ? AND s.cid > 0 AND s.cid <> s.pid "+
+				"GROUP BY s.pid,s.cid,c.name", other.Id,
+		)
+		return nil
+	})
+}
+
+func ensureCategoryIndexes() {
+	db.Mdb.AutoMigrate(&model.Category{}, &model.CategoryMapping{})
+	db.Mdb.Migrator().CreateIndex(&model.Category{}, "uidx_pid_name")
+	db.Mdb.Migrator().CreateIndex(&model.CategoryMapping{}, "idx_source_type")
+	db.Mdb.Migrator().CreateIndex(&model.CategoryMapping{}, "idx_source_version")
 }
