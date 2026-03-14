@@ -27,6 +27,7 @@ func RefreshCategoryCache() {
 	for _, c := range all {
 		item := c
 		newPidMap[item.Id] = item.Pid
+		SetCategoryNameCache(item.Id, item.Name)
 		// 子类具有更高的查找优先级 (Pid > 0)
 		if item.Pid > 0 {
 			newNameMap[item.Name] = item.Id
@@ -340,8 +341,8 @@ func InitMainCategories() {
 		{Id: 4, Pid: 0, Name: "动漫", Alias: "动漫,动画,动漫片,动画片"}, // 動漫固定為 4
 		{Id: 3, Pid: 0, Name: "综艺", Alias: "综艺,综艺片,真人秀,脱口秀"},
 		{Id: 5, Pid: 0, Name: "纪录片", Alias: "纪录片,记录片"},
-		{Id: 7, Pid: 0, Name: "短剧", Alias: "短剧,短剧大全,爽剧"},
-		{Id: 6, Pid: 0, Name: "伦理片", Alias: "伦理,非法,福利,写真,X级"},
+		{Id: 6, Pid: 0, Name: "短剧", Alias: "短剧,短剧大全,爽剧"},
+		{Id: 7, Pid: 0, Name: "伦理片", Alias: "伦理,非法,福利,写真,X级"},
 		{Id: 8, Pid: 0, Name: "其他", Alias: "其他,其它,待分类"},
 	}
 

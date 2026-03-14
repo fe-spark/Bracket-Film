@@ -10,7 +10,8 @@ import (
 var (
 	cacheAreaMap sync.Map
 	cacheLangMap sync.Map
-	cacheBlackList sync.Map // key is the word, value is bool
+	cacheBlackList  sync.Map // key is the word, value is bool
+	cacheCategoryMap sync.Map // key is ID (int64), value is Name (string)
 )
 
 // InitMappingEngine 从数据库加载映射规则并初始化内存缓存
@@ -138,4 +139,16 @@ func GetBlacklist() []string {
 		return true
 	})
 	return res
+}
+
+func GetCategoryNameFromCache(id int64) (string, bool) {
+	val, ok := cacheCategoryMap.Load(id)
+	if !ok {
+		return "", false
+	}
+	return val.(string), true
+}
+
+func SetCategoryNameCache(id int64, name string) {
+	cacheCategoryMap.Store(id, name)
 }

@@ -105,16 +105,45 @@ func findIdByName(mains []model.Category, name string) int64 {
 	return 0
 }
 
-// GetMainCategoryName 根据 ID 获取标准大类名称
+// GetMainCategoryName 根据 ID 获取标准大类名称 (带内存缓存版本)
 func GetMainCategoryName(pid int64) string {
 	if pid <= 0 {
 		return ""
 	}
-	var m model.Category
-	if err := db.Mdb.Where("pid = 0 AND id = ?", pid).First(&m).Error; err != nil {
-		return ""
+
+	// 1. 尝试从内存缓存获取
+	if name, ok := GetCategoryNameFromCache(pid); ok {
+		return name
 	}
-	return m.Name
+
+	// 2. 数据库回溯 (仅当缓存未命中时)
+	var m model.Category
+	if err := db.Mdb.Where("pid = 0 AND id = ?", pid).First(&m).Error; err == nil {
+		SetCategoryNameCache(pid, m.Name)
+		return m.Name
+	}
+
+	// 3. 兜底回退：如果数据库里也没初始化该 ID，则返回标准名称 (防止 log spam)
+	switch pid {
+	case 1:
+		return "电影"
+	case 2:
+		return "电视剧"
+	case 3:
+		return "综艺"
+	case 4:
+		return "动漫"
+	case 5:
+		return "纪录片"
+	case 6:
+		return "短剧"
+	case 7:
+		return "伦理片"
+	case 8:
+		return "其他"
+	}
+
+	return ""
 }
 
 // NormalizeArea 标准化地区名称
