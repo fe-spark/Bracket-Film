@@ -1188,6 +1188,14 @@ func ClearTVBoxConfigCache() {
 	db.Rdb.Del(db.Cxt, config.TVBoxConfigCacheKey)
 }
 
+func ClearTVBoxListCache() {
+	pattern := config.TVBoxList + ":*"
+	iter := db.Rdb.Scan(db.Cxt, 0, pattern, config.MaxScanCount).Iterator()
+	for iter.Next(db.Cxt) {
+		db.Rdb.Del(db.Cxt, iter.Val())
+	}
+}
+
 // ClearAllSearchTagsCache 清除所有分类的搜索标签缓存 (扫描清理)
 func ClearAllSearchTagsCache() {
 	// 基于 config 里的模板生成通配符，防止硬编码 prefix 不一致
@@ -1209,11 +1217,12 @@ func FilmZero() {
 		model.TableCategory,
 		model.TableVirtualPicture,
 		model.TableSearchTag,
-		model.TableBanners,
 	}
 	for _, t := range tables {
 		db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", t))
 	}
+	db.Mdb.Session(&gorm.Session{AllowGlobalUpdate: true}).Unscoped().Delete(&model.MovieSourceMapping{})
+	db.Mdb.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&model.CategoryMapping{})
 	time.Sleep(100 * time.Millisecond)
 
 	// 3. 同步清理采集失败记录，确保彻底清空
@@ -1221,6 +1230,9 @@ func FilmZero() {
 
 	// 4. 清除所有 Redis 缓存
 	ClearCategoryCache()
+	db.Rdb.Del(db.Cxt, config.IndexPageCacheKey, config.VirtualPictureKey)
+	ClearTVBoxListCache()
+	InitMappingEngine()
 }
 
 // MasterFilmZero 仅清理主站相关数据 (search_infos / movie_detail_infos / category)
@@ -1232,15 +1244,19 @@ func MasterFilmZero() {
 		model.TableCategory,
 		model.TableVirtualPicture,
 		model.TableSearchTag,
-		model.TableBanners,
 	}
 	for _, t := range tables {
 		db.Mdb.Exec(fmt.Sprintf("TRUNCATE table %s", t))
 	}
+	db.Mdb.Session(&gorm.Session{AllowGlobalUpdate: true}).Unscoped().Delete(&model.MovieSourceMapping{})
+	db.Mdb.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&model.CategoryMapping{})
 	time.Sleep(100 * time.Millisecond)
 
 	// 清除所有 Redis 缓存
 	ClearCategoryCache()
+	db.Rdb.Del(db.Cxt, config.IndexPageCacheKey, config.VirtualPictureKey)
+	ClearTVBoxListCache()
+	InitMappingEngine()
 }
 
 // CleanEmptyFilms 清理所有片名为空或无法识别大类(Pid=0)的垃圾记录
@@ -1302,10 +1318,19 @@ func CleanOrphanPlaylists() int64 {
 		return 0
 	}
 
-	// 5. 批量删除孤儿记录
-	result := db.Mdb.Where("movie_key IN ?", orphanKeys).Delete(&model.MoviePlaylist{})
-	log.Printf("[CleanOrphan] 已清理 %d 条孤儿 movie_playlists 记录\n", result.RowsAffected)
-	return result.RowsAffected
+	// 5. 分批删除孤儿记录，避免 IN 参数过长
+	const batchSize = 1000
+	var total int64
+	for i := 0; i < len(orphanKeys); i += batchSize {
+		end := i + batchSize
+		if end > len(orphanKeys) {
+			end = len(orphanKeys)
+		}
+		result := db.Mdb.Where("movie_key IN ?", orphanKeys[i:end]).Delete(&model.MoviePlaylist{})
+		total += result.RowsAffected
+	}
+	log.Printf("[CleanOrphan] 已清理 %d 条孤儿 movie_playlists 记录\n", total)
+	return total
 }
 
 // GetHotMovieByPid 获取当前级分类下的热门影片
