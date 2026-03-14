@@ -18,7 +18,7 @@ import (
 var seriesSuffixPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`[\s·\-_]*第?\s*[一二三四五六七八九十百千万零两0-9]+\s*(季|部|篇|章)$`),
 	regexp.MustCompile(`(?i)[\s·\-_]*(season\s*[0-9]+|s[0-9]{1,2})$`),
-	regexp.MustCompile(`[\(\（\[\【]\s*第?\s*[一二三四五六七八九十百千万零两0-9]+\s*(季|部|篇|章)\s*[\)\）\]\】]$`),
+	regexp.MustCompile(`[(（\[\【]\s*第?\s*[一二三四五六七八九十百千万零两0-9]+\s*(季|部|篇|章)\s*[)）\]\】]$`),
 }
 
 // GenerateUUID 生成UUID
