@@ -18,6 +18,18 @@ func (Category) TableName() string {
 	return TableCategory
 }
 
+// CategoryMapping 采集源分类与本地分类的强绑定映射 (方案B: 100% 识别)
+type CategoryMapping struct {
+	Id           int64  `gorm:"primaryKey;autoIncrement:true" json:"id"`
+	SourceId     string `gorm:"uniqueIndex:idx_source_type;size:32" json:"source_id"`      // 资源站ID
+	SourceTypeId int64  `gorm:"uniqueIndex:idx_source_type" json:"source_type_id"`        // 采集站分类ID (type_id)
+	CategoryId   int64  `gorm:"index" json:"category_id"`                                  // 本地分类ID (对应 Category.Id)
+}
+
+func (CategoryMapping) TableName() string {
+	return "category_mappings"
+}
+
 // CategoryTree 分類信息樹形結構 (扁平化 JSON)
 type CategoryTree struct {
 	Id        int64           `json:"id"`

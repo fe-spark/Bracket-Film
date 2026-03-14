@@ -13,7 +13,9 @@ import (
 	统一转化为内部结构体
 */
 
-// GenCategoryTree 解析处理 filmListPage数据 生成分类树形数据
+// GenCategoryTree 将采集站分类列表直接构建为两层树形结构
+// 第一层（pid=0）直接作为顶级大类，第二层作为对应大类的子类。
+// 忽略资讯/明星等噪音分类。
 func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 	root := &model.CategoryTree{
 		Id: 0, Pid: -1, Name: "分类信息", Show: true,
@@ -22,130 +24,30 @@ func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 	nodes := make(map[int64]*model.CategoryTree)
 	nodes[0] = root
 
-	// 1. 初始化节点
-	for _, c := range list {
-		id, name := c.ID, c.Name
-		nodes[id] = &model.CategoryTree{
-			Id: id, Pid: c.Pid, Name: name, Show: true,
-			Children: make([]*model.CategoryTree, 0),
-		}
-	}
+	// 噪音分类过滤词
+	noiseWords := []string{"资讯", "明星", "新闻", "解说", "站长", "教程"}
 
-	// 2. 定义分类识别规则 (仅作为逻辑参考，不再预先创建 ID)
-	rules := map[string]struct{ kw, exclude []string }{
-		"movie":  {[]string{"电影", "影院"}, []string{"片", "资讯", "新闻", "站长", "解说"}},
-		"tv":     {[]string{"电视剧", "剧集", "连续剧"}, []string{"短剧", "资讯", "新闻", "站长", "解说"}},
-		"anime":  {[]string{"动漫", "动画", "漫剧"}, []string{"资讯", "新闻", "站长", "解说"}},
-		"show":   {[]string{"综艺"}, []string{"资讯", "新闻", "站长", "解说"}},
-		"sports": {[]string{"体育", "赛事"}, []string{"资讯", "新闻", "站长", "解说"}},
-		"short":  {[]string{"短剧", "爽剧"}, []string{"反转", "资讯", "新闻", "站长", "解说"}},
-		"doc":    {[]string{"纪录", "记录", "纪录片"}, []string{"资讯", "新闻", "站长", "解说"}},
-		"other":  {[]string{"其他", "福利", "伦理", "三级"}, nil},
-	}
-
-	// 用于存储最终确定的“大类”节点与其类型 Key 的映射
-	rootIds := make(map[string]int64)
-	rootNames := map[string]string{
-		"movie": "电影", "tv": "电视剧", "anime": "动漫", "show": "综艺",
-		"sports": "体育", "short": "短剧", "doc": "纪录片", "other": "其他",
-	}
-	// virtualRoots 记录按需生成的虚拟根节点指针
-	virtualRoots := make(map[string]*model.CategoryTree)
-
-	// 第一遍：初步扫描识别“真根” (采集站原始已归好的类)
+	// 第一遍：初始化所有节点
 	for _, c := range list {
 		lowName := strings.ToLower(c.Name)
-		for key, rule := range rules {
-			if c.Pid == 0 && utils.ContainsAny(lowName, rule.kw) && !utils.ContainsAny(lowName, rule.exclude) {
-				if _, ok := rootIds[key]; !ok {
-					rootIds[key] = c.ID
-				}
-			}
-		}
-	}
-
-	// 辅助逻辑：按需获取或创建根节点
-	getOrCreateRoot := func(key string) *model.CategoryTree {
-		if rid, ok := rootIds[key]; ok {
-			return nodes[rid]
-		}
-		if vr, ok := virtualRoots[key]; ok {
-			return vr
-		}
-		// 创建无 ID 的纯逻辑根节点，入库时由存取层自动根据 Name + 树位置对齐
-		vr := &model.CategoryTree{
-			Name: rootNames[key], Pid: 0, Show: true,
+		show := !utils.ContainsAny(lowName, noiseWords)
+		nodes[c.ID] = &model.CategoryTree{
+			Id: c.ID, Pid: c.Pid, Name: c.Name, Show: show,
 			Children: make([]*model.CategoryTree, 0),
 		}
-		virtualRoots[key] = vr
-		root.Children = append(root.Children, vr)
-		return vr
 	}
 
-	// 3. 建立层级关系 (智能归并)
-	subRules := []struct {
-		key string
-		kws []string
-	}{
-		{"anime", []string{"动漫", "动画", "新番"}},
-		{"show", []string{"综艺", "访谈", "晚会", "各色演唱会", "演唱会"}},
-		{"sports", []string{"足球", "篮球", "赛事", "斯诺克", "网球", "下注", "欧冠", "英超", "西甲", "德甲", "意甲", "法甲", "中超", "nba", "cba", "lpl", "wcba", "竞技", "奥运", "亚运", "lol"}},
-		{"doc", []string{"纪录", "记录", "科普", "学习"}},
-		{"short", []string{"短剧", "爽剧", "重生", "穿越", "总裁", "都市", "虐恋", "逆袭", "甜宠", "短片"}},
-		{"movie", []string{"电影", "影片", "片", "影院", "蓝光", "4k", "仙侠", "古装", "悬疑", "烧脑", "惊悚"}},
-		{"tv", []string{"剧", "剧集", "电视剧", "连续剧"}},
-		{"other", []string{"伦理", "三级", "两性", "写真"}},
-	}
-
+	// 第二遍：建立层级关系（严格按采集站原始 pid 层次）
 	for _, c := range list {
-		id, pid, name := c.ID, c.Pid, c.Name
-		lowName := strings.ToLower(name)
-
-		// 忽略资讯、明星等
-		nodes[id].Show = !utils.ContainsAny(lowName, []string{"资讯", "明星", "新闻", "解说", "站长", "教程"})
-
-		if pid == 0 {
-			isRoot := false
-			for _, rid := range rootIds {
-				if id == rid {
-					isRoot = true
-					break
-				}
-			}
-
-			if !isRoot {
-				var target *model.CategoryTree
-				// 电影/电视剧优先
-				if utils.ContainsAny(lowName, []string{"电影", "影片", "影院", "蓝光", "4k", "仙侠", "古装", "悬疑", "烧脑", "惊悚"}) || (strings.Contains(lowName, "片") && !strings.Contains(lowName, "短片")) {
-					target = getOrCreateRoot("movie")
-				} else if utils.ContainsAny(lowName, []string{"剧集", "电视剧", "连续剧"}) || (strings.Contains(lowName, "剧") && !strings.Contains(lowName, "短剧")) {
-					target = getOrCreateRoot("tv")
-				} else {
-					for _, rule := range subRules {
-						if utils.ContainsAny(lowName, rule.kws) {
-							target = getOrCreateRoot(rule.key)
-							break
-						}
-					}
-				}
-				if target == nil {
-					target = getOrCreateRoot("other")
-				}
-				// 挂载并设置 Pid 语义
-				target.Children = append(target.Children, nodes[id])
-				// 注意：这里保留 nodes[id].Category.Pid = 0 不变，或者入库层处理，
-				// 为了让保存逻辑识别它是“被重新分配了父类”，我们可以手动干预：
-				// nodes[id].Category.Pid = target.Id // 如果 target 有 Id
-				continue
-			}
+		node := nodes[c.ID]
+		if !node.Show {
+			continue
 		}
-
-		// 默认归位逻辑
-		parent := nodes[pid]
-		if parent == nil {
+		parent, ok := nodes[c.Pid]
+		if !ok {
 			parent = root
 		}
-		parent.Children = append(parent.Children, nodes[id])
+		parent.Children = append(parent.Children, node)
 	}
 
 	return root

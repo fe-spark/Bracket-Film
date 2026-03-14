@@ -29,7 +29,7 @@ func (s *InitService) DefaultDataInit() {
 			&model.MovieDetailInfo{}, &model.Category{}, &model.MoviePlaylist{},
 			&model.VirtualPictureQueue{}, &model.FilmSource{}, &model.SearchTagItem{},
 			&model.CrontabRecord{}, &model.SiteConfigRecord{}, &model.MovieSourceMapping{},
-			&model.Banner{}, &model.CronSourceRel{}, &model.MappingRule{},
+			&model.Banner{}, &model.CronSourceRel{}, &model.MappingRule{}, &model.CategoryMapping{},
 		)
 	}
 
@@ -60,20 +60,14 @@ func (s *InitService) TableInit() {
 		&model.Banner{},
 		&model.CronSourceRel{},
 		&model.MappingRule{},
+		&model.CategoryMapping{},
 	)
 	if err != nil {
 		log.Println("Database AutoMigrate Failed:", err)
 		return
 	}
 
-	// 初始化映射清洗引擎 (建表后立即同步种子数据)
-	repository.InitMappingEngine()
-
-	// 初始化映射清洗引擎 (建表后立即同步种子数据)
-	repository.InitMappingEngine()
-
-	// 初始化标准大类与默认排序标签
-	repository.InitMainCategories()
+	// 初始化映射清洗引擎与标准大类 (由 DefaultDataInit 统一调用)
 
 	// 专门处理表的默认或初始状态定义
 	db.Mdb.Exec(fmt.Sprintf("alter table %s auto_Increment = %d", model.TableUser, config.UserIdInitialVal))
@@ -122,9 +116,9 @@ func (s *InitService) FilmSourceInit() {
 	}
 	// 直接初始化采集源 - 使用 URI 哈希作为 ID 确保服务重启后顺序一致且支持主从切换
 	l := []model.FilmSource{
-		{Name: "HD(LZ)", Uri: `https://cj.lziapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.MasterCollect, SyncPictures: false, CollectType: model.CollectVideo, State: true, Interval: 500},
+		{Name: "HD(LZ)", Uri: `https://cj.lziapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
 		{Name: "HD(BF)", Uri: `https://bfzyapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
-		{Name: "HD(FF)", Uri: `http://cj.ffzyapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
+		{Name: "HD(FF)", Uri: `http://cj.ffzyapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.MasterCollect, SyncPictures: false, CollectType: model.CollectVideo, State: true, Interval: 500},
 		{Name: "HD(OK)", Uri: `https://okzyapi.com/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
 		{Name: "HD(HM)", Uri: `https://json.heimuer.xyz/api.php/provide/vod/`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},
 		{Name: "HD(LY)", Uri: `https://360zy.com/api.php/provide/vod/at/json`, ResultModel: model.JsonResult, Grade: model.SlaveCollect, SyncPictures: false, CollectType: model.CollectVideo, State: false, Interval: 500},

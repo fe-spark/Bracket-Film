@@ -169,7 +169,7 @@ function FilmAddForm() {
   if (fetching) {
     return (
       <div className={styles.loadingContainer}>
-        <Spin size="large" tip="正在加载影片数据..." />
+        <Spin size="large" description="正在加载影片数据..." />
       </div>
     );
   }

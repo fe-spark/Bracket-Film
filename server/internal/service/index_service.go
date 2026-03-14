@@ -87,25 +87,24 @@ func (i *IndexService) GetFilmDetail(id int) model.MovieDetailVo {
 	return res
 }
 
-// GetCategoryInfo 分类信息获取, 组装导航栏需要的信息
+// GetCategoryInfo 获取活跃大类信息 (动态结构版)
 func (i *IndexService) GetCategoryInfo() map[string]any {
 	nav := make(map[string]any)
 	tree := repository.GetActiveCategoryTree()
+	
+	// 定义标准简称映射 (仅用于保持 API 兼容性，如 film, tv 等字段名)
+	// 如果需要完全动态，可以考虑在 Category 表增加 Key 字段
+	keyMap := map[string]string{
+		"电影": "film", "电视剧": "tv", "综艺": "variety", "动漫": "cartoon", "短剧": "short", "纪录片": "document",
+	}
+
 	for _, t := range tree.Children {
-		switch t.Name {
-		case "动漫":
-			nav["cartoon"] = t
-		case "电影":
-			nav["film"] = t
-		case "电视剧":
-			nav["tv"] = t
-		case "综艺":
-			nav["variety"] = t
-		case "短剧":
-			nav["short"] = t
-		case "纪录片":
-			nav["document"] = t
+		key, ok := keyMap[t.Name]
+		if !ok {
+			// 后备方案：使用 ID 或 Alias 首项
+			key = strings.ToLower(t.Name)
 		}
+		nav[key] = t
 	}
 	return nav
 }
@@ -155,7 +154,7 @@ func (i *IndexService) GetFilmCategory(id int64, idType string, page *dto.Page) 
 
 // GetPidCategory 获取pid对应的分类信息
 func (i *IndexService) GetPidCategory(pid int64) *model.CategoryTree {
-	tree := repository.GetActiveCategoryTree()
+	tree := repository.GetCategoryTree()
 	for _, t := range tree.Children {
 		if t.Id == pid {
 			return &model.CategoryTree{

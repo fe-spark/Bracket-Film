@@ -249,8 +249,8 @@ func CollectCategory(s *model.FilmSource) {
 		log.Println("GetCategoryTree Error: ", err)
 		return
 	}
-	// 保存 tree 到 MySQL
-	err = repository.SaveCategoryTree(categoryTree)
+	// 保存 tree 到 MySQL (方案B: 传入 sourceId 建立映射)
+	err = repository.SaveCategoryTree(s.Id, categoryTree)
 	if err != nil {
 		log.Println("SaveCategoryTree Error: ", err)
 		return

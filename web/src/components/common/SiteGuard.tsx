@@ -24,7 +24,7 @@ interface SiteConfigContextType {
 const SiteConfigContext = createContext<SiteConfigContextType>({
   config: null,
   loading: true,
-  refresh: async () => {},
+  refresh: async () => { },
 });
 
 export const useSiteConfig = () => useContext(SiteConfigContext);
@@ -51,7 +51,7 @@ export default function SiteGuard({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <Spin size="large" tip="正在加载站点配置..." />
+        <Spin size="large" description="正在加载站点配置..." />
       </div>
     );
   }

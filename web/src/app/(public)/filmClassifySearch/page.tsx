@@ -66,7 +66,7 @@ function ClassifySearchContent() {
       {/* Search Header / Stats */}
       <div className={styles.resultHeader}>
         <div className={styles.count}>
-          <span>{title.name}</span>共 {page.total} 部影片
+          <span>{title?.name || "全部"}</span>共 {page.total} 部影片
         </div>
       </div>
 

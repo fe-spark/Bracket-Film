@@ -62,7 +62,7 @@ export default function SiteConfigPage() {
         </Space>
       </div>
 
-      <Spin spinning={fetching} tip="正在加载网站配置...">
+      <Spin spinning={fetching} description="正在加载网站配置...">
         <Form form={form} layout="vertical" className={`${styles.form} ${styles.formCompact}`}>
           <Card
             title={

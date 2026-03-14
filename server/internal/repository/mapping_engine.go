@@ -1,108 +1,106 @@
 package repository
 
 import (
+	"fmt"
 	"regexp"
+	"strings"
+
 	"server/internal/infra/db"
 	"server/internal/model"
-	"strings"
 )
 
-// StandardMapping 现在已迁移至数据库驱动 (mapping_rules 表)
-// 内存中维护 sync.Map 以保证高性能
-
-// GetCategoryBucketRole 根据名称推断其属于哪一个预设标准大类 (正则匹配版)
+// GetCategoryBucketRole 根据名称推断其属于哪一个预设标准大类 (精简匹配版)
 func GetCategoryBucketRole(typeName string) string {
 	typeName = strings.TrimSpace(typeName)
 	if typeName == "" {
-		return ""
+		return model.BigCategoryOther
 	}
 
-	// 优先级正则表达式字典（从细到粗排布，避免交叉误判）
-	patterns := []struct {
-		Role  string
-		Regex string
-	}{
-		{"短剧", `短剧|微短剧|爽剧|竖屏剧`},
-		{"纪录片", `纪录片|记录片|纪实|专题`},
-		{"动漫", `动漫|动画|番剧|二次元|BD|OVA`},
-		{"综艺", `综艺|真人秀|脱口秀|晚会|访谈|晚$`},
-		{"伦理片", `伦理|非法|福利|写真|X级`},
-		{"电影", `电影|影片|片$|剧场版|蓝光|动作片|喜剧片|爱情片|科幻片|恐怖片|剧情片|战争片|动作|喜剧|爱情|科幻|惊悚|恐怖`},
-		{"电视剧", `电视剧|连续剧|系列剧|剧集|国产剧|港剧|台剧|泰剧|美剧|韩剧|日剧|欧美剧|海外剧|剧$`},
+	// 1. 基于 Alias 词典匹配 (强制匹配优先级，防止“国产动漫”被错误匹配为“电视剧”)
+	// 特征明显的分类（动漫、综艺等）应当优先于 电影、电视剧 进行匹配。
+	matchPriority := []string{
+		model.BigCategoryAnimation,
+		model.BigCategoryVariety,
+		model.BigCategoryDocumentary,
+		model.BigCategoryShortFilm,
+		model.BigCategoryMovie,
+		model.BigCategoryTV,
+		model.BigCategoryOther,
 	}
 
-	for _, p := range patterns {
-		re := regexp.MustCompile("(?i)" + p.Regex)
-		if re.MatchString(typeName) {
-			return p.Role
+	mains := GetMainCategoriesFromCache()
+	mainsMap := make(map[string]model.Category)
+	for _, m := range mains {
+		mainsMap[m.Name] = m
+	}
+
+	for _, targetName := range matchPriority {
+		m, ok := mainsMap[targetName]
+		if !ok || m.Alias == "" {
+			continue
+		}
+		for _, kw := range strings.Split(m.Alias, ",") {
+			if kw = strings.TrimSpace(kw); kw != "" && strings.Contains(typeName, kw) {
+				return m.Name
+			}
 		}
 	}
 
-	return ""
+	// 2. 语义回退 (Fallback) - 使用切片保证有序匹配，优先匹配特征明显的词
+	fallback := []struct {
+		Key   string
+		Value string
+	}{
+		{"动漫", model.BigCategoryAnimation},
+		{"动画", model.BigCategoryAnimation},
+		{"番剧", model.BigCategoryAnimation},
+		{"综艺", model.BigCategoryVariety},
+		{"娱乐", model.BigCategoryVariety},
+		{"纪录", model.BigCategoryDocumentary},
+		{"短剧", model.BigCategoryShortFilm},
+		{"电影", model.BigCategoryMovie},
+		{"片", model.BigCategoryMovie},
+		{"院线", model.BigCategoryMovie},
+		{"电视剧", model.BigCategoryTV},
+		{"剧", model.BigCategoryTV},
+		{"国产", model.BigCategoryTV},
+	}
+	for _, f := range fallback {
+		if strings.Contains(typeName, f.Key) {
+			return f.Value
+		}
+	}
+	return model.BigCategoryOther
 }
 
-// GetStandardIdByRole 返回标准大类的固定 ID (硬編碼確保部署即用，不受數據庫初始化順序影響)
+// GetLocalCategoryId 根据采集源 ID 和 采集源分类 ID 获取本地分类 ID (方案B: 100% 识别 - 内存缓存优化版)
+func GetLocalCategoryId(sourceId string, sourceTypeId int64) int64 {
+	key := fmt.Sprintf("%s_%d", sourceId, sourceTypeId)
+	if id, ok := cacheSourceMap.Load(key); ok {
+		return id.(int64)
+	}
+	return 0
+}
+
+// GetStandardIdByRole 返回标准大类的 ID (动态查库版)
 func GetStandardIdByRole(role string) int64 {
-	switch role {
-	case "电影":
-		return 1
-	case "电视剧":
-		return 2
-	case "综艺":
-		return 3
-	case "动漫":
-		return 4
-	case "纪录片":
-		return 5
-	case "短剧":
-		return 6
-	case "伦理片":
-		return 7
-	case "其他":
-		return 8
-	default:
-		return 0
-	}
-}
-
-// GetMainCategoryIdByName 根据采集站的分类名识别标准大类 ID (無狀態確定性版本)
-func GetMainCategoryIdByName(typeName string, typePid int64) int64 {
-	typeName = strings.TrimSpace(typeName)
-	if typeName == "" {
-		return GetStandardIdByRole("其他")
-	}
-
-	// 1. 優先級 A：通過智能分類引擎判定角色，並返回硬編碼的標準 ID
-	role := GetCategoryBucketRole(typeName)
-	if role != "" {
-		return GetStandardIdByRole(role)
-	}
-
-	// 2. 優先級 B：根據採集站常用 Pid 推斷 (MacCMS 常用約定)
-	switch typePid {
-	case 1:
-		return GetStandardIdByRole("电影")
-	case 2:
-		return GetStandardIdByRole("电视剧")
-	case 3:
-		return GetStandardIdByRole("综艺")
-	case 4:
-		return GetStandardIdByRole("动漫")
-	case 37:
-		return GetStandardIdByRole("短剧")
-	}
-
-	// 3. 兜底回退：歸類到標準的“其他”桶 (ID 8)
-	return GetStandardIdByRole("其他")
-}
-
-func findIdByName(mains []model.Category, name string) int64 {
+	mains := GetMainCategoriesFromCache()
 	for _, m := range mains {
-		if m.Name == name {
+		if m.Name == role {
 			return m.Id
 		}
 	}
 	return 0
+}
+
+// GetMainCategoryIdByName 根据大类名称直接查找本地大类 ID（动态版本）
+// 不再依赖硬编码 Alias 正则匹配，直接按名称精确查找内存缓存中的顶级大类。
+func GetMainCategoryIdByName(name string, _ int64) int64 {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return 0
+	}
+	return GetStandardIdByRole(name)
 }
 
 // GetMainCategoryName 根据 ID 获取标准大类名称 (带内存缓存版本)
@@ -123,24 +121,12 @@ func GetMainCategoryName(pid int64) string {
 		return m.Name
 	}
 
-	// 3. 兜底回退：如果数据库里也没初始化该 ID，则返回标准名称 (防止 log spam)
-	switch pid {
-	case 1:
-		return "电影"
-	case 2:
-		return "电视剧"
-	case 3:
-		return "综艺"
-	case 4:
-		return "动漫"
-	case 5:
-		return "纪录片"
-	case 6:
-		return "短剧"
-	case 7:
-		return "伦理片"
-	case 8:
-		return "其他"
+	// 3. 兜底回退：如果数据库里也没初始化该 ID，则尝试从内存里捞
+	mains := GetMainCategoriesFromCache()
+	for _, m := range mains {
+		if m.Id == pid {
+			return m.Name
+		}
 	}
 
 	return ""
@@ -158,37 +144,30 @@ func NormalizeArea(rawArea string) string {
 	seen := make(map[string]bool)
 
 	mapping := GetAreaMapping()
-	blacklist := GetBlacklist()
+	filters := GetFilterMap()
 
 	for _, a := range areas {
 		a = strings.TrimSpace(a)
-		if a == "" || a == "其他" || a == "其它" {
+		if a == "" {
 			continue
 		}
 
-		// 黑名单过滤
-		isBlack := false
-		for _, b := range blacklist {
-			if b != "" && (a == b || strings.Contains(a, b)) {
-				isBlack = true
-				break
-			}
-		}
-		if isBlack {
+		// 过滤不需要的词
+		if filters[a] {
 			continue
 		}
 
 		if mapped, ok := mapping[a]; ok {
 			a = mapped
 		}
-		if !seen[a] {
+		if a != "" && !seen[a] {
 			result = append(result, a)
 			seen[a] = true
 		}
 	}
 
 	if len(result) == 0 {
-		return "其他"
+		return model.TagOthersName
 	}
 	return strings.Join(result, ",")
 }
@@ -205,23 +184,16 @@ func NormalizeLanguage(rawLang string) string {
 
 	mapping := GetLangMapping()
 	areaMapping := GetAreaMapping()
-	blacklist := GetBlacklist()
+	filters := GetFilterMap()
 
 	for _, l := range langs {
 		l = strings.TrimSpace(l)
-		if l == "" || l == "其他" || l == "其它" || l == "普通话" {
+		if l == "" {
 			continue
 		}
 
-		// 黑名单过滤
-		isBlack := false
-		for _, b := range blacklist {
-			if b != "" && (l == b || strings.Contains(l, b)) {
-				isBlack = true
-				break
-			}
-		}
-		if isBlack {
+		// 过滤
+		if filters[l] {
 			continue
 		}
 
@@ -233,7 +205,7 @@ func NormalizeLanguage(rawLang string) string {
 		if mapped, ok := mapping[l]; ok {
 			l = mapped
 		}
-		if !seen[l] {
+		if l != "" && !seen[l] {
 			result = append(result, l)
 			seen[l] = true
 		}
@@ -245,39 +217,21 @@ func NormalizeLanguage(rawLang string) string {
 	return strings.Join(result, ",")
 }
 
-// MapAttributesFromTypeName 从分类名中提取隐含的属性 (如 "国产剧" -> "剧集" + "大陆")
+// MapAttributesFromTypeName 从分类名中提取隐含的属性 (动态配置版)
 func MapAttributesFromTypeName(typeName string) (cleanTypeName string, area string) {
 	cleanTypeName = typeName
-	// 常见的地区词（包含在分类名中）
-	keywords := map[string]string{
-		"国产": "大陆", "大陆": "大陆", "内地": "大陆",
-		"香港": "香港", "港片": "香港", "港剧": "香港",
-		"台湾": "台湾", "台剧": "台湾",
-		"欧美": "美国", "美剧": "美国",
-		"韩国": "韩国", "韩剧": "韩国",
-		"日本": "日本", "日剧": "日本", "日漫": "日本",
-		"泰国": "泰国", "泰剧": "泰国",
-		"海外": "其他",
-	}
 
-	for k, v := range keywords {
+	// 从 mapping_rules 加载属性提取规则
+	attrs := GetAttributeMapping()
+
+	for k, v := range attrs {
 		if strings.Contains(typeName, k) {
 			area = v
-			// 剥离地区词，使分类名更纯粹 (如 "国产动漫" -> "动漫")
-			// 注意：这里使用 Replacer 避免破坏词根
-			replacer := strings.NewReplacer(
-				"国产", "", "内地", "", "大陆", "",
-				"韩国", "", "韩剧", "剧集",
-				"日本", "", "日剧", "剧集", "日漫", "动漫",
-				"欧美", "", "美剧", "剧集",
-				"香港", "", "港片", "电影", "港剧", "剧集",
-				"台湾", "", "台剧", "剧集",
-				"泰国", "", "泰剧", "剧集",
-			)
-			cleanTypeName = replacer.Replace(typeName)
-			// 特殊处理：如果剥离后剩下了通用的后缀（如“片”、“播”、“资源”），进一步精简
+			// 移除匹配到的属性词，使分类名更纯粹
+			cleanTypeName = strings.ReplaceAll(cleanTypeName, k, "")
+			// 进一步对齐剥离后的名称
 			cleanTypeName = strings.TrimSuffix(cleanTypeName, "片")
-			cleanTypeName = strings.TrimSuffix(cleanTypeName, "播")
+			cleanTypeName = strings.TrimSuffix(cleanTypeName, "剧")
 			cleanTypeName = strings.TrimSuffix(cleanTypeName, "资源")
 			break
 		}
@@ -290,20 +244,15 @@ func MapAttributesFromTypeName(typeName string) (cleanTypeName string, area stri
 	return
 }
 
-// CleanPlotTags 用于清洗“剧情”标签，去除冗余词汇，并拆解胶水标签，确保维度纯净
+// CleanPlotTags 用于清洗"剧情"标签，纯动态映射版
 func CleanPlotTags(tags string, area string, mainCategory string, category string) string {
 	if tags == "" {
 		return ""
 	}
 
-	// 1. 初始化过滤器与关键字列表
-	blackList := GetBlacklist()
-	keywords := []string{
-		"动作", "喜剧", "爱情", "科幻", "悬疑", "惊悚", "恐怖", "奇幻", "冒险", "战争",
-		"犯罪", "动画", "纪录", "剧情", "伦理", "传记", "历史", "古装", "武侠", "西部",
-		"玄幻", "魔幻", "都市", "言情", "热血", "搞笑", "穿越", "职场", "励志", "校园",
-		"竞技", "运动", "励志", "生活", "歌舞", "传记", "末日", "恐怖", "神怪", "少女", "少儿",
-	}
+	// 1. 初始化过滤器与规则
+	filters := GetFilterMap()
+	plotMapping := GetPlotMapping()
 
 	// 2. 预处理分隔符
 	tags = regexp.MustCompile(`[/,，、\s\|+]`).ReplaceAllString(tags, ",")
@@ -312,70 +261,24 @@ func CleanPlotTags(tags string, area string, mainCategory string, category strin
 	var res []string
 	seen := make(map[string]bool)
 
-	// 获取地区简化词
-	shortArea := area
-	if strings.Contains(area, "中国") {
-		shortArea = strings.ReplaceAll(area, "中国", "")
-	}
-
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
-		if p == "" || p == category || p == "其他" || p == "其它" {
+		if p == "" || p == category || filters[p] {
 			continue
 		}
 
-		// A. 处理“胶水标签”（如“动作动画奇幻”）
-		pLen := len([]rune(p))
-		if pLen >= 3 && pLen <= 6 {
-			foundGlue := false
-			matchCount := 0
-			for _, kw := range keywords {
-				if strings.Contains(p, kw) {
-					matchCount++
-					if p != kw {
-						foundGlue = true
-					}
-				}
+		// A. 映射转换 (如果配置了映射则转换，否则保留原样)
+		if mapped, ok := plotMapping[p]; ok {
+			p = mapped
+		}
+
+		// B. 二次过滤与去重
+		if p != "" && !seen[p] && !filters[p] && p != category && p != mainCategory {
+			// 排除过于亢长的标签 (非核心剧情)
+			if len([]rune(p)) <= 4 && len([]rune(p)) >= 2 {
+				res = append(res, p)
+				seen[p] = true
 			}
-			if foundGlue && matchCount >= 1 {
-				tempP := p
-				for _, kw := range keywords {
-					if strings.Contains(tempP, kw) {
-						if !seen[kw] && !IsInSlice(blackList, kw) && kw != category && kw != mainCategory {
-							res = append(res, kw)
-							seen[kw] = true
-						}
-						tempP = strings.ReplaceAll(tempP, kw, "")
-					}
-				}
-				continue
-			}
-		}
-
-		// B. 剥离冗余后缀
-		p = strings.TrimSuffix(p, "片")
-		p = strings.TrimSuffix(p, "剧")
-		p = strings.TrimSuffix(p, "类")
-		p = strings.TrimSuffix(p, "题材")
-
-		// C. 拦截黑名单与维度偏移词
-		isBlack := IsInSlice(blackList, p)
-		if !isBlack && mainCategory != "" {
-			if strings.Contains(p, mainCategory) || (mainCategory == "动漫" && p == "动画") {
-				isBlack = true
-			}
-		}
-		if !isBlack && (strings.Contains(p, area) || (shortArea != "" && strings.Contains(p, shortArea))) {
-			isBlack = true
-		}
-
-		if isBlack || len([]rune(p)) > 4 || len([]rune(p)) < 2 {
-			continue
-		}
-
-		if !seen[p] {
-			res = append(res, p)
-			seen[p] = true
 		}
 	}
 
