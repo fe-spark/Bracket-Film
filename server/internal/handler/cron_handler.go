@@ -64,7 +64,10 @@ func (h *CronHandler) FilmCronUpdate(c *gin.Context) {
 		return
 	}
 	task.Spec = spec
-	service.CronSvc.UpdateFilmCron(task)
+	if err := service.CronSvc.UpdateFilmCron(task); err != nil {
+		dto.Failed(fmt.Sprint("更新失败: ", err.Error()), c)
+		return
+	}
 	dto.SuccessOnlyMsg(fmt.Sprintf("定时任务[%s]更新成功", task.Id), c)
 }
 

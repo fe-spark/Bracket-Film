@@ -147,6 +147,11 @@ func (s *InitService) CollectCrontabInit() {
 }
 
 func (s *InitService) registerTask(task model.FilmCollectTask) {
+	if !task.State {
+		repository.UpdateFilmTask(task)
+		return
+	}
+
 	var cid cron.EntryID
 	var err error
 	switch task.Model {

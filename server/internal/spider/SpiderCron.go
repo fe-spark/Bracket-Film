@@ -139,6 +139,9 @@ func ReloadCronTask(id string) error {
 
 	// 2. 移除旧任务
 	RemoveCronByTaskId(id)
+	if !ft.State {
+		return nil
+	}
 
 	// 3. 重新注册新任务
 	var cid cron.EntryID
@@ -174,6 +177,10 @@ func executeTask(ft model.FilmCollectTask) {
 		AutoCollect(ft.Time)
 		log.Println("执行一次自动更新任务")
 	case 1: // 更新指定资源站
+		if len(ft.Ids) == 0 {
+			log.Printf("定时任务[%s]未配置资源站，跳过执行\n", ft.Id)
+			return
+		}
 		BatchCollect(ft.Time, ft.Ids...)
 	case 2: // 失败采集恢复
 		FullRecoverSpider()

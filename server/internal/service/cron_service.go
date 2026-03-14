@@ -23,35 +23,37 @@ func (s *CronService) AddFilmCrontab(cv model.FilmCronVo) error {
 		return err
 	}
 	task := model.FilmCollectTask{Id: utils.GenerateSalt(), Ids: cv.Ids, Time: cv.Time, Spec: cv.Spec, Model: cv.Model, State: cv.State, Remark: cv.Remark}
-	var cid cron.EntryID
-	var err error
-	switch task.Model {
-	case 0:
-		cid, err = spider.AddAutoUpdateCron(task.Id, task.Spec)
-		if err != nil {
-			return errors.New(fmt.Sprint("影视自动更新任务添加失败: ", err.Error()))
+	if task.State {
+		var cid cron.EntryID
+		var err error
+		switch task.Model {
+		case 0:
+			cid, err = spider.AddAutoUpdateCron(task.Id, task.Spec)
+			if err != nil {
+				return errors.New(fmt.Sprint("影视自动更新任务添加失败: ", err.Error()))
+			}
+			task.Cid = cid
+		case 1:
+			cid, err = spider.AddFilmUpdateCron(task.Id, task.Spec)
+			if err != nil {
+				return errors.New(fmt.Sprint("影视更新定时任务添加失败: ", err.Error()))
+			}
+			task.Cid = cid
+		case 2:
+			cid, err = spider.AddFilmRecoverCron(task.Id, task.Spec)
+			if err != nil {
+				return errors.New(fmt.Sprint("失败采集处理定时任务添加失败: ", err.Error()))
+			}
+			task.Cid = cid
+		case 3:
+			cid, err = spider.AddOrphanCleanCron(task.Id, task.Spec)
+			if err != nil {
+				return errors.New(fmt.Sprint("孤儿数据清理定时任务添加失败: ", err.Error()))
+			}
+			task.Cid = cid
 		}
-		task.Cid = cid
-	case 1:
-		cid, err = spider.AddFilmUpdateCron(task.Id, task.Spec)
-		if err != nil {
-			return errors.New(fmt.Sprint("影视更新定时任务添加失败: ", err.Error()))
-		}
-		task.Cid = cid
-	case 2:
-		cid, err = spider.AddFilmRecoverCron(task.Id, task.Spec)
-		if err != nil {
-			return errors.New(fmt.Sprint("失败采集处理定时任务添加失败: ", err.Error()))
-		}
-		task.Cid = cid
-	case 3:
-		cid, err = spider.AddOrphanCleanCron(task.Id, task.Spec)
-		if err != nil {
-			return errors.New(fmt.Sprint("孤儿数据清理定时任务添加失败: ", err.Error()))
-		}
-		task.Cid = cid
+		spider.RegisterTaskCid(task.Id, task.Cid)
 	}
-	spider.RegisterTaskCid(task.Id, task.Cid)
 	repository.SaveFilmTask(task)
 	return nil
 }
@@ -93,15 +95,20 @@ func (s *CronService) ChangeFilmCrontab(id string, state bool) error {
 	ft.State = state
 	repository.UpdateFilmTask(ft)
 	// 同步重载运行时引擎
-	_ = spider.ReloadCronTask(id)
+	if err := spider.ReloadCronTask(id); err != nil {
+		return fmt.Errorf("定时任务重载失败: %w", err)
+	}
 	return nil
 }
 
 // UpdateFilmCron 更新定时任务的状态信息
-func (s *CronService) UpdateFilmCron(t model.FilmCollectTask) {
+func (s *CronService) UpdateFilmCron(t model.FilmCollectTask) error {
 	repository.UpdateFilmTask(t)
 	// 同步重载运行时引擎（可能修改了 Cron 表达式或采集站列表）
-	_ = spider.ReloadCronTask(t.Id)
+	if err := spider.ReloadCronTask(t.Id); err != nil {
+		return fmt.Errorf("定时任务重载失败: %w", err)
+	}
+	return nil
 }
 
 // DelFilmCrontab 删除定时任务
