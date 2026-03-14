@@ -2,15 +2,15 @@ package service
 
 import (
 	"encoding/json"
-	"regexp"
+	"strings"
+	"time"
+
 	"server/internal/config"
 	"server/internal/infra/db"
 	"server/internal/model"
 	"server/internal/model/dto"
 	"server/internal/repository"
 	"server/internal/utils"
-	"strings"
-	"time"
 )
 
 type IndexService struct{}
@@ -91,10 +91,10 @@ func (i *IndexService) GetFilmDetail(id int) model.MovieDetailVo {
 func (i *IndexService) GetCategoryInfo() map[string]any {
 	nav := make(map[string]any)
 	tree := repository.GetActiveCategoryTree()
-	
+
 	// 定义标准简称映射 (仅用于保持 API 兼容性，如 film, tv 等字段名)
 	// 如果需要完全动态，可以考虑在 Category 表增加 Key 字段
- 	keyMap := map[string]string{
+	keyMap := map[string]string{
 		"电影": "film", "电视剧": "tv", "综艺": "variety", "动漫": "cartoon", "纪录片": "document",
 	}
 
@@ -207,31 +207,44 @@ func multipleSource(detail *model.MovieDetail) []model.PlayLinkVo {
 	}
 	playList := []model.PlayLinkVo{{Id: master[0].Id, Name: master[0].Name, LinkList: firstList}}
 
-	names := make(map[string]int)
-	if detail.DbId > 0 {
-		names[utils.GenerateHashKey(detail.DbId)] = 0
+	names := make([]string, 0, 8)
+	seenKeys := make(map[string]struct{}, 8)
+	appendKey := func(k string) {
+		if k == "" {
+			return
+		}
+		if _, ok := seenKeys[k]; ok {
+			return
+		}
+		seenKeys[k] = struct{}{}
+		names = append(names, k)
 	}
-	names[utils.GenerateHashKey(detail.Name)] = 0
-	names[utils.GenerateHashKey(regexp.MustCompile(`第一季$`).ReplaceAllString(detail.Name, ""))] = 0
+	if detail.DbId > 0 {
+		appendKey(utils.GenerateHashKey(detail.DbId))
+	}
+	for _, v := range utils.NormalizeTitleCandidates(detail.Name) {
+		appendKey(utils.GenerateHashKey(v))
+	}
 
 	if len(detail.SubTitle) > 0 && strings.Contains(detail.SubTitle, ",") {
 		for v := range strings.SplitSeq(detail.SubTitle, ",") {
-			names[utils.GenerateHashKey(v)] = 0
+			for _, c := range utils.NormalizeTitleCandidates(v) {
+				appendKey(utils.GenerateHashKey(c))
+			}
 		}
 	}
 	if len(detail.SubTitle) > 0 && strings.Contains(detail.SubTitle, "/") {
 		for v := range strings.SplitSeq(detail.SubTitle, "/") {
-			names[utils.GenerateHashKey(v)] = 0
+			for _, c := range utils.NormalizeTitleCandidates(v) {
+				appendKey(utils.GenerateHashKey(c))
+			}
 		}
 	}
 	sc := repository.GetCollectSourceListByGrade(model.SlaveCollect)
 	for _, s := range sc {
-		for k := range names {
-			pl := repository.GetMultiplePlay(s.Id, k)
-			if len(pl) > 0 {
-				playList = append(playList, model.PlayLinkVo{Id: s.Id, Name: s.Name, LinkList: pl})
-				break
-			}
+		pl := repository.GetMultiplePlayByKeys(s.Id, names)
+		if len(pl) > 0 {
+			playList = append(playList, model.PlayLinkVo{Id: s.Id, Name: s.Name, LinkList: pl})
 		}
 	}
 

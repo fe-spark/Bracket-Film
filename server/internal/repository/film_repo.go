@@ -1274,13 +1274,10 @@ func CleanOrphanPlaylists() int64 {
 	}
 
 	// 2. 生成有效 movie_key 集合
-	validKeys := make(map[string]struct{}, len(films)*2)
-	re := regexp.MustCompile(`第一季$`)
+	validKeys := make(map[string]struct{}, len(films)*4)
 	for _, f := range films {
-		// 基于名称的哈希
-		validKeys[utils.GenerateHashKey(f.Name)] = struct{}{}
-		if trimmed := re.ReplaceAllString(f.Name, ""); trimmed != f.Name {
-			validKeys[utils.GenerateHashKey(trimmed)] = struct{}{}
+		for _, c := range utils.NormalizeTitleCandidates(f.Name) {
+			validKeys[utils.GenerateHashKey(c)] = struct{}{}
 		}
 		// 基于豆瓣ID的哈希 (如果存在)
 		if f.DbId != 0 {
@@ -1345,12 +1342,55 @@ func GetHotMovieByCidLimit(cid int64, limit, offset int) []model.SearchInfo {
 
 // GetMultiplePlay 通过影片名 hash 值匹配播放源
 func GetMultiplePlay(siteId, key string) []model.MovieUrlInfo {
+	return GetMultiplePlayByKeys(siteId, []string{key})
+}
+
+// GetMultiplePlayByKeys 按优先级批量匹配播放源，返回首个命中的播放列表
+func GetMultiplePlayByKeys(siteId string, keys []string) []model.MovieUrlInfo {
+	orderedKeys := make([]string, 0, len(keys))
+	seen := make(map[string]struct{}, len(keys))
+	for _, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		orderedKeys = append(orderedKeys, k)
+	}
+	if siteId == "" || len(orderedKeys) == 0 {
+		return nil
+	}
+
+	var playlists []model.MoviePlaylist
+	if err := db.Mdb.
+		Where("source_id = ? AND movie_key IN ?", siteId, orderedKeys).
+		Find(&playlists).Error; err != nil {
+		return nil
+	}
+	if len(playlists) == 0 {
+		return nil
+	}
+
+	contentByKey := make(map[string]string, len(playlists))
+	for _, p := range playlists {
+		contentByKey[p.MovieKey] = p.Content
+	}
+
 	var playlist model.MoviePlaylist
 	var playList []model.MovieUrlInfo
-	if err := db.Mdb.Where("source_id = ? AND movie_key = ?", siteId, key).First(&playlist).Error; err == nil {
+	for _, k := range orderedKeys {
+		content, ok := contentByKey[k]
+		if !ok || content == "" {
+			continue
+		}
+		playlist.Content = content
 		var allPlayList [][]model.MovieUrlInfo
 		if err := json.Unmarshal([]byte(playlist.Content), &allPlayList); err == nil && len(allPlayList) > 0 && len(allPlayList[0]) > 0 {
 			playList = allPlayList[0]
+			break
 		}
 	}
 	return playList

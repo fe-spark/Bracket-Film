@@ -15,6 +15,12 @@ import (
 	"strings"
 )
 
+var seriesSuffixPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`[\s·\-_]*第?\s*[一二三四五六七八九十百千万零两0-9]+\s*(季|部|篇|章)$`),
+	regexp.MustCompile(`(?i)[\s·\-_]*(season\s*[0-9]+|s[0-9]{1,2})$`),
+	regexp.MustCompile(`[\(\（\[\【]\s*第?\s*[一二三四五六七八九十百千万零两0-9]+\s*(季|部|篇|章)\s*[\)\）\]\】]$`),
+}
+
 // GenerateUUID 生成UUID
 func GenerateUUID() (uuid string) {
 	b := make([]byte, 16)
@@ -159,4 +165,39 @@ func ContainsAny(s string, keywords []string) bool {
 		}
 	}
 	return false
+}
+
+func NormalizeTitleCandidates(title string) []string {
+	base := strings.TrimSpace(title)
+	if base == "" {
+		return nil
+	}
+
+	candidates := make([]string, 0, 6)
+	seen := make(map[string]struct{}, 6)
+	appendCandidate := func(v string) {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return
+		}
+		if _, ok := seen[v]; ok {
+			return
+		}
+		seen[v] = struct{}{}
+		candidates = append(candidates, v)
+	}
+
+	appendCandidate(base)
+	compact := regexp.MustCompile(`\s+`).ReplaceAllString(base, "")
+	appendCandidate(compact)
+
+	for _, p := range seriesSuffixPatterns {
+		trimmed := strings.TrimSpace(p.ReplaceAllString(base, ""))
+		appendCandidate(trimmed)
+		if trimmed != "" {
+			appendCandidate(regexp.MustCompile(`\s+`).ReplaceAllString(trimmed, ""))
+		}
+	}
+
+	return candidates
 }
