@@ -80,6 +80,8 @@ const (
 	DefaultUpdateSpec = "0 */20 * * * ?"
 	// EveryWeekSpec 每周日凌晨4点更新一次
 	EveryWeekSpec = "0 0 4 * * 0"
+	// EveryDaySpec 每天凌晨0点执行一次
+	EveryDaySpec = "0 0 0 * * *"
 	// DefaultUpdateTime 每次采集最近 3 小时内更新的影片
 	DefaultUpdateTime = 3
 	// DefaultSpiderInterval 默认采集间隔 (ms)，当站点未配置时使用

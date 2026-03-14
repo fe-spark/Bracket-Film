@@ -180,7 +180,7 @@ func (s *InitService) createDefaultTasks() {
 	s.registerTask(recoverTask)
 
 	orphanTask := model.FilmCollectTask{
-		Id: utils.GenerateSalt(), Time: 0, Spec: "0 0 0 * * *",
+		Id: utils.GenerateSalt(), Time: 0, Spec: config.EveryDaySpec,
 		Model: 3, State: false, Remark: "每天凌晨0点清理无主影片的孤儿播放列表",
 	}
 	s.registerTask(orphanTask)

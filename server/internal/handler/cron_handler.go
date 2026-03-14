@@ -64,13 +64,13 @@ func (h *CronHandler) FilmCronUpdate(c *gin.Context) {
 		dto.Failed("请求参数异常!!!", c)
 		return
 	}
-	if err := validTaskInfo(t); err != nil {
-		dto.Failed(err.Error(), c)
-		return
-	}
 	task, err := service.CronSvc.GetFilmCrontabById(t.Id)
 	if err != nil {
 		dto.Failed(fmt.Sprint("更新失败: ", err.Error()), c)
+		return
+	}
+	if err := validTaskInfo(t, task.Model); err != nil {
+		dto.Failed(err.Error(), c)
 		return
 	}
 	task.Ids = t.Ids
@@ -88,14 +88,11 @@ func (h *CronHandler) ChangeTaskState(c *gin.Context) {
 		dto.Failed("请求参数异常!!!", c)
 		return
 	}
-	task, err := service.CronSvc.GetFilmCrontabById(t.Id)
-	if err != nil {
+	if err := service.CronSvc.ChangeFilmCrontab(t.Id, t.State); err != nil {
 		dto.Failed(fmt.Sprint("更新失败: ", err.Error()), c)
 		return
 	}
-	task.State = t.State
-	service.CronSvc.UpdateFilmCron(task)
-	dto.SuccessOnlyMsg(fmt.Sprintf("定时任务[%s]更新成功", task.Id), c)
+	dto.SuccessOnlyMsg(fmt.Sprintf("定时任务[%s]更新成功", t.Id), c)
 }
 
 // DelFilmCron 删除定时任务
@@ -112,12 +109,15 @@ func (h *CronHandler) DelFilmCron(c *gin.Context) {
 	dto.SuccessOnlyMsg(fmt.Sprintf("定时任务[%s]已删除", id), c)
 }
 
-func validTaskInfo(t model.FilmCollectTask) error {
+func validTaskInfo(t model.FilmCollectTask, modelType int) error {
 	if len(t.Id) <= 0 {
 		return errors.New("参数校验失败, 任务Id信息不能为空")
 	}
-	if t.Time == 0 {
+	if (modelType == 0 || modelType == 1) && t.Time == 0 {
 		return errors.New("参数校验失败, 采集时长不能为零值")
+	}
+	if modelType == 1 && len(t.Ids) <= 0 {
+		return errors.New("参数校验失败, 自定义更新未绑定任何资源站点")
 	}
 	return nil
 }
@@ -136,6 +136,8 @@ func validTaskAddVo(vo model.FilmCronVo) error {
 			return errors.New("参数校验失败, 自定义更新未绑定任何资源站点")
 		}
 	case 2:
+		break
+	case 3:
 		break
 	default:
 		return errors.New("参数校验失败, 未定义的任务类型")
