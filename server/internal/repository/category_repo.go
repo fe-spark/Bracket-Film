@@ -127,10 +127,16 @@ func SaveCategoryTree(sourceId string, tree *model.CategoryTree) error {
 			var localMain model.Category
 			tx.Where("pid = 0 AND name = ?", standardName).FirstOrCreate(&localMain, model.Category{Pid: 0, Name: standardName, Show: true})
 
-			// 记录大类映射
-			tx.Create(&model.CategoryMapping{SourceId: sourceId, SourceTypeId: node.Id, CategoryId: localMain.Id})
+			// 3. 记录映射：如果来源大类名称与标准大类不一致，将其作为子分类处理，实现“日本动漫” -> “动漫”下的具体标签
+			targetId := localMain.Id
+			if node.Name != standardName {
+				var localSub model.Category
+				tx.Where("pid = ? AND name = ?", localMain.Id, node.Name).FirstOrCreate(&localSub, model.Category{Pid: localMain.Id, Name: node.Name, Show: true})
+				targetId = localSub.Id
+			}
+			tx.Create(&model.CategoryMapping{SourceId: sourceId, SourceTypeId: node.Id, CategoryId: targetId})
 
-			// 3. 处理子类
+			// 4. 处理来源子类 (继续挂载到本地标准大类下，平铺结构)
 			for _, sub := range node.Children {
 				var localSub model.Category
 				tx.Where("pid = ? AND name = ?", localMain.Id, sub.Name).FirstOrCreate(&localSub, model.Category{Pid: localMain.Id, Name: sub.Name, Show: true})

@@ -292,8 +292,11 @@ func BatchHandleSearchTag(infos ...model.SearchInfo) {
 		// 获取大类名称用于清洗
 		mName := GetMainCategoryName(info.Pid)
 
-		// 恢复 Category 维度的标签生成，用于支持按需隐藏子类
-		HandleSearchTags(info.CName, "Category", info.Pid, fmt.Sprint(info.Cid))
+		// 仅当存在具体的子分类（Cid != Pid）时，才生成 Category 维度的标签，
+		// 避免大类下出现一个名为大类本身的冗余标签（如“动漫”大类下出现“动漫”标签）
+		if info.Cid != info.Pid {
+			HandleSearchTags(info.CName, "Category", info.Pid, fmt.Sprint(info.Cid))
+		}
 
 		// 清洗后的剧情标签
 		cleanPlot := CleanPlotTags(info.ClassTag, info.Area, mName, info.CName)
@@ -361,8 +364,11 @@ func HandleSearchTags(allTags string, tagType string, pid int64, customValues ..
 		}
 
 		db.Mdb.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "pid"}, {Name: "tag_type"}, {Name: "value"}},
-			DoUpdates: clause.Assignments(map[string]any{"score": gorm.Expr("score + 1")}),
+			Columns: []clause.Column{{Name: "pid"}, {Name: "tag_type"}, {Name: "value"}},
+			DoUpdates: clause.Assignments(map[string]any{
+				"score": gorm.Expr("score + 1"),
+				"name":  v, // 同时更新 Name，确保展示名称实时同步
+			}),
 		}).Create(&model.SearchTagItem{Pid: pid, TagType: tagType, Name: v, Value: val, Score: 1})
 	}
 
