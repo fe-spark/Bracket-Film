@@ -127,7 +127,6 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 		}
 
 		// 4. 第二阶段：处理采集站的第二层 (子类)
-		var newSubs []*model.Category
 		for _, rootNode := range tree.Children {
 			realPid := pointerToMainId[rootNode]
 			for _, subNode := range rootNode.Children {
@@ -139,31 +138,21 @@ func SaveCategoryTree(tree *model.CategoryTree) error {
 					subNode.Id = id
 					subNode.Pid = realPid
 				} else {
-					subC := &model.Category{Name: cleanSubName, Pid: realPid, Show: true}
-					newSubs = append(newSubs, subC)
-					subNode.Category = subC
+					subNode.Id = 0 // 將在下方 FirstOrCreate 後回填
+					subNode.Pid = realPid
+					subNode.Name = cleanSubName
+					subNode.Show = true
+					
+					// 執行去重入庫
+					tempCat := model.Category{Name: cleanSubName, Pid: realPid, Show: true}
+					if err := tx.Where("pid = ? AND name = ?", realPid, cleanSubName).FirstOrCreate(&tempCat).Error; err != nil {
+						return err
+					}
+					subNode.Id = tempCat.Id
 				}
 			}
 		}
 
-		if len(newSubs) > 0 {
-			// 对于新出现的类型，执行去重入库
-			for _, ns := range newSubs {
-				// 再次检查防止本次批量内重复 (虽然 tree 一般不会有重复)
-				if err := tx.Where("pid = ? AND name = ?", ns.Pid, ns.Name).FirstOrCreate(ns).Error; err != nil {
-					return err
-				}
-			}
-			// 回填入库后的 ID
-			for _, rootNode := range tree.Children {
-				for _, subNode := range rootNode.Children {
-					if subNode.Category != nil && subNode.Id == 0 {
-						subNode.Id = subNode.Category.Id
-						subNode.Pid = subNode.Category.Pid
-					}
-				}
-			}
-		}
 
 		return nil
 	})
@@ -179,15 +168,22 @@ func buildTreeHelper() model.CategoryTree {
 
 	nodes := make(map[int64]*model.CategoryTree)
 	root := model.CategoryTree{
-		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
+		Id: 0, Pid: -1, Name: "分类信息", Show: true,
 		Children: make([]*model.CategoryTree, 0),
 	}
 
 	for _, c := range allList {
 		item := c
 		node := &model.CategoryTree{
-			Category: &item,
-			Children: make([]*model.CategoryTree, 0),
+			Id:        item.Id,
+			Pid:       item.Pid,
+			Name:      item.Name,
+			Alias:     item.Alias,
+			Show:      item.Show,
+			Sort:      item.Sort,
+			CreatedAt: item.CreatedAt,
+			UpdatedAt: item.UpdatedAt,
+			Children:  make([]*model.CategoryTree, 0),
 		}
 		nodes[item.Id] = node
 
@@ -237,18 +233,24 @@ func GetActiveCategoryTree() model.CategoryTree {
 
 	nodes := make(map[int64]*model.CategoryTree)
 	root := model.CategoryTree{
-		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
+		Id: 0, Pid: -1, Name: "分类信息", Show: true,
 		Children: make([]*model.CategoryTree, 0),
 	}
 
 	// 第一遍：创建所有节点
 	for _, c := range allList {
-		item := c
 		node := &model.CategoryTree{
-			Category: &item,
-			Children: make([]*model.CategoryTree, 0),
+			Id:        c.Id,
+			Pid:       c.Pid,
+			Name:      c.Name,
+			Alias:     c.Alias,
+			Show:      c.Show,
+			Sort:      c.Sort,
+			CreatedAt: c.CreatedAt,
+			UpdatedAt: c.UpdatedAt,
+			Children:  make([]*model.CategoryTree, 0),
 		}
-		nodes[item.Id] = node
+		nodes[c.Id] = node
 	}
 
 	// 第二遍：处理子类并更新父大类的活跃状态

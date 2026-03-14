@@ -29,7 +29,7 @@ func (i *IndexService) IndexPage() map[string]any {
 	}
 
 	Info := make(map[string]any)
-	tree := model.CategoryTree{Category: &model.Category{Id: 0, Name: "分类信息"}}
+	tree := model.CategoryTree{Id: 0, Name: "分类信息"}
 	sysTree := repository.GetActiveCategoryTree()
 	for _, c := range sysTree.Children {
 		if c.Show {
@@ -116,7 +116,16 @@ func (i *IndexService) GetNavCategory() []*model.Category {
 	cl := make([]*model.Category, 0)
 	for _, c := range tree.Children {
 		if c.Show {
-			cl = append(cl, c.Category)
+			cl = append(cl, &model.Category{
+				Id:        c.Id,
+				Pid:       c.Pid,
+				Name:      c.Name,
+				Alias:     c.Alias,
+				Show:      c.Show,
+				Sort:      c.Sort,
+				CreatedAt: c.CreatedAt,
+				UpdatedAt: c.UpdatedAt,
+			})
 		}
 	}
 	return cl
@@ -149,7 +158,17 @@ func (i *IndexService) GetPidCategory(pid int64) *model.CategoryTree {
 	tree := repository.GetActiveCategoryTree()
 	for _, t := range tree.Children {
 		if t.Id == pid {
-			return &model.CategoryTree{Category: t.Category, Children: t.Children}
+			return &model.CategoryTree{
+				Id:        t.Id,
+				Pid:       t.Pid,
+				Name:      t.Name,
+				Alias:     t.Alias,
+				Show:      t.Show,
+				Sort:      t.Sort,
+				CreatedAt: t.CreatedAt,
+				UpdatedAt: t.UpdatedAt,
+				Children:  t.Children,
+			}
 		}
 	}
 	return nil

@@ -18,8 +18,15 @@ func (Category) TableName() string {
 	return TableCategory
 }
 
-// CategoryTree 分类信息树形结构
+// CategoryTree 分類信息樹形結構 (扁平化 JSON)
 type CategoryTree struct {
-	*Category
-	Children []*CategoryTree `json:"children"` // 子分类信息
+	Id        int64           `json:"id"`
+	Pid       int64           `json:"pid"`
+	Name      string          `json:"name"`
+	Alias     string          `json:"alias"`
+	Show      bool            `json:"show"`
+	Sort      int             `json:"sort"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
+	Children  []*CategoryTree `json:"children"` // 子分類信息
 }

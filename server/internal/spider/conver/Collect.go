@@ -16,7 +16,7 @@ import (
 // GenCategoryTree 解析处理 filmListPage数据 生成分类树形数据
 func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 	root := &model.CategoryTree{
-		Category: &model.Category{Id: 0, Pid: -1, Name: "分类信息", Show: true},
+		Id: 0, Pid: -1, Name: "分类信息", Show: true,
 		Children: make([]*model.CategoryTree, 0),
 	}
 	nodes := make(map[int64]*model.CategoryTree)
@@ -26,7 +26,7 @@ func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 	for _, c := range list {
 		id, name := c.ID, c.Name
 		nodes[id] = &model.CategoryTree{
-			Category: &model.Category{Id: id, Pid: c.Pid, Name: name, Show: true},
+			Id: id, Pid: c.Pid, Name: name, Show: true,
 			Children: make([]*model.CategoryTree, 0),
 		}
 	}
@@ -74,7 +74,7 @@ func GenCategoryTree(list []model.FilmClass) *model.CategoryTree {
 		}
 		// 创建无 ID 的纯逻辑根节点，入库时由存取层自动根据 Name + 树位置对齐
 		vr := &model.CategoryTree{
-			Category: &model.Category{Name: rootNames[key], Pid: 0, Show: true},
+			Name: rootNames[key], Pid: 0, Show: true,
 			Children: make([]*model.CategoryTree, 0),
 		}
 		virtualRoots[key] = vr
@@ -159,7 +159,16 @@ func ConvertCategoryList(tree *model.CategoryTree) []model.Category {
 	}
 	// 不保存虚拟根节点 0 本身到列表（通常数据库不需要这个占位符）
 	if tree.Id != 0 {
-		list = append(list, *tree.Category)
+		list = append(list, model.Category{
+			Id:        tree.Id,
+			Pid:       tree.Pid,
+			Name:      tree.Name,
+			Alias:     tree.Alias,
+			Show:      tree.Show,
+			Sort:      tree.Sort,
+			CreatedAt: tree.CreatedAt,
+			UpdatedAt: tree.UpdatedAt,
+		})
 	}
 	for _, child := range tree.Children {
 		list = append(list, ConvertCategoryList(child)...)

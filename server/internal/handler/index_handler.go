@@ -153,7 +153,16 @@ func (h *IndexHandler) FilmTagSearch(c *gin.Context) {
 
 	var titleObj *model.Category
 	if cat != nil {
-		titleObj = cat.Category
+		titleObj = &model.Category{
+			Id:        cat.Id,
+			Pid:       cat.Pid,
+			Name:      cat.Name,
+			Alias:     cat.Alias,
+			Show:      cat.Show,
+			Sort:      cat.Sort,
+			CreatedAt: cat.CreatedAt,
+			UpdatedAt: cat.UpdatedAt,
+		}
 	}
 
 	dto.Success(gin.H{
