@@ -54,10 +54,9 @@ const menuItems: MenuItem[] = [
     ],
   },
   {
-    key: "sub-cron",
+    key: "/manage/cron",
     icon: <ClockCircleOutlined />,
     label: "定时任务",
-    children: [{ key: "/manage/cron", label: "任务管理" }],
   },
   {
     key: "sub-film",

@@ -4,23 +4,13 @@ import React, { useState, useEffect, useCallback } from "react";
 import {
   Table,
   Tag,
-  Switch,
   Button,
-  Space,
   Modal,
   Input,
   Form,
-  Popconfirm,
-  Select,
-  InputNumber,
-  Radio,
   Tooltip,
 } from "antd";
-import {
-  ClockCircleOutlined,
-  DeleteOutlined,
-  EditOutlined,
-} from "@ant-design/icons";
+import { EditOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { ApiGet, ApiPost } from "@/lib/api";
 import styles from "./page.module.less";
@@ -42,13 +32,10 @@ interface CronTask {
 export default function CronManagePage() {
   const [taskList, setTaskList] = useState<CronTask[]>([]);
   const [loading, setLoading] = useState(false);
-  const [options, setOptions] = useState<any[]>([]);
   const { message } = useAppMessage();
 
-  const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [form] = Form.useForm();
-  const [currentModel, setCurrentModel] = useState(1);
 
   const getTaskList = useCallback(async () => {
     setLoading(true);
@@ -64,64 +51,16 @@ export default function CronManagePage() {
     }
   }, []);
 
-  const getOptions = async () => {
-    const resp = await ApiGet("/manage/collect/options");
-    if (resp.code === 0) {
-      setOptions(resp.data || []);
-    }
-  };
-
   useEffect(() => {
     getTaskList();
   }, [getTaskList]);
 
-  const changeTaskState = async (id: string, state: boolean) => {
-    const resp = await ApiPost("/manage/cron/change", { id, state });
-    if (resp.code === 0) {
-      message.success(resp.msg);
-      getTaskList();
-    } else {
-      message.error(resp.msg);
-    }
-  };
-
-  const delTask = async (id: string) => {
-    const resp = await ApiGet("/manage/cron/del", { id });
-    if (resp.code === 0) {
-      message.success(resp.msg);
-      getTaskList();
-    } else {
-      message.error(resp.msg);
-    }
-  };
-
-  const openAddDialog = () => {
-    form.resetFields();
-    form.setFieldsValue({ model: 1, state: false, time: 0, ids: [] });
-    setCurrentModel(1);
-    getOptions();
-    setAddOpen(true);
-  };
-
   const openEditDialog = async (id: string) => {
     form.resetFields();
-    getOptions();
     const resp = await ApiGet("/manage/cron/find", { id });
     if (resp.code === 0) {
       form.setFieldsValue(resp.data);
-      setCurrentModel(resp.data.model || 0);
       setEditOpen(true);
-    } else {
-      message.error(resp.msg);
-    }
-  };
-
-  const onAddFinish = async (values: any) => {
-    const resp = await ApiPost("/manage/cron/add", values);
-    if (resp.code === 0) {
-      message.success(resp.msg);
-      setAddOpen(false);
-      getTaskList();
     } else {
       message.error(resp.msg);
     }
@@ -130,10 +69,7 @@ export default function CronManagePage() {
   const onEditFinish = async (values: any) => {
     const resp = await ApiPost("/manage/cron/update", {
       id: values.id,
-      ids: values.ids,
-      time: values.time,
-      state: values.state,
-      remark: values.remark,
+      spec: values.spec,
     });
     if (resp.code === 0) {
       message.success(resp.msg);
@@ -170,14 +106,7 @@ export default function CronManagePage() {
       title: "是否启用",
       dataIndex: "state",
       align: "center",
-      render: (v, record) => (
-        <Switch
-          checked={v}
-          onChange={(checked) => changeTaskState(record.id, checked)}
-          checkedChildren="启用"
-          unCheckedChildren="禁用"
-        />
-      ),
+      render: (v) => <Tag color={v ? "success" : "default"}>{v ? "启用" : "禁用"}</Tag>,
     },
     {
       title: "上次执行时间",
@@ -195,105 +124,31 @@ export default function CronManagePage() {
       title: "操作",
       key: "action",
       align: "center",
-      width: 100,
-      fixed: "right",
+      width: 70,
       render: (_, record) => (
-        <Space size={8}>
-          <Tooltip title="编辑任务">
-            <Button
-              type="primary"
-              shape="circle"
-              size="small"
-              icon={<EditOutlined />}
-              onClick={() => openEditDialog(record.id)}
-            />
-          </Tooltip>
-          <Popconfirm
-            title="确认删除该定时任务？"
-            onConfirm={() => delTask(record.id)}
-          >
-            <Tooltip title="删除任务">
-              <Button
-                type="primary"
-                danger
-                shape="circle"
-                size="small"
-                icon={<DeleteOutlined />}
-              />
-            </Tooltip>
-          </Popconfirm>
-        </Space>
+        <Tooltip title="修改时间">
+          <Button
+            type="primary"
+            shape="circle"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => openEditDialog(record.id)}
+          />
+        </Tooltip>
       ),
     },
   ];
 
-  const commonFormItems = (isEdit: boolean = false) => (
+  const editFormItems = () => (
     <>
       <Form.Item name="id" hidden>
         <Input />
       </Form.Item>
-      {isEdit && (
-        <Form.Item label="任务标识" name="id">
-          <Input disabled />
-        </Form.Item>
-      )}
-      {!isEdit && (
-        <Form.Item
-          label="任务周期"
-          name="spec"
-          rules={[{ required: true, message: "请输入Cron表达式" }]}
-        >
-          <Input placeholder="例如: 0 */20 * * * ? (每20分钟执行一次)" />
-        </Form.Item>
-      )}
-      {isEdit && (
-        <Form.Item label="任务周期" name="spec">
-          <Input disabled />
-        </Form.Item>
-      )}
-      <Form.Item
-        label="任务描述"
-        name="remark"
-        rules={[{ required: true, message: "请输入任务描述" }]}
-      >
-        <Input placeholder="定时任务描述信息" />
+      <Form.Item label="任务标识" name="id">
+        <Input disabled />
       </Form.Item>
-      <Form.Item label="任务类型" name="model">
-        <Radio.Group
-          onChange={(e) => setCurrentModel(e.target.value)}
-          disabled={isEdit}
-        >
-          <Tooltip title="执行所有已启用站点的采集任务">
-            <Radio value={0}>自动更新</Radio>
-          </Tooltip>
-          <Tooltip title="只执行指定站点的采集任务">
-            <Radio value={1}>自定义更新</Radio>
-          </Tooltip>
-          <Tooltip title="失败采集重试处理">
-            <Radio value={2}>采集重试</Radio>
-          </Tooltip>
-          <Tooltip title="清理附属站中已无法匹配主站影片的孤儿播放记录">
-            <Radio value={3}>孤儿清理</Radio>
-          </Tooltip>
-        </Radio.Group>
-      </Form.Item>
-      {currentModel === 1 && (
-        <Form.Item label="资源绑定" name="ids">
-          <Select
-            mode="multiple"
-            placeholder="请选择绑定的采集站"
-            style={{ width: "100%" }}
-            options={options.map((o) => ({ label: o.name, value: o.id }))}
-          />
-        </Form.Item>
-      )}
-      {currentModel !== 2 && currentModel !== 3 && (
-        <Form.Item label="采集时长" name="time">
-          <InputNumber style={{ width: "100%" }} placeholder="负数则默认全量" />
-        </Form.Item>
-      )}
-      <Form.Item label="任务状态" name="state" valuePropName="checked">
-        <Switch checkedChildren="开启" unCheckedChildren="禁用" />
+      <Form.Item label="执行时间" name="spec" rules={[{ required: true, message: "请输入Cron表达式" }]}>
+        <Input placeholder="例如: 0 */20 * * * ? (每20分钟执行一次)" />
       </Form.Item>
     </>
   );
@@ -308,35 +163,11 @@ export default function CronManagePage() {
         bordered
         size="middle"
         pagination={false}
-        scroll={{ x: "max-content" }}
+        scroll={{ x: 900 }}
       />
-      <div className={styles.toolbar}>
-        <Button
-          type="primary"
-          icon={<ClockCircleOutlined />}
-          style={{ background: "#9b49e7", borderColor: "#9b49e7" }}
-          onClick={openAddDialog}
-        >
-          创建定时任务
-        </Button>
-      </div>
 
       <Modal
-        title="创建定时任务"
-        open={addOpen}
-        onCancel={() => setAddOpen(false)}
-        onOk={() => form.validateFields().then(onAddFinish)}
-        okButtonProps={{
-          style: { background: "#9b49e7", borderColor: "#9b49e7" },
-        }}
-      >
-        <Form form={form} layout="vertical">
-          {commonFormItems(false)}
-        </Form>
-      </Modal>
-
-      <Modal
-        title="编辑定时任务"
+        title="修改定时任务时间"
         open={editOpen}
         onCancel={() => setEditOpen(false)}
         onOk={() => form.validateFields().then(onEditFinish)}
@@ -345,7 +176,7 @@ export default function CronManagePage() {
         }}
       >
         <Form form={form} layout="vertical">
-          {commonFormItems(true)}
+          {editFormItems()}
         </Form>
       </Modal>
     </div>
