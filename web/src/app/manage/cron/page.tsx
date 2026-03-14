@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import {
   Table,
   Tag,
+  Switch,
   Button,
   Modal,
   Input,
@@ -54,6 +55,16 @@ export default function CronManagePage() {
   useEffect(() => {
     getTaskList();
   }, [getTaskList]);
+
+  const changeTaskState = async (id: string, state: boolean) => {
+    const resp = await ApiPost("/manage/cron/change", { id, state });
+    if (resp.code === 0) {
+      message.success(resp.msg);
+      getTaskList();
+    } else {
+      message.error(resp.msg);
+    }
+  };
 
   const openEditDialog = async (id: string) => {
     form.resetFields();
@@ -106,7 +117,14 @@ export default function CronManagePage() {
       title: "是否启用",
       dataIndex: "state",
       align: "center",
-      render: (v) => <Tag color={v ? "success" : "default"}>{v ? "启用" : "禁用"}</Tag>,
+      render: (v, record) => (
+        <Switch
+          checked={v}
+          onChange={(checked) => changeTaskState(record.id, checked)}
+          checkedChildren="启用"
+          unCheckedChildren="禁用"
+        />
+      ),
     },
     {
       title: "上次执行时间",
