@@ -399,7 +399,9 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year string
 // GetVodDetail 获取视频详情（带播放列表）
 func (p *ProvideService) GetVodDetail(ids []string) []model.FilmDetail {
 	var detailList []model.FilmDetail
-	useProxy := repository.GetSiteBasic().IsVideoProxy
+	siteBasic := repository.GetSiteBasic()
+	useProxy := siteBasic.IsVideoProxy
+	domain := strings.TrimRight(siteBasic.Domain, "/")
 
 	for _, idStr := range ids {
 		idInt, err := strconv.Atoi(idStr)
@@ -427,7 +429,7 @@ func (p *ProvideService) GetVodDetail(ids []string) []model.FilmDetail {
 			for _, link := range source.LinkList {
 				playLink := link.Link
 				if useProxy {
-					playLink = wrapPlayLinkWithProxy(playLink)
+					playLink = wrapPlayLinkWithProxy(playLink, domain)
 				}
 				linkStrs = append(linkStrs, fmt.Sprintf("%s$%s", link.Episode, strings.ReplaceAll(playLink, "$", "")))
 			}
@@ -467,15 +469,15 @@ func (p *ProvideService) GetVodDetail(ids []string) []model.FilmDetail {
 	return detailList
 }
 
-func wrapPlayLinkWithProxy(link string) string {
+func wrapPlayLinkWithProxy(link, domain string) string {
 	if link == "" {
 		return link
 	}
 	if strings.HasPrefix(link, "/api/proxy/video?url=") {
-		return link
+		return domain + link
 	}
 	if strings.HasPrefix(link, "http://") || strings.HasPrefix(link, "https://") {
-		return "/api/proxy/video?url=" + url.QueryEscape(link)
+		return domain + "/api/proxy/video?url=" + url.QueryEscape(link)
 	}
 	return link
 }
