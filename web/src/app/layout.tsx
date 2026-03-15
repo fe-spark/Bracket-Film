@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { Outfit } from "next/font/google";
 import GlobalThemeProvider from "@/components/theme/GlobalThemeProvider";
@@ -39,6 +39,12 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 import SiteGuard from "@/components/common/SiteGuard";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 export default function RootLayout({
   children,

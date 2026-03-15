@@ -60,6 +60,9 @@ func (h *ProvideHandler) HandleProvide(c *gin.Context) {
 	if classList == nil {
 		classList = []model.FilmClass{}
 	}
+	if t <= 0 && wd == "" && ids == "" && len(classList) > 0 {
+		t = int(classList[0].ID)
+	}
 
 	switch ac {
 	case "list":

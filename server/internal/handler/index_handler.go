@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 
 	"server/internal/model"
 	"server/internal/model/dto"
+	"server/internal/repository"
 	"server/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +16,19 @@ import (
 type IndexHandler struct{}
 
 var IndexHd = new(IndexHandler)
+
+func wrapProxyLink(link string) string {
+	if link == "" {
+		return link
+	}
+	if strings.HasPrefix(link, "/api/proxy/video?url=") {
+		return link
+	}
+	if strings.HasPrefix(link, "http://") || strings.HasPrefix(link, "https://") {
+		return "/api/proxy/video?url=" + url.QueryEscape(link)
+	}
+	return link
+}
 
 // Index 首页数据
 func (h *IndexHandler) Index(c *gin.Context) {
@@ -61,10 +76,14 @@ func (h *IndexHandler) FilmPlayInfo(c *gin.Context) {
 		return
 	}
 	detail := service.IndexSvc.GetFilmDetail(id)
+	useProxy := repository.GetSiteBasic().IsVideoProxy
 	for i := range detail.List {
 		var valid []model.MovieUrlInfo
 		for _, ep := range detail.List[i].LinkList {
 			if ep.Link != "" {
+				if useProxy {
+					ep.Link = wrapProxyLink(ep.Link)
+				}
 				valid = append(valid, ep)
 			}
 		}

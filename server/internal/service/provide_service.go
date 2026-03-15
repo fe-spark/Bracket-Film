@@ -251,6 +251,9 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year string
 	if limit <= 0 {
 		limit = 20
 	}
+	if t <= 0 && wd == "" && h == 0 && year == "" && area == "" && lang == "" && plot == "" {
+		return 1, 1, 0, []model.FilmList{}
+	}
 	// 1. 针对第一页的首页请求尝试 Redis 缓存 (依赖主动失效，TTL 设为 12 小时作为兜底)
 	cacheKey := ""
 	if pg <= 1 && wd == "" && h == 0 && year == "" && area == "" && lang == "" && plot == "" {
@@ -396,6 +399,7 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year string
 // GetVodDetail 获取视频详情（带播放列表）
 func (p *ProvideService) GetVodDetail(ids []string) []model.FilmDetail {
 	var detailList []model.FilmDetail
+	useProxy := repository.GetSiteBasic().IsVideoProxy
 
 	for _, idStr := range ids {
 		idInt, err := strconv.Atoi(idStr)
@@ -421,7 +425,11 @@ func (p *ProvideService) GetVodDetail(ids []string) []model.FilmDetail {
 
 			var linkStrs []string
 			for _, link := range source.LinkList {
-				linkStrs = append(linkStrs, fmt.Sprintf("%s$%s", link.Episode, strings.ReplaceAll(link.Link, "$", "")))
+				playLink := link.Link
+				if useProxy {
+					playLink = wrapPlayLinkWithProxy(playLink)
+				}
+				linkStrs = append(linkStrs, fmt.Sprintf("%s$%s", link.Episode, strings.ReplaceAll(playLink, "$", "")))
 			}
 			playUrlList = append(playUrlList, strings.Join(linkStrs, "#"))
 		}
@@ -457,4 +465,17 @@ func (p *ProvideService) GetVodDetail(ids []string) []model.FilmDetail {
 	}
 
 	return detailList
+}
+
+func wrapPlayLinkWithProxy(link string) string {
+	if link == "" {
+		return link
+	}
+	if strings.HasPrefix(link, "/api/proxy/video?url=") {
+		return link
+	}
+	if strings.HasPrefix(link, "http://") || strings.HasPrefix(link, "https://") {
+		return "/api/proxy/video?url=" + url.QueryEscape(link)
+	}
+	return link
 }

@@ -15,7 +15,6 @@ interface VideoPlayerProps {
   onEnded?: () => void;
   onTimeUpdate?: (currentTime: number, duration: number) => void;
   onError?: (error: any) => void;
-  useProxy?: boolean;
 }
 
 /**
@@ -31,13 +30,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onEnded,
   onTimeUpdate,
   onError,
-  useProxy = true, // 默认开启代理加速，因为用户反馈卡顿
 }) => {
   const artRef = useRef<HTMLDivElement>(null);
-  // 处理 URL 代理
-  const finalSrc = useProxy 
-    ? (/^https?:\/\//i.test(src) ? `/api/proxy/video?url=${encodeURIComponent(src)}` : src)
-    : src;
   const playerRef = useRef<Artplayer | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const [hasError, setHasError] = useState(false);
@@ -51,9 +45,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // 核心初始化 Effect
   useEffect(() => {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth <= 768;
+    Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
     const art = new Artplayer({
       container: artRef.current,
-      url: finalSrc,
+      url: src,
       poster: poster || "",
       autoplay,
       theme: "#fa8c16", // 直接使用 Hex 色值，Artplayer 内部无法解析 CSS 变量
@@ -64,7 +60,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       playbackRate: true,
       aspectRatio: true,
       fullscreen: true,
-      fullscreenWeb: true,
+      fullscreenWeb: !isMobile,
       mutex: true,
       backdrop: true,
       playsInline: true,
@@ -123,7 +119,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     // 破解 autoMini 延迟：实现毫秒级响应的小窗触发
     let rafId: number;
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth <= 768;
     if (!isMobile) {
       const checkMiniTrigger = () => {
         if (!artRef.current || !art) return;
@@ -147,11 +142,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       rafId = requestAnimationFrame(checkMiniTrigger);
     }
 
-    if (initialTime > 0) {
-      art.on("ready", () => {
+    art.on("ready", () => {
+      if (initialTime > 0) {
         art.currentTime = initialTime;
-      });
-    }
+      }
+    });
 
     art.on("video:ended", () => callbacks.current.onEnded?.());
     art.on("video:timeupdate", () =>
@@ -190,7 +185,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       playerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [retryCount, finalSrc]);
+  }, [retryCount, src]);
 
   useEffect(() => {
     if (playerRef.current && poster) playerRef.current.poster = poster;

@@ -104,15 +104,11 @@
   }
 }
 
-/* Artplayer specific overrides if needed */
-.playerWrapper :global(.art-video-player) {
-  border-radius: 20px;
-  overflow: hidden;
-  height: 100% !important;
-}
-
-.playerWrapper :global(.artplayer-app) {
-  --art-theme: var(--primary-color);
+@media (max-width: 768px) {
+  .playerWrapper {
+    border: none;
+    border-radius: 0;
+  }
 }
 
 .retryBtn {
