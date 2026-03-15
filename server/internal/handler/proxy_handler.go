@@ -144,7 +144,12 @@ func (h *ProxyHandler) wrap(base *url.URL, ref string) string {
 	if err != nil {
 		return ref
 	}
-	return "/api/proxy/video?url=" + url.QueryEscape(base.ResolveReference(u).String())
+	// 在生成的代理链接末尾添加 &.ts 辅助识别
+	suffix := ""
+	if strings.Contains(ref, ".ts") {
+		suffix = "&.ts"
+	}
+	return "/api/proxy/video?url=" + url.QueryEscape(base.ResolveReference(u).String()) + suffix
 }
 
 // rewriteTagURI 查找并替换字符串中的 URI="..." 部分

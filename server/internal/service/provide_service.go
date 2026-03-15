@@ -477,7 +477,8 @@ func wrapPlayLinkWithProxy(link, domain string) string {
 		return domain + link
 	}
 	if strings.HasPrefix(link, "http://") || strings.HasPrefix(link, "https://") {
-		return domain + "/api/proxy/video?url=" + url.QueryEscape(link)
+		// 拼接域名 + 代理路径，并在末尾添加 &.m3u8 欺骗播放器
+		return domain + "/api/proxy/video?url=" + url.QueryEscape(link) + "&.m3u8"
 	}
 	return link
 }
