@@ -399,9 +399,6 @@ func (p *ProvideService) GetVodList(t int, pg int, wd string, h int, year string
 // GetVodDetail 获取视频详情（带播放列表）
 func (p *ProvideService) GetVodDetail(ids []string) []model.FilmDetail {
 	var detailList []model.FilmDetail
-	siteBasic := repository.GetSiteBasic()
-	useProxy := siteBasic.IsVideoProxy
-	domain := strings.TrimRight(siteBasic.Domain, "/")
 
 	for _, idStr := range ids {
 		idInt, err := strconv.Atoi(idStr)
@@ -428,9 +425,6 @@ func (p *ProvideService) GetVodDetail(ids []string) []model.FilmDetail {
 			var linkStrs []string
 			for _, link := range source.LinkList {
 				playLink := link.Link
-				if useProxy {
-					playLink = wrapPlayLinkWithProxy(playLink, domain)
-				}
 				linkStrs = append(linkStrs, fmt.Sprintf("%s$%s", link.Episode, strings.ReplaceAll(playLink, "$", "")))
 			}
 			playUrlList = append(playUrlList, strings.Join(linkStrs, "#"))
@@ -467,18 +461,4 @@ func (p *ProvideService) GetVodDetail(ids []string) []model.FilmDetail {
 	}
 
 	return detailList
-}
-
-func wrapPlayLinkWithProxy(link, domain string) string {
-	if link == "" {
-		return link
-	}
-	if strings.HasPrefix(link, "/api/proxy/video?url=") {
-		return domain + link
-	}
-	if strings.HasPrefix(link, "http://") || strings.HasPrefix(link, "https://") {
-		// 拼接域名 + 代理路径，并在末尾添加 &.m3u8 欺骗播放器
-		return domain + "/api/proxy/video?url=" + url.QueryEscape(link) + "&.m3u8"
-	}
-	return link
 }
